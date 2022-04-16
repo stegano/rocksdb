@@ -6,7 +6,7 @@
   "main": "leveldown.js",
   "scripts": {
     "install": "node-gyp-build",
-    "test": "standard && hallmark && (nyc -s tape test/*-test.js | faucet) && nyc report",
+    "test": "npx standard && npx hallmark && (nyc -s tape test/*-test.js | faucet) && nyc report",
     "test-gc": "node --expose-gc test/gc.js",
     "test-electron": "electron test/electron.js",
     "test-prebuild": "cross-env PREBUILDS_ONLY=1 npm t",
@@ -18,7 +18,7 @@
     "prebuild-win32-x64": "prebuildify -t 8.14.0 --napi --strip",
     "download-prebuilds": "prebuildify-ci download",
     "hallmark": "hallmark fix",
-    "dependency-check": "dependency-check --no-dev -i napi-macros . test/*.js",
+    "dependency-check": "npx dependency-check --no-dev -i napi-macros . test/*.js",
     "prepublishOnly": "npm run dependency-check"
   },
   "dependencies": {
