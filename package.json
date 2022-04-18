@@ -34,11 +34,11 @@
     "du": "^1.0.0",
     "electron": "^18.0.1",
     "faucet": "^0.0.1",
-    "glob": "^8.0.1",
+    "glob": "^7.1.4",
     "hallmark": "^4.0.0",
     "level-concat-iterator": "^3.0.0",
     "mkfiletree": "^2.0.0",
-    "node-gyp": "^9.0.0",
+    "node-gyp": "^8.4.1",
     "nyc": "^15.0.0",
     "prebuildify": "^5.0.0",
     "prebuildify-ci": "^1.0.4",
@@ -47,7 +47,7 @@
     "rimraf": "^3.0.0",
     "standard": "^16.0.3",
     "tape": "^5.0.1",
-    "tempy": "^3.0.0"
+    "tempy": "^1.0.1"
   },
   "standard": {
     "ignore": [
