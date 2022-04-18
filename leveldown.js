@@ -85,12 +85,12 @@ LevelDOWN.prototype._batch = function (operations, options, callback) {
   for (const op of operations) {
     if (op.type === 'del') {
       if (!('key' in op)) continue
-      batch ??= this.batch()
+      batch = batch || this.batch()
       batch.del(op.key)
     } else if (op.type === 'put') {
       if (!('key' in op)) continue
       if (!('value' in op)) continue
-      batch ??= this.batch()
+      batch = batch || this.batch()
       batch.put(op.key, op.value)
     }
   }
