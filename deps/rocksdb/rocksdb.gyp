@@ -77,7 +77,7 @@
                 '-fno-builtin-memcmp'
               , '-fPIC'
             ]
-          , 'cflags': [ '-std=c++0x' ]
+          , 'cflags': [ '-std=c++11' ]
           , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
           # , 'cflags_cc+': [ '-frtti' ]
