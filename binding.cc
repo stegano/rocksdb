@@ -199,7 +199,7 @@ static napi_status CallFunction (napi_env env,
   return napi_call_function(env, global, callback, argc, argv, nullptr);
 }
 
-void Convert (napi_env env, const std::optional<std::string>& s, bool asBuffer, napi_value& result) {
+void Convert (napi_env env, const std::optional<rocksdb::Slice>& s, bool asBuffer, napi_value& result) {
   if (!s) {
     napi_get_undefined(env, &result);
   } else if (asBuffer) {
@@ -333,18 +333,18 @@ struct Database {
   leveldb::Status Put (const leveldb::WriteOptions& options,
                        const std::string& key,
                        const std::string& value) {
-    return db_->Put(options, key, value);
+    return db_->Put(options, db_->DefaultColumnFamily(), key, value);
   }
 
   leveldb::Status Get (const leveldb::ReadOptions& options,
                        const std::string& key,
-                       std::string& value) {
-    return db_->Get(options, key, &value);
+                       rocksdb::PinnableSlice& value) {
+    return db_->Get(options, db_->DefaultColumnFamily(), key, &value);
   }
 
   leveldb::Status Del (const leveldb::WriteOptions& options,
                        const std::string& key) {
-    return db_->Delete(options, key);
+    return db_->Delete(options, db_->DefaultColumnFamily(), key);
   }
 
   leveldb::Status WriteBatch (const leveldb::WriteOptions& options,
@@ -907,8 +907,9 @@ struct GetManyWorker final : public PriorityWorker {
     options.snapshot = snapshot_;
     options.fill_cache = fillCache_;
     
+    rocksdb::PinnableSlice value;
+
     for (const auto& key: keys_) {
-      std::string value;
       const auto status = database_->Get(options, key, value);
 
       if (status.ok()) {
@@ -919,6 +920,8 @@ struct GetManyWorker final : public PriorityWorker {
         SetStatus(status);
         break;
       }
+
+      value.Reset();
     }
 
     database_->ReleaseSnapshot(snapshot_);
@@ -946,7 +949,7 @@ struct GetManyWorker final : public PriorityWorker {
 private:
   const std::vector<std::string> keys_;
   const bool valueAsBuffer_;
-  std::vector<std::optional<std::string>> cache_;
+  std::vector<std::optional<rocksdb::PinnableSlice>> cache_;
   const bool fillCache_;
   const leveldb::Snapshot* snapshot_;
 };
