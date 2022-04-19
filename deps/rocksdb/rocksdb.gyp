@@ -76,10 +76,7 @@
           , 'defines': [
                 'ROCKSDB_PLATFORM_POSIX=1'
             ]
-          , 'ccflags': [
-                '-fno-builtin-memcmp'
-              , '-fPIC'
-            ]
+          , 'ccflags': []
           , 'cflags': [ '-std=c++2a' ]
           , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
@@ -111,10 +108,7 @@
                 # 'NUMA=1'
                 'ROCKSDB_PLATFORM_POSIX=1',
                 'ROCKSDB_LIB_IO_POSIX=1',
-                # "-DTBB",
-            ]
-          , 'libraries': [
-                '-lpthread',
+                # "-TBB=1",
             ]
           , 'ccflags': [
                 '-flto'
@@ -126,16 +120,13 @@
               , '-mlzcnt'
               , '-fexceptions'
               , '-faligned-new'
+              , '-latomic'
             ]
           , 'cflags!': [ '-fno-exceptions' ]
           , 'cflags_cc!': [ '-fno-exceptions' ]
           , 'ldflags': [ 
                 '-flto'
               , '-fuse-linker-plugin'
-              , '-latomic'
-              , '-lpthread'
-              , '-lrt'
-              , '-ldl'
             ]
         }]
       , ['OS == "mac"', {
