@@ -22,6 +22,7 @@ namespace leveldb = rocksdb;
 #include <string>
 #include <string_view>
 #include <vector>
+#include <iostream>
 
 class NullLogger : public rocksdb::Logger {
 public:
@@ -143,7 +144,7 @@ static int Int32Property (napi_env env, napi_value obj, const std::string_view& 
   return defaultValue;
 }
 
-static std::string ToString (napi_env env, napi_value from) {
+static std::optional<std::string> ToString (napi_env env, napi_value from) {
   if (IsString(env, from)) {
     size_t length = 0;
     napi_get_value_string_utf8(env, from, nullptr, 0, &length);
@@ -164,7 +165,7 @@ static std::string StringProperty (napi_env env, napi_value obj, const std::stri
   if (HasProperty(env, obj, key)) {
     napi_value value = GetProperty(env, obj, key);
     if (IsString(env, value)) {
-      return ToString(env, value);
+      return ToString(env, value).value_or(std::string());
     }
   }
 
@@ -187,10 +188,7 @@ static size_t StringOrBufferLength (napi_env env, napi_value value) {
 static std::optional<std::string> RangeOption (napi_env env, napi_value opts, const std::string& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
-
-    if (StringOrBufferLength(env, value) > 0) {
-      return ToString(env, value);
-    }
+    return ToString(env, value);
   }
 
   return {};
@@ -208,7 +206,7 @@ static std::vector<std::string> KeyArray (napi_env env, napi_value arr) {
 
       if (napi_get_element(env, arr, i, &element) == napi_ok &&
           StringOrBufferLength(env, element) > 0) {
-        result.push_back(ToString(env, element));
+        result.push_back(ToString(env, element).value_or(std::string()));
       }
     }
   }
@@ -225,13 +223,23 @@ static napi_status CallFunction (napi_env env,
   return napi_call_function(env, global, callback, argc, argv, nullptr);
 }
 
-void Convert (napi_env env, const std::optional<rocksdb::Slice>& s, bool asBuffer, napi_value& result) {
+template <typename T>
+void Convert (napi_env env, const std::optional<T>& s, bool asBuffer, napi_value& result) {
   if (!s) {
     napi_get_undefined(env, &result);
   } else if (asBuffer) {
     napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
   } else {
     napi_create_string_utf8(env, s->data(), s->size(), &result);
+  }
+}
+
+template <typename T>
+void Convert (napi_env env, const T& s, bool asBuffer, napi_value& result) {
+  if (asBuffer) {
+    napi_create_buffer_copy(env, s.size(), s.data(), nullptr, &result);
+  } else {
+    napi_create_string_utf8(env, s.data(), s.size(), &result);
   }
 }
 
@@ -316,7 +324,7 @@ struct BaseWorker {
     } else if (status_.IsIOError()) {
       if (msg.find("IO error: lock ") != std::string::npos) { // env_posix.cc
         argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
-      } else if (msg.find("IO error: LockFile ") != std::string::npos) { // env_win.cc
+      } else if (msg.find("IO error: While lock file") != std::string::npos) { // env_win.cc
         argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
       } else {
         argv = CreateCodeError(env, "LEVEL_IO_ERROR", msg);
@@ -867,7 +875,7 @@ NAPI_METHOD(db_open) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto location = ToString(env, argv[1]);
+  const auto location = ToString(env, argv[1]).value_or(std::string());
   const auto options = argv[2];
   const auto createIfMissing = BooleanProperty(env, options, "createIfMissing", true);
   const auto errorIfExists = BooleanProperty(env, options, "errorIfExists", false);
@@ -961,8 +969,8 @@ NAPI_METHOD(db_put) {
   NAPI_ARGV(5);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
-  const auto value = ToString(env, argv[2]);
+  const auto key = ToString(env, argv[1]).value_or(std::string());
+  const auto value = ToString(env, argv[2]).value_or(std::string());
   const auto sync = BooleanProperty(env, argv[3], "sync", false);
   const auto callback = argv[4];
 
@@ -1007,7 +1015,7 @@ NAPI_METHOD(db_get) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
+  const auto key = ToString(env, argv[1]).value_or(std::string());
   const auto options = argv[2];
   const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto fillCache = BooleanProperty(env, options, "fillCache", true);
@@ -1132,7 +1140,7 @@ NAPI_METHOD(db_del) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
+  const auto key = ToString(env, argv[1]).value_or(std::string());
   const auto sync = BooleanProperty(env, argv[2], "sync", false);
   napi_value callback = argv[3];
 
@@ -1269,7 +1277,7 @@ NAPI_METHOD(iterator_seek) {
     napi_throw_error(env, nullptr, "iterator has closed");
   }
 
-  const auto target = ToString(env, argv[1]);
+  const auto target = ToString(env, argv[1]).value_or(std::string());
   iterator->first_ = true;
   iterator->Seek(target);
 
@@ -1466,7 +1474,7 @@ NAPI_METHOD(batch_do) {
 
     if (type == "del") {
       if (!HasProperty(env, element, "key")) continue;
-      const auto key = ToString(env, GetProperty(env, element, "key"));
+      const auto key = ToString(env, GetProperty(env, element, "key")).value_or(std::string());
 
       batch->Delete(key);
       if (!hasData) hasData = true;
@@ -1474,8 +1482,8 @@ NAPI_METHOD(batch_do) {
       if (!HasProperty(env, element, "key")) continue;
       if (!HasProperty(env, element, "value")) continue;
 
-      const auto key = ToString(env, GetProperty(env, element, "key"));
-      const auto value = ToString(env, GetProperty(env, element, "value"));
+      const auto key = ToString(env, GetProperty(env, element, "key")).value_or(std::string());
+      const auto value = ToString(env, GetProperty(env, element, "value")).value_or(std::string());
 
       batch->Put(key, value);
       if (!hasData) hasData = true;
@@ -1511,8 +1519,8 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(3);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
-  const auto value = ToString(env, argv[2]);
+  const auto key = ToString(env, argv[1]).value_or(std::string());
+  const auto value = ToString(env, argv[2]).value_or(std::string());
 
   batch->Put(key, value);
 
@@ -1523,7 +1531,7 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(2);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
+  const auto key = ToString(env, argv[1]).value_or(std::string());
 
   batch->Delete(key);
 

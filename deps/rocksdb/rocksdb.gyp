@@ -161,7 +161,7 @@
                   , '-Wno-unused-function'
                 ]
                 , 'OTHER_CPLUSPLUSFLAGS': [
-                    '-mmacosx-version-min=10.8'
+                    '-mmacosx-version-min=10.14'
                   , '-std=c++20'
                   , '-stdlib=libc++'
                   , '-fno-omit-frame-pointer'
@@ -169,10 +169,9 @@
                   , '-arch x86_64'
                   , '-arch arm64'
                 ]
-# , 'OTHER_LDFLAGS': ['-stdlib=libc++']
                 , 'GCC_ENABLE_CPP_RTTI': 'YES'
                 , 'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
-                , 'MACOSX_DEPLOYMENT_TARGET': '10.8'
+                , 'MACOSX_DEPLOYMENT_TARGET': '10.14'
             }
         }]
     ]

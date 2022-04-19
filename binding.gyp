@@ -38,7 +38,7 @@
                   , '-Wno-ignored-qualifiers'
                 ]
                 , 'OTHER_CPLUSPLUSFLAGS': [
-                    '-mmacosx-version-min=10.8'
+                    '-mmacosx-version-min=10.14'
                   , '-std=c++20'
                   , '-stdlib=libc++'
                   , '-arch x86_64'
@@ -51,7 +51,7 @@
                 ]
                 , 'GCC_ENABLE_CPP_RTTI': 'YES'
                 , 'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
-                , 'MACOSX_DEPLOYMENT_TARGET': '10.8'
+                , 'MACOSX_DEPLOYMENT_TARGET': '10.14'
             }
           }]
         , ['OS == "linux"', {
