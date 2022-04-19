@@ -1030,8 +1030,6 @@ NAPI_METHOD(db_get) {
   return 0;
 }
 
-std::string null_buf;
-
 struct GetManyWorker final : public PriorityWorker {
   GetManyWorker (napi_env env,
                  Database* database,
@@ -1066,7 +1064,7 @@ struct GetManyWorker final : public PriorityWorker {
       if (status.ok()) {
         cache_.emplace_back(std::move(value));
       } else if (status.IsNotFound()) {
-        cache_.emplace_back(&null_buf);
+        cache_.emplace_back(nullptr);
       } else {
         SetStatus(status);
         break;
@@ -1087,7 +1085,7 @@ struct GetManyWorker final : public PriorityWorker {
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
-      if (cache_[idx].GetSelf() != &null_buf) {
+      if (cache_[idx].GetSelf() != nullptr) {
         Convert(env, cache_[idx], valueAsBuffer_, element);
       } else {
         napi_get_undefined(env, &element);
