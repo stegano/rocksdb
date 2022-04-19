@@ -77,7 +77,7 @@
                 'ROCKSDB_PLATFORM_POSIX=1'
             ]
           , 'ccflags': []
-          , 'cflags': [ '-std=c++20' ]
+          , 'cflags': [ '-std=c++17' ]
           , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
         }]
@@ -145,7 +145,7 @@
                 ]
                 , 'OTHER_CPLUSPLUSFLAGS': [
                     '-mmacosx-version-min=10.14'
-                  , '-std=c++20'
+                  , '-std=c++17'
                   , '-stdlib=libc++'
                   , '-fno-omit-frame-pointer'
                   , '-momit-leaf-frame-pointer'

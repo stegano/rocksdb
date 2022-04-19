@@ -223,17 +223,6 @@ static napi_status CallFunction (napi_env env,
 }
 
 template <typename T>
-void Convert (napi_env env, const std::optional<T>& s, bool asBuffer, napi_value& result) {
-  if (!s) {
-    napi_get_undefined(env, &result);
-  } else if (asBuffer) {
-    napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
-  } else {
-    napi_create_string_utf8(env, s->data(), s->size(), &result);
-  }
-}
-
-template <typename T>
 void Convert (napi_env env, const T& s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
     napi_create_buffer_copy(env, s.size(), s.data(), nullptr, &result);
@@ -1041,6 +1030,7 @@ NAPI_METHOD(db_get) {
   return 0;
 }
 
+std::string null_buf;
 
 struct GetManyWorker final : public PriorityWorker {
   GetManyWorker (napi_env env,
@@ -1074,9 +1064,9 @@ struct GetManyWorker final : public PriorityWorker {
       const auto status = database_->Get(options, key, value);
 
       if (status.ok()) {
-        cache_.push_back(std::move(value));
+        cache_.emplace_back(std::move(value));
       } else if (status.IsNotFound()) {
-        cache_.push_back({});
+        cache_.emplace_back(&null_buf);
       } else {
         SetStatus(status);
         break;
@@ -1097,7 +1087,11 @@ struct GetManyWorker final : public PriorityWorker {
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
-      Convert(env, cache_[idx], valueAsBuffer_, element);
+      if (cache_[idx].GetSelf() != &null_buf) {
+        Convert(env, cache_[idx], valueAsBuffer_, element);
+      } else {
+        napi_get_undefined(env, &element);
+      }
       napi_set_element(env, array, static_cast<uint32_t>(idx), element);
     }
 
@@ -1110,7 +1104,7 @@ struct GetManyWorker final : public PriorityWorker {
 private:
   const std::vector<std::string> keys_;
   const bool valueAsBuffer_;
-  std::vector<std::optional<rocksdb::PinnableSlice>> cache_;
+  std::vector<rocksdb::PinnableSlice> cache_;
   const bool fillCache_;
   const leveldb::Snapshot* snapshot_;
 };

@@ -23,7 +23,7 @@
                 }
               }
           }, { # OS != 'win'
-              'cflags': [ '-std=c++20' ]
+              'cflags': [ '-std=c++17' ]
             , 'cflags!': [ '-fno-rtti' ]
             , 'cflags_cc!': [ '-fno-rtti' ]
             , 'cflags_cc+': [ '-frtti' ]
@@ -40,7 +40,7 @@
                 ]
                 , 'OTHER_CPLUSPLUSFLAGS': [
                     '-mmacosx-version-min=10.14'
-                  , '-std=c++20'
+                  , '-std=c++17'
                   , '-stdlib=libc++'
                   , '-arch x86_64'
                   , '-arch arm64'
