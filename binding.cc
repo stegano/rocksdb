@@ -324,7 +324,9 @@ struct BaseWorker {
     } else if (status_.IsIOError()) {
       if (msg.find("IO error: lock ") != std::string::npos) { // env_posix.cc
         argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
-      } else if (msg.find("IO error: While lock file") != std::string::npos) { // env_win.cc
+      } else if (msg.find("IO error: LockFile ") != std::string::npos) { // env_win.cc
+        argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
+      } else if (msg.find("IO error: While lock file") != std::string::npos) { // env_mac.cc
         argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
       } else {
         argv = CreateCodeError(env, "LEVEL_IO_ERROR", msg);
