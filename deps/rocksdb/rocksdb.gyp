@@ -13,7 +13,10 @@
         ]
     }
   , 'defines': [
-        'SNAPPY=1'
+        'SNAPPY=1',
+        'ROCKSDB_BACKTRACE=1',
+        'ROCKSDB_SUPPORT_THREAD_LOCAL=1',
+        'USE_SSE=1'
     ]
   , 'include_dirs': [
         'rocksdb/'
@@ -82,7 +85,7 @@
           , 'cflags_cc!': [ '-fno-rtti' ]
           # , 'cflags_cc+': [ '-frtti' ]
         }]
-      , ['OS != "win"' and 'OS != "freebsd"', {
+      , ['OS != "win"', {
             'cflags': [
                 '-Wno-sign-compare'
               , '-Wno-unused-but-set-variable'
@@ -91,66 +94,42 @@
       , ['OS == "linux"', {
             'defines': [
                 'OS_LINUX=1',
-                'ROCKSDB_LIB_IO_POSIX=1'
+                'ROCKSDB_LIB_IO_POSIX=1',
+                'ROCKSDB_FALLOCATE_PRESENT=1',
+                'ROCKSDB_MALLOC_USABLE_SIZE=1',
+                'ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1',
+                'ROCKSDB_RANGESYNC_PRESENT=1',
+                'ROCKSDB_SCHED_GETCPU_PRESENT=1',
+                # 'ROCKSDB_IOURING_PRESENT=1',
+                'HAVE_SSE42=1',
+                'HAVE_LZCNT=1'
+                'HAVE_AVX2=1',
+                'HAVE_PCLMUL=1'
+                # 'LIBURING=1'
+                # 'NUMA=1'
+                'ROCKSDB_PLATFORM_POSIX=1',
+                'ROCKSDB_LIB_IO_POSIX=1',
+                # "-DTBB",
             ]
           , 'libraries': [
                 '-lpthread'
             ]
           , 'ccflags': [
-                '-pthread'
+                '-pthread',
+                '-msse4.2',
+                '-mpclmul',
+                '-mavx2',
+                '-mlzcnt',
                 '-fexceptions'
             ]
           , 'cflags!': [ '-fno-exceptions' ]
           , 'cflags_cc!': [ '-fno-exceptions' ]
         }]
-      , ['OS == "freebsd"', {
-            'defines': [
-                'OS_FREEBSD=1'
-              , '_REENTRANT=1'
-            ]
-          , 'libraries': [
-                '-lpthread'
-            ]
-          , 'ccflags': [
-                '-pthread'
-            ]
-          , 'cflags': [
-                '-Wno-sign-compare'
-            ]
-        }]
-      , ['OS == "openbsd"', {
-            'defines': [
-                'OS_OPENBSD=1'
-              , '_REENTRANT=1'
-            ]
-          , 'libraries': [
-                '-lpthread'
-            ]
-          , 'ccflags': [
-                '-pthread'
-            ]
-          , 'cflags': [
-                '-Wno-sign-compare'
-            ]
-        }]
-      , ['OS == "solaris"', {
-            'defines': [
-                'OS_SOLARIS=1'
-              , '_REENTRANT=1'
-            ]
-          , 'libraries': [
-                '-lrt'
-              , '-lpthread'
-            ]
-          , 'ccflags': [
-                '-pthread'
-            ]
-        }]
       , ['OS == "mac"', {
             'defines': [
                 'OS_MACOSX=1',
-                'ROCKSDB_LIB_IO_POSIX=1',
-                'ROCKSDB_BACKTRACE=1'
+                'DROCKSDB_PLATFORM_POSIX=1',
+                'ROCKSDB_LIB_IO_POSIX=1'
             ]
           , 'libraries': []
           , 'ccflags': []
