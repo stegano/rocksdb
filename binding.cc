@@ -106,11 +106,11 @@ static bool BooleanProperty (napi_env env, napi_value obj, const std::string_vie
   return defaultValue;
 }
 
-static bool EncodingIsBuffer (napi_env env, napi_value options, const std::string_view& option) {
+static bool EncodingIsBuffer (napi_env env, napi_value obj, const std::string_view& option) {
   napi_value value;
   size_t size;
 
-  if (napi_get_named_property(env, options, option.data(), &value) == napi_ok &&
+  if (napi_get_named_property(env, obj, option.data(), &value) == napi_ok &&
     napi_get_value_string_utf8(env, value, NULL, 0, &size) == napi_ok) {
     // Value is either "buffer" or "utf8" so we can tell them apart just by size
     return size == 6;

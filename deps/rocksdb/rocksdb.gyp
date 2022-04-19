@@ -83,7 +83,6 @@
           , 'cflags': [ '-std=c++2a' ]
           , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
-          # , 'cflags_cc+': [ '-frtti' ]
         }]
       , ['OS != "win"', {
             'cflags': [
@@ -101,10 +100,13 @@
                 'ROCKSDB_RANGESYNC_PRESENT=1',
                 'ROCKSDB_SCHED_GETCPU_PRESENT=1',
                 # 'ROCKSDB_IOURING_PRESENT=1',
-                'HAVE_SSE42=1',
+                # 'HAVE_SSE42=1',
+                'HAVE_BMI=1',
                 'HAVE_LZCNT=1'
                 'HAVE_AVX2=1',
-                'HAVE_PCLMUL=1'
+                'HAVE_PCLMUL=1',
+                'HAVE_UINT128_EXTENSION=1',
+                'HAVE_ALIGNED_NEW=1',
                 # 'LIBURING=1'
                 # 'NUMA=1'
                 'ROCKSDB_PLATFORM_POSIX=1',
@@ -112,18 +114,29 @@
                 # "-DTBB",
             ]
           , 'libraries': [
-                '-lpthread'
+                '-lpthread',
             ]
           , 'ccflags': [
-                '-pthread',
-                '-msse4.2',
-                '-mpclmul',
-                '-mavx2',
-                '-mlzcnt',
-                '-fexceptions'
+                '-flto'
+              , '-pthread'
+              , '-msse4.2'
+              , '-mpclmul'
+              , '-mavx2'
+              , '-mbmi'
+              , '-mlzcnt'
+              , '-fexceptions'
+              , '-faligned-new'
             ]
           , 'cflags!': [ '-fno-exceptions' ]
           , 'cflags_cc!': [ '-fno-exceptions' ]
+          , 'ldflags': [ 
+                '-flto'
+              , '-fuse-linker-plugin'
+              , '-latomic'
+              , '-lpthread'
+              , '-lrt'
+              , '-ldl'
+            ]
         }]
       , ['OS == "mac"', {
             'defines': [
