@@ -17,7 +17,6 @@
 namespace leveldb = rocksdb;
 
 #include <set>
-#include <optional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -142,7 +141,7 @@ static int Int32Property (napi_env env, napi_value obj, const std::string& key,
   return defaultValue;
 }
 
-static std::optional<std::string> ToString (napi_env env, napi_value from) {
+static std::string ToString (napi_env env, napi_value from, const std::string& defaultValue = "") {
   if (IsString(env, from)) {
     size_t length = 0;
     napi_get_value_string_utf8(env, from, nullptr, 0, &length);
@@ -156,14 +155,14 @@ static std::optional<std::string> ToString (napi_env env, napi_value from) {
     return std::string(buf, length);
   }
 
-  return {};
+  return defaultValue;
 }
 
 static std::string StringProperty (napi_env env, napi_value obj, const std::string& key) {
   if (HasProperty(env, obj, key)) {
     napi_value value = GetProperty(env, obj, key);
     if (IsString(env, value)) {
-      return ToString(env, value).value_or(std::string());
+      return ToString(env, value);
     }
   }
 
@@ -183,13 +182,13 @@ static size_t StringOrBufferLength (napi_env env, napi_value value) {
   return size;
 }
 
-static std::optional<std::string> RangeOption (napi_env env, napi_value opts, const std::string& name) {
+static std::string* RangeOption (napi_env env, napi_value opts, const std::string& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
-    return ToString(env, value);
+    return new std::string(ToString(env, value));
   }
 
-  return {};
+  return nullptr;
 }
 
 static std::vector<std::string> KeyArray (napi_env env, napi_value arr) {
@@ -204,7 +203,7 @@ static std::vector<std::string> KeyArray (napi_env env, napi_value arr) {
 
       if (napi_get_element(env, arr, i, &element) == napi_ok &&
           StringOrBufferLength(env, element) > 0) {
-        result.push_back(ToString(env, element).value_or(std::string()));
+        result.push_back(ToString(env, element));
       }
     }
   }
@@ -479,10 +478,10 @@ struct PriorityWorker : public BaseWorker {
 struct BaseIterator {
   BaseIterator(Database* database,
                const bool reverse,
-               const std::optional<std::string>& lt,
-               const std::optional<std::string>& lte,
-               const std::optional<std::string>& gt,
-               const std::optional<std::string>& gte,
+               const std::string* lt,
+               const std::string* lte,
+               const std::string* gt,
+               const std::string* gte,
                const int limit,
                const bool fillCache)
     : database_(database),
@@ -506,6 +505,11 @@ struct BaseIterator {
 
   virtual ~BaseIterator () {
     assert(!dbIterator_);
+
+    delete lt_;
+    delete lte_;
+    delete gt_;
+    delete gte_;
   }
 
   bool DidSeek () const {
@@ -648,10 +652,10 @@ private:
   leveldb::Iterator* dbIterator_;
   bool didSeek_;
   const bool reverse_;
-  const std::optional<std::string> lt_;
-  const std::optional<std::string> lte_;
-  const std::optional<std::string> gt_;
-  const std::optional<std::string> gte_;
+  const std::string* lt_;
+  const std::string* lte_;
+  const std::string* gt_;
+  const std::string* gte_;
   const int limit_;
   int count_;
 };
@@ -662,10 +666,10 @@ struct Iterator final : public BaseIterator {
             const bool keys,
             const bool values,
             const int limit,
-            const std::optional<std::string>& lt,
-            const std::optional<std::string>& lte,
-            const std::optional<std::string>& gt,
-            const std::optional<std::string>& gte,
+            const std::string* lt,
+            const std::string* lte,
+            const std::string* gt,
+            const std::string* gte,
             const bool fillCache,
             const bool keyAsBuffer,
             const bool valueAsBuffer,
@@ -876,7 +880,7 @@ NAPI_METHOD(db_open) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto location = ToString(env, argv[1]).value_or(std::string());
+  const auto location = ToString(env, argv[1]);
   const auto options = argv[2];
   const auto createIfMissing = BooleanProperty(env, options, "createIfMissing", true);
   const auto errorIfExists = BooleanProperty(env, options, "errorIfExists", false);
@@ -971,8 +975,8 @@ NAPI_METHOD(db_put) {
   NAPI_ARGV(5);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]).value_or(std::string());
-  const auto value = ToString(env, argv[2]).value_or(std::string());
+  const auto key = ToString(env, argv[1]);
+  const auto value = ToString(env, argv[2]);
   const auto sync = BooleanProperty(env, argv[3], "sync", false);
   const auto callback = argv[4];
 
@@ -1017,7 +1021,7 @@ NAPI_METHOD(db_get) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]).value_or(std::string());
+  const auto key = ToString(env, argv[1]);
   const auto options = argv[2];
   const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto fillCache = BooleanProperty(env, options, "fillCache", true);
@@ -1146,7 +1150,7 @@ NAPI_METHOD(db_del) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]).value_or(std::string());
+  const auto key = ToString(env, argv[1]);
   const auto sync = BooleanProperty(env, argv[2], "sync", false);
   const auto callback = argv[3];
 
@@ -1162,10 +1166,10 @@ struct ClearWorker final : public PriorityWorker {
                napi_value callback,
                const bool reverse,
                const int limit,
-               const std::optional<std::string>& lt,
-               const std::optional<std::string>& lte,
-               const std::optional<std::string>& gt,
-               const std::optional<std::string>& gte)
+               const std::string* lt,
+               const std::string* lte,
+               const std::string* gt,
+               const std::string* gte)
     : PriorityWorker(env, database, callback, "rocks_level.db.clear"),
       iterator_(database, reverse, lt, lte, gt, gte, limit, false) {
   }
@@ -1259,8 +1263,8 @@ NAPI_METHOD(db_approximate_size) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto start = ToString(env, argv[1]).value_or(std::string());
-  const auto end = ToString(env, argv[2]).value_or(std::string());
+  const auto start = ToString(env, argv[1]);
+  const auto end = ToString(env, argv[2]);
   const auto callback = argv[3];
 
   auto worker  = new ApproximateSizeWorker(env, database, callback, start, end);
@@ -1292,8 +1296,8 @@ NAPI_METHOD(db_compact_range) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto start = ToString(env, argv[1]).value_or(std::string());
-  const auto end = ToString(env, argv[2]).value_or(std::string());
+  const auto start = ToString(env, argv[1]);
+  const auto end = ToString(env, argv[2]);
   const auto callback = argv[3];
 
   auto worker  = new CompactRangeWorker(env, database, callback, start, end);
@@ -1306,7 +1310,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
 
-  const auto property = ToString(env, argv[1]).value_or(std::string());
+  const auto property = ToString(env, argv[1]);
 
   std::string value;
   database->GetProperty(property, value);
@@ -1337,7 +1341,7 @@ struct DestroyWorker final : public BaseWorker {
 NAPI_METHOD(destroy_db) {
   NAPI_ARGV(2);
 
-  const auto location = ToString(env, argv[0]).value_or(std::string());
+  const auto location = ToString(env, argv[0]);
   const auto callback = argv[1];
 
   auto worker = new DestroyWorker(env, location, callback);
@@ -1364,7 +1368,7 @@ struct RepairWorker final : public BaseWorker {
 NAPI_METHOD(repair_db) {
   NAPI_ARGV(2);
 
-  const auto location = ToString(env, argv[1]).value_or(std::string());
+  const auto location = ToString(env, argv[1]);
   const auto callback = argv[1];
 
   auto worker = new RepairWorker(env, location, callback);
@@ -1422,7 +1426,7 @@ NAPI_METHOD(iterator_seek) {
     napi_throw_error(env, nullptr, "iterator has closed");
   }
 
-  const auto target = ToString(env, argv[1]).value_or(std::string());
+  const auto target = ToString(env, argv[1]);
   iterator->first_ = true;
   iterator->Seek(target);
 
@@ -1619,7 +1623,7 @@ NAPI_METHOD(batch_do) {
 
     if (type == "del") {
       if (!HasProperty(env, element, "key")) continue;
-      const auto key = ToString(env, GetProperty(env, element, "key")).value_or(std::string());
+      const auto key = ToString(env, GetProperty(env, element, "key"));
 
       batch->Delete(key);
       if (!hasData) hasData = true;
@@ -1627,8 +1631,8 @@ NAPI_METHOD(batch_do) {
       if (!HasProperty(env, element, "key")) continue;
       if (!HasProperty(env, element, "value")) continue;
 
-      const auto key = ToString(env, GetProperty(env, element, "key")).value_or(std::string());
-      const auto value = ToString(env, GetProperty(env, element, "value")).value_or(std::string());
+      const auto key = ToString(env, GetProperty(env, element, "key"));
+      const auto value = ToString(env, GetProperty(env, element, "value"));
 
       batch->Put(key, value);
       if (!hasData) hasData = true;
@@ -1664,8 +1668,8 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(3);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = ToString(env, argv[1]).value_or(std::string());
-  const auto value = ToString(env, argv[2]).value_or(std::string());
+  const auto key = ToString(env, argv[1]);
+  const auto value = ToString(env, argv[2]);
 
   batch->Put(key, value);
 
@@ -1676,7 +1680,7 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(2);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = ToString(env, argv[1]).value_or(std::string());
+  const auto key = ToString(env, argv[1]);
 
   batch->Delete(key);
 
