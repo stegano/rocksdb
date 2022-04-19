@@ -4,7 +4,7 @@ const each = require('async-each')
 const du = require('du')
 const delayed = require('delayed')
 const testCommon = require('./common')
-const { ClassicLevel } = require('..')
+const { RocksLevel } = require('..')
 const test = require('tape')
 
 const compressableData = Buffer.from(Array.apply(null, Array(1024 * 100)).map(function () {
@@ -31,7 +31,7 @@ const cycle = function (db, compression, t, callback) {
   const location = db.location
   db.close(function (err) {
     t.error(err)
-    db = new ClassicLevel(location)
+    db = new RocksLevel(location)
     db.open({ errorIfExists: false, compression }, function () {
       t.error(err)
       db.close(function (err) {

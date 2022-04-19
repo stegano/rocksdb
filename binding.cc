@@ -111,7 +111,7 @@ static bool EncodingIsBuffer (napi_env env, napi_value obj, const std::string_vi
   size_t size;
 
   if (napi_get_named_property(env, obj, option.data(), &value) == napi_ok &&
-    napi_get_value_string_utf8(env, value, NULL, 0, &size) == napi_ok) {
+    napi_get_value_string_utf8(env, value, nullptr, 0, &size) == napi_ok) {
     // Value is either "buffer" or "utf8" so we can tell them apart just by size
     return size == 6;
   }
@@ -405,6 +405,18 @@ struct Database {
   leveldb::Status WriteBatch (const leveldb::WriteOptions& options,
                               leveldb::WriteBatch* batch) {
     return db_->Write(options, batch);
+  }
+
+  uint64_t ApproximateSize (const leveldb::Range* range) {
+    uint64_t size = 0;
+    db_->GetApproximateSizes(range, 1, &size);
+    return size;
+  }
+
+  void CompactRange (const leveldb::Slice* start,
+                     const leveldb::Slice* end) {
+    rocksdb::CompactRangeOptions options;
+    db_->CompactRange(options, start, end);
   }
 
   void GetProperty (const std::string& property, std::string& value) {
@@ -952,7 +964,7 @@ struct PutWorker final : public PriorityWorker {
              const std::string& key,
              const std::string& value,
              bool sync)
-    : PriorityWorker(env, database, callback, "classic_level.db.put"),
+    : PriorityWorker(env, database, callback, "rocks_level.db.put"),
       key_(key), value_(value), sync_(sync) {
   }
 
@@ -989,7 +1001,7 @@ struct GetWorker final : public PriorityWorker {
              const std::string& key,
              const bool asBuffer,
              const bool fillCache)
-    : PriorityWorker(env, database, callback, "classic_level.db.get"),
+    : PriorityWorker(env, database, callback, "rocks_level.db.get"),
       key_(key), asBuffer_(asBuffer), fillCache_(fillCache) {
   }
 
@@ -1125,7 +1137,7 @@ struct DelWorker final : public PriorityWorker {
              napi_value callback,
              const std::string& key,
              bool sync)
-    : PriorityWorker(env, database, callback, "classic_level.db.del"),
+    : PriorityWorker(env, database, callback, "rocks_level.db.del"),
       key_(key), sync_(sync) {
   }
 
@@ -1163,7 +1175,7 @@ struct ClearWorker final : public PriorityWorker {
                const std::optional<std::string>& lte,
                const std::optional<std::string>& gt,
                const std::optional<std::string>& gte)
-    : PriorityWorker(env, database, callback, "classic_level.db.clear"),
+    : PriorityWorker(env, database, callback, "rocks_level.db.clear"),
       iterator_(database, reverse, lt, lte, gt, gte, limit, false) {
   }
 
@@ -1221,6 +1233,150 @@ NAPI_METHOD(db_clear) {
   const auto gte = RangeOption(env, options, "gte");
 
   auto worker = new ClearWorker(env, database, callback, reverse, limit, lt, lte, gt, gte);
+  worker->Queue(env);
+
+  return 0;
+}
+
+struct ApproximateSizeWorker final : public PriorityWorker {
+  ApproximateSizeWorker (napi_env env,
+                         Database* database,
+                         napi_value callback,
+                         const std::string& start,
+                         const std::string& end)
+    : PriorityWorker(env, database, callback, "rocks_level.db.approximate_size"),
+      start_(start), end_(end) {}
+
+  void DoExecute () override {
+    leveldb::Range range(start_, end_);
+    size_ = database_->ApproximateSize(&range);
+  }
+
+  void HandleOKCallback (napi_env env, napi_value callback) override {
+    napi_value argv[2];
+    napi_get_null(env, &argv[0]);
+    napi_create_int64(env, size_, &argv[1]);
+    CallFunction(env, callback, 2, argv);
+  }
+
+  std::string start_;
+  std::string end_;
+  uint64_t size_;
+};
+
+NAPI_METHOD(db_approximate_size) {
+  NAPI_ARGV(4);
+  NAPI_DB_CONTEXT();
+
+  const auto start = ToString(env, argv[1]).value_or(std::string());
+  const auto end = ToString(env, argv[2]).value_or(std::string());
+  const auto callback = argv[3];
+
+  auto worker  = new ApproximateSizeWorker(env, database, callback, start, end);
+  worker->Queue(env);
+
+  return 0;
+}
+
+struct CompactRangeWorker final : public PriorityWorker {
+  CompactRangeWorker (napi_env env,
+                      Database* database,
+                      napi_value callback,
+                      const std::string& start,
+                      const std::string& end)
+    : PriorityWorker(env, database, callback, "rocks_level.db.compact_range"),
+      start_(start), end_(end) {}
+
+  void DoExecute () override {
+    leveldb::Slice start = start_;
+    leveldb::Slice end = end_;
+    database_->CompactRange(&start, &end);
+  }
+
+  const std::string start_;
+  const std::string end_;
+};
+
+NAPI_METHOD(db_compact_range) {
+  NAPI_ARGV(4);
+  NAPI_DB_CONTEXT();
+
+  const auto start = ToString(env, argv[1]).value_or(std::string());
+  const auto end = ToString(env, argv[2]).value_or(std::string());
+  const auto callback = argv[3];
+
+  auto worker  = new CompactRangeWorker(env, database, callback, start, end);
+  worker->Queue(env);
+
+  return 0;
+}
+
+NAPI_METHOD(db_get_property) {
+  NAPI_ARGV(2);
+  NAPI_DB_CONTEXT();
+
+  const auto property = ToString(env, argv[1]).value_or(std::string());
+
+  std::string value;
+  database->GetProperty(property, value);
+
+  napi_value result;
+  napi_create_string_utf8(env, value.data(), value.size(), &result);
+
+  return result;
+}
+
+struct DestroyWorker final : public BaseWorker {
+  DestroyWorker (napi_env env,
+                 const std::string& location,
+                 napi_value callback)
+    : BaseWorker(env, nullptr, callback, "rocks_level.destroy_db"),
+      location_(location) {}
+
+  ~DestroyWorker () {}
+
+  void DoExecute () override {
+    leveldb::Options options;
+    SetStatus(leveldb::DestroyDB(location_, options));
+  }
+
+  const std::string location_;
+};
+
+NAPI_METHOD(destroy_db) {
+  NAPI_ARGV(2);
+
+  const auto location = ToString(env, argv[0]).value_or(std::string());
+  const auto callback = argv[1];
+
+  auto worker = new DestroyWorker(env, location, callback);
+  worker->Queue(env);
+
+  return 0;
+}
+
+struct RepairWorker final : public BaseWorker {
+  RepairWorker (napi_env env,
+                const std::string& location,
+                napi_value callback)
+    : BaseWorker(env, nullptr, callback, "rocks_level.repair_db"),
+      location_(location) {}
+
+  void DoExecute () override {
+    leveldb::Options options;
+    SetStatus(leveldb::RepairDB(location_, options));
+  }
+
+  const std::string location_;
+};
+
+NAPI_METHOD(repair_db) {
+  NAPI_ARGV(2);
+
+  const auto location = ToString(env, argv[1]).value_or(std::string());
+  const auto callback = argv[1];
+
+  auto worker = new RepairWorker(env, location, callback);
   worker->Queue(env);
 
   return 0;
@@ -1427,7 +1583,7 @@ struct BatchWorker final : public PriorityWorker {
                leveldb::WriteBatch* batch,
                const bool sync,
                const bool hasData)
-    : PriorityWorker(env, database, callback, "classic_level.batch.do"),
+    : PriorityWorker(env, database, callback, "rocks_level.batch.do"),
       batch_(batch), hasData_(hasData) {
     options_.sync = sync;
   }
@@ -1601,6 +1757,12 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_get_many);
   NAPI_EXPORT_FUNCTION(db_del);
   NAPI_EXPORT_FUNCTION(db_clear);
+  NAPI_EXPORT_FUNCTION(db_approximate_size);
+  NAPI_EXPORT_FUNCTION(db_compact_range);
+  NAPI_EXPORT_FUNCTION(db_get_property);
+
+  NAPI_EXPORT_FUNCTION(destroy_db);
+  NAPI_EXPORT_FUNCTION(repair_db);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);

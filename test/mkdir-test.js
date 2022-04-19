@@ -4,11 +4,11 @@ const test = require('tape')
 const tempy = require('tempy')
 const path = require('path')
 const fs = require('fs')
-const { ClassicLevel } = require('..')
+const { RocksLevel } = require('..')
 
 test('creates location directory recursively', async function (t) {
   const location = path.join(tempy.directory(), 'beep', 'boop')
-  const db = new ClassicLevel(location)
+  const db = new RocksLevel(location)
 
   t.is(fs.existsSync(location), false)
   await db.open()
@@ -19,7 +19,7 @@ test('does not create location directory recursively if createIfMissing is false
   t.plan(3)
 
   const location = path.join(tempy.directory(), 'beep', 'boop')
-  const db = new ClassicLevel(location, { createIfMissing: false })
+  const db = new RocksLevel(location, { createIfMissing: false })
 
   try {
     await db.open()
