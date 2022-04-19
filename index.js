@@ -89,4 +89,4 @@ class ClassicLevel extends AbstractLevel {
   }
 }
 
-exports.ClassicLevel = ClassicLevel
+exports.RocksLevel = RocksLevel
