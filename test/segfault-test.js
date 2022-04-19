@@ -1,3 +1,5 @@
+'use strict'
+
 const test = require('tape')
 const testCommon = require('./common')
 const operations = []
@@ -76,21 +78,4 @@ testPending('operations', operations.length, function (db, next) {
   for (const fn of operations.slice(0, -1)) {
     fn(db, next)
   }
-})
-
-// See https://github.com/Level/leveldown/issues/134
-test('iterator() does not segfault if db is not open', function (t) {
-  t.plan(2)
-
-  const db = testCommon.factory()
-
-  try {
-    db.iterator()
-  } catch (err) {
-    t.is(err.message, 'cannot call iterator() before open()')
-  }
-
-  db.close(function (err) {
-    t.ifError(err, 'no close error')
-  })
 })

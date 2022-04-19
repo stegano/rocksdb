@@ -1,19 +1,31 @@
 'use strict'
 
-const { AbstractIterator } = require('abstract-leveldown')
+const { AbstractIterator } = require('abstract-level')
 const binding = require('./binding')
 
 const kContext = Symbol('context')
-const kFinalized = Symbol('finalized')
+const kCache = Symbol('cache')
+const kFinished = Symbol('finished')
+const kFirst = Symbol('first')
+const kPosition = Symbol('position')
+const kHandleNext = Symbol('handleNext')
+const kHandleNextv = Symbol('handleNextv')
+const kCallback = Symbol('callback')
+const empty = []
 
 class Iterator extends AbstractIterator {
-  constructor (db, options) {
-    super(db)
+  constructor (db, context, options) {
+    super(db, options)
 
-    this[kContext] = binding.iterator_init(db.context, options)
-    this[kFinalized] = false
+    this[kContext] = binding.iterator_init(context, options)
 
-    this.cache = null
+    this[kHandleNext] = this[kHandleNext].bind(this)
+    this[kHandleNextv] = this[kHandleNextv].bind(this)
+    this[kCallback] = null
+    this[kFirst] = true
+    this[kCache] = empty
+    this[kFinished] = false
+    this[kPosition] = 0
   }
 
   _seek (target) {
@@ -21,35 +33,87 @@ class Iterator extends AbstractIterator {
       throw new Error('cannot seek() to an empty target')
     }
 
-    this.cache = null
+    this[kFirst] = true
+    this[kCache] = empty
+    this[kFinished] = false
+    this[kPosition] = 0
+
     binding.iterator_seek(this[kContext], target)
-    this[kFinalized] = false
   }
 
   _next (callback) {
-    if (this.cache && this.cache.length) {
-      process.nextTick(callback, null, this.cache.pop(), this.cache.pop())
-    } else if (this[kFinalized]) {
+    if (this[kPosition] < this[kCache].length) {
+      const key = this[kCache][this[kPosition]++]
+      const val = this[kCache][this[kPosition]++]
+      process.nextTick(callback, null, key, val)
+    } else if (this[kFinished]) {
       process.nextTick(callback)
     } else {
-      binding.iterator_nextv(this[kContext], 1000, (err, array, finished) => {
-        if (err) {
-          callback(err)
-        } else {
-          this.cache = array
-          this[kFinalized] = finished
-          this._next(callback)
-        }
-      })
+      this[kCallback] = callback
+
+      if (this[kFirst]) {
+        // It's common to only want one entry initially or after a seek()
+        this[kFirst] = false
+        binding.iterator_nextv(this[kContext], 1, this[kHandleNext])
+      } else {
+        // Limit the size of the cache to prevent starving the event loop
+        // while we're recursively calling process.nextTick().
+        binding.iterator_nextv(this[kContext], 1000, this[kHandleNext])
+      }
     }
 
     return this
   }
 
-  _end (callback) {
-    this.cache = null
+  [kHandleNext] (err, items, finished) {
+    const callback = this[kCallback]
+    if (err) return callback(err)
+
+    this[kCache] = items
+    this[kFinished] = finished
+    this[kPosition] = 0
+
+    this._next(callback)
+  }
+
+  _nextv (size, options, callback) {
+    if (this[kFinished]) {
+      process.nextTick(callback, null, [])
+    } else {
+      this[kCallback] = callback
+      this[kFirst] = false
+      binding.iterator_nextv(this[kContext], size, this[kHandleNextv])
+    }
+  }
+
+  [kHandleNextv] (err, items, finished) {
+    const callback = this[kCallback]
+    if (err) return callback(err)
+    this[kFinished] = finished
+
+    const entries = []
+    for (let n = 0; n < items.length; n += 2) {
+      entries.push([items[n + 0], items[n + 1]])
+    }
+
+    callback(null, entries)
+  }
+
+  _close (callback) {
+    this[kCache] = empty
+    this[kCallback] = null
+
     binding.iterator_close(this[kContext], callback)
+  }
+
+  _end (callback) {
+    this._close(callback)
+  }
+
+  // Undocumented, exposed for tests only
+  get cached () {
+    return (this[kCache].length - this[kPosition]) / 2
   }
 }
 
-module.exports = Iterator
+exports.Iterator = Iterator

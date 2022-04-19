@@ -1,3 +1,5 @@
+'use strict'
+
 const test = require('tape')
 const testCommon = require('./common')
 const fork = require('child_process').fork
@@ -19,8 +21,6 @@ const sourceData = (function () {
   }
   return d
 }())
-
-test('setUp common', testCommon.setUp)
 
 // TODO: fix this test. It asserted that we didn't segfault if user code had an
 // infinite loop leading to stack exhaustion, which caused a node::FatalException()
@@ -64,7 +64,7 @@ test('setUp db', function (t) {
 
 test('iterate over a large iterator with a large watermark', function (t) {
   const iterator = db.iterator({
-    highWaterMark: 10000000
+    highWaterMarkBytes: 10000000
   })
   const read = function () {
     iterator.next(function (err, key, value) {
@@ -82,5 +82,5 @@ test('iterate over a large iterator with a large watermark', function (t) {
 })
 
 test('tearDown', function (t) {
-  db.close(testCommon.tearDown.bind(null, t))
+  db.close(t.end.bind(t))
 })

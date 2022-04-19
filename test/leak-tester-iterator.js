@@ -1,3 +1,5 @@
+'use strict'
+
 const db = require('./common').factory()
 
 let count = 0
@@ -13,7 +15,7 @@ function run () {
   it.next(function (err) {
     if (err) throw err
 
-    it.end(function (err) {
+    it.close(function (err) {
       if (err) throw err
 
       if (!rssBase) {

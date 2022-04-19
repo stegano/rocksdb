@@ -1,3 +1,5 @@
+'use strict'
+
 const BUFFERS = false
 const CHAINED = false
 
@@ -17,7 +19,7 @@ function print () {
       Math.round(process.memoryUsage().rss / rssBase * 100) + '%',
       Math.round(process.memoryUsage().rss / 1024 / 1024) + 'M',
       JSON.stringify([0, 1, 2, 3, 4, 5, 6].map(function (l) {
-        return db.getProperty('rocksdb.num-files-at-level' + l)
+        return db.getProperty('leveldb.num-files-at-level' + l)
       }))
     )
   }

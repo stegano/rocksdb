@@ -14,8 +14,6 @@ for (let i = 0; i < 1e4; i++) {
   })
 }
 
-test('setUp', testCommon.setUp)
-
 test('iterator does not starve event loop', function (t) {
   t.plan(6)
 
@@ -28,8 +26,8 @@ test('iterator does not starve event loop', function (t) {
     db.batch(sourceData.slice(), function (err) {
       t.ifError(err, 'no batch error')
 
-      // Set a high highWaterMark to fill up the cache entirely
-      const it = db.iterator({ highWaterMark: Math.pow(1024, 3) })
+      // Set a high highWaterMarkBytes to fill up the cache entirely
+      const it = db.iterator({ highWaterMarkBytes: Math.pow(1024, 3) })
 
       let breaths = 0
       let entries = 0
@@ -79,7 +77,7 @@ test('iterator with seeks does not starve event loop', function (t) {
     db.batch(sourceData.slice(), function (err) {
       t.ifError(err, 'no batch error')
 
-      const it = db.iterator({ highWaterMark: Math.pow(1024, 3), limit: sourceData.length })
+      const it = db.iterator({ highWaterMarkBytes: Math.pow(1024, 3), limit: sourceData.length })
 
       let breaths = 0
       let entries = 0
@@ -90,7 +88,7 @@ test('iterator with seeks does not starve event loop', function (t) {
           if (err || (key === undefined && value === undefined)) {
             t.ifError(err, 'no next error')
             t.is(entries, sourceData.length, 'got all data')
-            t.is(breaths, sourceData.length, 'breathed while iterating')
+            t.is(breaths, sourceData.length - 1, 'breathed while iterating')
 
             return db.close(function (err) {
               t.ifError(err, 'no close error')
@@ -120,5 +118,3 @@ test('iterator with seeks does not starve event loop', function (t) {
     })
   })
 })
-
-test('tearDown', testCommon.tearDown)

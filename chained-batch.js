@@ -1,6 +1,6 @@
 'use strict'
 
-const { AbstractChainedBatch } = require('abstract-leveldown')
+const { AbstractChainedBatch } = require('abstract-level')
 const binding = require('./binding')
 
 const kDbContext = Symbol('db')
@@ -8,10 +8,11 @@ const kBatchContext = Symbol('context')
 const kHasData = Symbol('hasData')
 
 class ChainedBatch extends AbstractChainedBatch {
-  constructor (db) {
+  constructor (db, context) {
     super(db)
-    this[kDbContext] = db.context
-    this[kBatchContext] = binding.batch_init(db.context)
+
+    this[kDbContext] = context
+    this[kBatchContext] = binding.batch_init(context)
     this[kHasData] = false
   }
 
@@ -41,4 +42,4 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 }
 
-module.exports = ChainedBatch
+exports.ChainedBatch = ChainedBatch
