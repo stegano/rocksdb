@@ -77,7 +77,7 @@
                 'ROCKSDB_PLATFORM_POSIX=1'
             ]
           , 'ccflags': []
-          , 'cflags': [ '-std=c++2a' ]
+          , 'cflags': [ '-std=c++20' ]
           , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
         }]
