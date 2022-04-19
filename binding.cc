@@ -22,7 +22,6 @@ namespace leveldb = rocksdb;
 #include <string>
 #include <string_view>
 #include <vector>
-#include <iostream>
 
 class NullLogger : public rocksdb::Logger {
 public:
