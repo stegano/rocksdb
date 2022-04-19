@@ -23,7 +23,7 @@
                 }
               }
           }, { # OS != 'win'
-              'cflags': [ '-std=c++2a' ]
+              'cflags': [ '-std=c++20' ]
             , 'cflags!': [ '-fno-rtti' ]
             , 'cflags_cc!': [ '-fno-rtti' ]
             , 'cflags_cc+': [ '-frtti' ]

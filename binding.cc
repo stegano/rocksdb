@@ -751,7 +751,7 @@ private:
  * the guarantee that no db operations will be in-flight at this time.
  */
 static void env_cleanup_hook (void* arg) {
-  Database* database = (Database*)arg;
+  Database* database = reinterpret_cast<Database*>(arg);
 
   // Do everything that db_close() does but synchronously. We're expecting that GC
   // did not (yet) collect the database because that would be a user mistake (not
@@ -761,8 +761,8 @@ static void env_cleanup_hook (void* arg) {
   // be a safe noop if called before db_open() or after db_close().
   if (database && database->db_) {
     // TODO: does not do `napi_delete_reference(env, iterator->ref_)`. Problem?
-    for (auto it = database->iterators_.begin(); it != database->iterators_.end(); ++it) {
-      (*it)->Close();
+    for (auto it : database->iterators_) {
+      it->Close();
     }
 
     // Having closed the iterators (and released snapshots) we can safely close.
@@ -930,8 +930,8 @@ NAPI_METHOD(db_close) {
   napi_value noop;
   napi_create_function(env, nullptr, 0, noop_callback, nullptr, &noop);
 
-  for (auto it = database->iterators_.begin(); it != database->iterators_.end(); ++it) {
-    iterator_do_close(env, *it, noop);
+  for (auto it : database->iterators_) {
+    iterator_do_close(env, it, noop);
   }
   
   auto worker = new CloseWorker(env, database, callback);
@@ -953,17 +953,18 @@ struct PutWorker final : public PriorityWorker {
              const std::string& value,
              bool sync)
     : PriorityWorker(env, database, callback, "classic_level.db.put"),
-      key_(key), value_(value) {
-    options_.sync = sync;
+      key_(key), value_(value), sync_(sync) {
   }
 
   void DoExecute () override {
-    SetStatus(database_->Put(options_, key_, value_));
+    leveldb::WriteOptions options;
+    options.sync = sync_;
+    SetStatus(database_->Put(options, key_, value_));
   }
 
-  leveldb::WriteOptions options_;
   const std::string key_;
   const std::string value_;
+  const bool sync_;
 };
 
 NAPI_METHOD(db_put) {
@@ -989,13 +990,13 @@ struct GetWorker final : public PriorityWorker {
              const bool asBuffer,
              const bool fillCache)
     : PriorityWorker(env, database, callback, "classic_level.db.get"),
-      key_(key),
-      asBuffer_(asBuffer) {
-    options_.fill_cache = fillCache;
+      key_(key), asBuffer_(asBuffer), fillCache_(fillCache) {
   }
 
   void DoExecute () override {
-    SetStatus(database_->Get(options_, key_, value_));
+    leveldb::ReadOptions options;
+    options.fill_cache = fillCache_;
+    SetStatus(database_->Get(options, key_, value_));
   }
 
   void HandleOKCallback (napi_env env, napi_value callback) override {
@@ -1006,10 +1007,10 @@ struct GetWorker final : public PriorityWorker {
   }
 
 private:
-  leveldb::ReadOptions options_;
   const std::string key_;
   rocksdb::PinnableSlice value_;
   const bool asBuffer_;
+  const bool fillCache_;
 };
 
 NAPI_METHOD(db_get) {
@@ -1125,16 +1126,17 @@ struct DelWorker final : public PriorityWorker {
              const std::string& key,
              bool sync)
     : PriorityWorker(env, database, callback, "classic_level.db.del"),
-      key_(key) {
-    options_.sync = sync;
+      key_(key), sync_(sync) {
   }
 
   void DoExecute () override {
-    SetStatus(database_->Del(options_, key_));
+    leveldb::WriteOptions options;
+    options.sync = sync_;
+    SetStatus(database_->Del(options, key_));
   }
 
-  leveldb::WriteOptions options_;
   const std::string key_;
+  const bool sync_;
 };
 
 NAPI_METHOD(db_del) {
@@ -1143,7 +1145,7 @@ NAPI_METHOD(db_del) {
 
   const auto key = ToString(env, argv[1]).value_or(std::string());
   const auto sync = BooleanProperty(env, argv[2], "sync", false);
-  napi_value callback = argv[3];
+  const auto callback = argv[3];
 
   auto worker = new DelWorker(env, database, callback, key, sync);
   worker->Queue(env);
@@ -1161,51 +1163,46 @@ struct ClearWorker final : public PriorityWorker {
                const std::optional<std::string>& lte,
                const std::optional<std::string>& gt,
                const std::optional<std::string>& gte)
-    : PriorityWorker(env, database, callback, "classic_level.db.clear") {
-    iterator_ = new BaseIterator(database, reverse, lt, lte, gt, gte, limit, false);
-    writeOptions_ = new leveldb::WriteOptions();
-    writeOptions_->sync = false;
-  }
-
-  ~ClearWorker () {
-    delete iterator_;
-    delete writeOptions_;
+    : PriorityWorker(env, database, callback, "classic_level.db.clear"),
+      iterator_(database, reverse, lt, lte, gt, gte, limit, false) {
   }
 
   void DoExecute () override {
-    iterator_->SeekToRange();
+    iterator_.SeekToRange();
 
     // TODO: add option
-    uint32_t hwm = 16 * 1024;
+    const uint32_t hwm = 16 * 1024;
     leveldb::WriteBatch batch;
+
+    leveldb::WriteOptions options;
+    options.sync = false;
 
     while (true) {
       size_t bytesRead = 0;
 
-      while (bytesRead <= hwm && iterator_->Valid() && iterator_->Increment()) {
-        leveldb::Slice key = iterator_->CurrentKey();
+      while (bytesRead <= hwm && iterator_.Valid() && iterator_.Increment()) {
+        const auto key = iterator_.CurrentKey();
         batch.Delete(key);
         bytesRead += key.size();
-        iterator_->Next();
+        iterator_.Next();
       }
 
-      if (!SetStatus(iterator_->Status()) || bytesRead == 0) {
+      if (!SetStatus(iterator_.Status()) || bytesRead == 0) {
         break;
       }
 
-      if (!SetStatus(database_->WriteBatch(*writeOptions_, &batch))) {
+      if (!SetStatus(database_->WriteBatch(options, &batch))) {
         break;
       }
 
       batch.Clear();
     }
 
-    iterator_->Close();
+    iterator_.Close();
   }
 
 private:
-  BaseIterator* iterator_;
-  leveldb::WriteOptions* writeOptions_;
+  BaseIterator iterator_;
 };
 
 NAPI_METHOD(db_clear) {
