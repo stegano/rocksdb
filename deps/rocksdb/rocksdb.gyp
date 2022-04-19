@@ -162,7 +162,7 @@
                 ]
                 , 'OTHER_CPLUSPLUSFLAGS': [
                     '-mmacosx-version-min=10.8'
-                  , '-std=c++11'
+                  , '-std=c++20'
                   , '-stdlib=libc++'
                   , '-fno-omit-frame-pointer'
                   , '-momit-leaf-frame-pointer'
