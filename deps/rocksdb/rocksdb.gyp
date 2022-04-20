@@ -16,7 +16,9 @@
         'SNAPPY=1',
         'ROCKSDB_BACKTRACE=1',
         'ROCKSDB_SUPPORT_THREAD_LOCAL=1',
-        'USE_SSE=1'
+        'USE_SSE=1',
+        'NIOSTARTS_CONTEXT=1'
+        'NPERF_CONTEXT=1'
     ]
   , 'include_dirs': [
         'rocksdb/'
@@ -75,46 +77,45 @@
             ]
           , 'defines': [
                 'ROCKSDB_PLATFORM_POSIX=1'
+              , 'ROCKSDB_LIB_IO_POSIX=1'
             ]
-          , 'ccflags': []
-          , 'cflags': [ '-std=c++17' ]
+          , 'ccflags': [
+                '-pthread'
+              , '-fno-omit-frame-pointer'
+              , '-momit-leaf-frame-pointer'
+            ]
+          ,  'cflags': [
+                '-std=c++17'
+            ]
           , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
         }]
-      , ['OS != "win"', {
-            'cflags': [
-                '-Wno-sign-compare'
-              , '-Wno-unused-but-set-variable'
-            ]
-        }]
       , ['OS == "linux"', {
             'defines': [
-                'OS_LINUX=1',
-                'ROCKSDB_LIB_IO_POSIX=1',
-                'ROCKSDB_FALLOCATE_PRESENT=1',
-                'ROCKSDB_MALLOC_USABLE_SIZE=1',
-                'ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1',
-                'ROCKSDB_RANGESYNC_PRESENT=1',
-                'ROCKSDB_SCHED_GETCPU_PRESENT=1',
-                # 'ROCKSDB_IOURING_PRESENT=1',
-                # 'HAVE_SSE42=1',
-                'HAVE_BMI=1',
-                'HAVE_LZCNT=1'
-                'HAVE_AVX2=1',
-                'HAVE_PCLMUL=1',
-                'HAVE_UINT128_EXTENSION=1',
-                'HAVE_ALIGNED_NEW=1',
-                # 'LIBURING=1'
-                # 'NUMA=1'
-                'ROCKSDB_PLATFORM_POSIX=1',
-                'ROCKSDB_LIB_IO_POSIX=1',
-                # "-TBB=1",
+                'OS_LINUX=1'
+              , 'ROCKSDB_FALLOCATE_PRESENT=1'
+              , 'ROCKSDB_MALLOC_USABLE_SIZE=1'
+              , 'ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1'
+              , 'ROCKSDB_RANGESYNC_PRESENT=1'
+              , 'ROCKSDB_SCHED_GETCPU_PRESENT=1'
+                # , 'ROCKSDB_IOURING_PRESENT=1',
+                # , 'HAVE_SSE42=1',
+              , 'HAVE_BMI=1'
+              , 'HAVE_LZCNT=1'
+              , 'HAVE_AVX2=1'
+              , 'HAVE_PCLMUL=1'
+              , 'HAVE_UINT128_EXTENSION=1'
+              , 'HAVE_ALIGNED_NEW=1'
+              , 'HAVE_FULLFSYNC=1'
+                # , 'LIBURING=1'
+                # , 'NUMA=1'
+                # , "TBB=1",
             ]
           , 'ccflags': [
                 '-flto'
-              , '-pthread'
               , '-msse4.2'
               , '-mpclmul'
+              , '-mavx'
               , '-mavx2'
               , '-mbmi'
               , '-mlzcnt'
@@ -131,19 +132,12 @@
         }]
       , ['OS == "mac"', {
             'defines': [
-                'OS_MACOSX=1',
-                'DROCKSDB_PLATFORM_POSIX=1',
-                'ROCKSDB_LIB_IO_POSIX=1'
+                'OS_MACOSX=1'
             ]
           , 'libraries': []
           , 'ccflags': []
           , 'xcode_settings': {
-                'WARNING_CFLAGS': [
-                    '-Wno-sign-compare'
-                  , '-Wno-unused-variable'
-                  , '-Wno-unused-function'
-                ]
-                , 'OTHER_CPLUSPLUSFLAGS': [
+                 'OTHER_CPLUSPLUSFLAGS': [
                     '-mmacosx-version-min=10.14'
                   , '-std=c++17'
                   , '-stdlib=libc++'
