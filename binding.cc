@@ -375,18 +375,18 @@ struct Database {
   leveldb::Status Put (const leveldb::WriteOptions& options,
                        const std::string& key,
                        const std::string& value) {
-    return db_->Put(options, key, value);
+    return db_->Put(options, db_->DefaultColumnFamily(), key, value);
   }
 
   leveldb::Status Get (const leveldb::ReadOptions& options,
                        const std::string& key,
                        rocksdb::PinnableSlice& value) {
-    return db_->Get(options, key, &value);
+    return db_->Get(options, db_->DefaultColumnFamily(), key, &value);
   }
 
   leveldb::Status Del (const leveldb::WriteOptions& options,
                        const std::string& key) {
-    return db_->Delete(options, key);
+    return db_->Delete(options, db_->DefaultColumnFamily(), key);
   }
 
   leveldb::Status WriteBatch (const leveldb::WriteOptions& options,
