@@ -80,8 +80,7 @@
               , 'ROCKSDB_LIB_IO_POSIX=1'
             ]
           , 'ccflags': [
-                '-pthread'
-              , '-fno-omit-frame-pointer'
+                '-fno-omit-frame-pointer'
               , '-momit-leaf-frame-pointer'
             ]
           ,  'cflags': [
@@ -98,18 +97,18 @@
               , 'ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1'
               , 'ROCKSDB_RANGESYNC_PRESENT=1'
               , 'ROCKSDB_SCHED_GETCPU_PRESENT=1'
-                # , 'ROCKSDB_IOURING_PRESENT=1',
-                # , 'HAVE_SSE42=1',
+              # , 'ROCKSDB_IOURING_PRESENT=1',
+              # , 'HAVE_SSE42=1',
               , 'HAVE_BMI=1'
               , 'HAVE_LZCNT=1'
-              , 'HAVE_AVX2=1'
+              # , 'HAVE_AVX2=1'
               , 'HAVE_PCLMUL=1'
               , 'HAVE_UINT128_EXTENSION=1'
               , 'HAVE_ALIGNED_NEW=1'
               , 'HAVE_FULLFSYNC=1'
-                # , 'LIBURING=1'
-                # , 'NUMA=1'
-                # , "TBB=1",
+              # , 'LIBURING=1'
+              # , 'NUMA=1'
+              # , "TBB=1",
             ]
           , 'ccflags': [
                 '-flto'
