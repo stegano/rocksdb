@@ -861,6 +861,8 @@ struct OpenWorker final : public BaseWorker {
     tableOptions.block_size = blockSize;
     tableOptions.block_restart_interval = blockRestartInterval;
     tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+    tableOptions.format_version = 5;
+    tableOptions.checksum = rocksdb::kxxHash64;
 
     options_.table_factory.reset(
       rocksdb::NewBlockBasedTableFactory(tableOptions)
