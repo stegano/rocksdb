@@ -158,7 +158,7 @@ static std::string ToString (napi_env env, napi_value from, const std::string& d
   return defaultValue;
 }
 
-static std::string StringProperty (napi_env env, napi_value obj, const std::string& key) {
+static std::string StringProperty (napi_env env, napi_value obj, const std::string& key, const std::string& defaultValue = "") {
   if (HasProperty(env, obj, key)) {
     napi_value value = GetProperty(env, obj, key);
     if (IsString(env, value)) {
@@ -166,7 +166,7 @@ static std::string StringProperty (napi_env env, napi_value obj, const std::stri
     }
   }
 
-  return "";
+  return defaultValue;
 }
 
 static size_t StringOrBufferLength (napi_env env, napi_value value) {
