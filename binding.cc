@@ -233,10 +233,10 @@ void Convert (napi_env env, const T& s, bool asBuffer, napi_value& result) {
  * Base worker class. Handles the async work. Derived classes can override the
  * following virtual methods (listed in the order in which they're called):
  *
- * - DoExecute (abstract, worker pool thread): main work
+ * - Execute (abstract, worker pool thread): main work
  * - HandleOKCallback (main thread): call JS callback on success
  * - HandleErrorCallback (main thread): call JS callback on error
- * - DoFinally (main thread): do cleanup regardless of success
+ * - Finally (main thread): do cleanup regardless of success
  */
 struct BaseWorker {
   // Note: storing env is discouraged as we'd end up using it in unsafe places.
@@ -261,36 +261,25 @@ struct BaseWorker {
 
   static void Execute (napi_env env, void* data) {
     auto self = reinterpret_cast<BaseWorker*>(data);
-
-    // Don't pass env to DoExecute() because use of Node-API
-    // methods should generally be avoided in async work.
-    self->DoExecute();
+    self->status_ = self->Execute();
   }
-
-  bool SetStatus (const rocksdb::Status& status) {
-    status_ = status;
-    return status.ok();
-  }
-
-  virtual void DoExecute () = 0;
 
   static void Complete (napi_env env, napi_status status, void* data) {
     auto self = reinterpret_cast<BaseWorker*>(data);
 
-    self->DoComplete(env);
-    self->DoFinally(env);
-  }
-
-  void DoComplete (napi_env env) {
     napi_value callback;
-    napi_get_reference_value(env, callbackRef_, &callback);
+    napi_get_reference_value(env, self->callbackRef_, &callback);
 
-    if (status_.ok()) {
-      HandleOKCallback(env, callback);
+    if (self->status_.ok()) {
+      self->HandleOKCallback(env, callback);
     } else {
-      HandleErrorCallback(env, callback);
+      self->HandleErrorCallback(env, callback);
     }
+
+    self->Finally(env);
   }
+
+  virtual rocksdb::Status Execute () = 0;
 
   virtual void HandleOKCallback (napi_env env, napi_value callback) {
     napi_value argv;
@@ -324,7 +313,7 @@ struct BaseWorker {
     CallFunction(env, callback, 1, &argv);
   }
 
-  virtual void DoFinally (napi_env env) {
+  virtual void Finally (napi_env env) {
     napi_delete_reference(env, callbackRef_);
     napi_delete_async_work(env, asyncWork_);
 
@@ -469,9 +458,9 @@ struct PriorityWorker : public BaseWorker {
 
   virtual ~PriorityWorker () {}
 
-  void DoFinally (napi_env env) override {
+  void Finally (napi_env env) override {
     database_->DecrementPriorityWork(env);
-    BaseWorker::DoFinally(env);
+    BaseWorker::Finally(env);
   }
 };
 
@@ -859,8 +848,8 @@ struct OpenWorker final : public PriorityWorker {
     );
   }
 
-  void DoExecute () override {
-    SetStatus(database_->Open(options_, readOnly_, location_.c_str()));
+  rocksdb::Status Execute () override {
+    return database_->Open(options_, readOnly_, location_.c_str());
   }
 
   rocksdb::Options options_;
@@ -908,8 +897,9 @@ struct CloseWorker final : public BaseWorker {
                napi_value callback)
     : BaseWorker(env, database, callback, "leveldown.db.close") {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     database_->CloseDatabase();
+    return rocksdb::Status::OK();
   }
 };
 
@@ -945,10 +935,10 @@ struct PutWorker final : public PriorityWorker {
       key_(key), value_(value), sync_(sync) {
   }
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    SetStatus(database_->Put(options, key_, value_));
+    return database_->Put(options, key_, value_);
   }
 
   const std::string key_;
@@ -982,10 +972,10 @@ struct GetWorker final : public PriorityWorker {
       key_(key), asBuffer_(asBuffer), fillCache_(fillCache) {
   }
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
-    SetStatus(database_->Get(options, key_, value_));
+    return database_->Get(options, key_, value_);
   }
 
   void HandleOKCallback (napi_env env, napi_value callback) override {
@@ -1037,7 +1027,7 @@ struct GetManyWorker final : public PriorityWorker {
     }
   }
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     cache_.reserve(keys_.size());
 
     rocksdb::ReadOptions options;
@@ -1045,16 +1035,17 @@ struct GetManyWorker final : public PriorityWorker {
     options.fill_cache = fillCache_;
     
     rocksdb::PinnableSlice value;
+    rocksdb::Status status;
 
     for (const auto& key: keys_) {
-      const auto status = database_->Get(options, key, value);
+      status = database_->Get(options, key, value);
 
       if (status.ok()) {
         cache_.emplace_back(std::move(value));
       } else if (status.IsNotFound()) {
         cache_.emplace_back(nullptr);
+        status = rocksdb::Status::OK();
       } else {
-        SetStatus(status);
         break;
       }
 
@@ -1063,6 +1054,8 @@ struct GetManyWorker final : public PriorityWorker {
 
     database_->ReleaseSnapshot(snapshot_);
     snapshot_ = nullptr;
+
+    return status;
   }
 
   void HandleOKCallback (napi_env env, napi_value callback) override {
@@ -1121,10 +1114,10 @@ struct DelWorker final : public PriorityWorker {
       key_(key), sync_(sync) {
   }
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    SetStatus(database_->Del(options, key_));
+    return database_->Del(options, key_);
   }
 
   const std::string key_;
@@ -1159,7 +1152,7 @@ struct ClearWorker final : public PriorityWorker {
       iterator_(database, reverse, lt, lte, gt, gte, limit, false) {
   }
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     iterator_.SeekToRange();
 
     // TODO: add option
@@ -1167,7 +1160,8 @@ struct ClearWorker final : public PriorityWorker {
 
     rocksdb::WriteBatch batch;
     rocksdb::WriteOptions options;
-
+    rocksdb::Status status;
+    
     while (true) {
       size_t bytesRead = 0;
 
@@ -1178,11 +1172,13 @@ struct ClearWorker final : public PriorityWorker {
         iterator_.Next();
       }
 
-      if (!SetStatus(iterator_.Status()) || bytesRead == 0) {
+      status = iterator_.Status();
+      if (!status.ok() || bytesRead == 0) {
         break;
       }
 
-      if (!SetStatus(database_->WriteBatch(options, &batch))) {
+      status = database_->WriteBatch(options, &batch);
+      if (!status.ok()) {
         break;
       }
 
@@ -1190,6 +1186,8 @@ struct ClearWorker final : public PriorityWorker {
     }
 
     iterator_.Close();
+
+    return status;
   }
 
 private:
@@ -1226,9 +1224,10 @@ struct ApproximateSizeWorker final : public PriorityWorker {
     : PriorityWorker(env, database, callback, "rocks_level.db.approximate_size"),
       start_(start), end_(end) {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::Range range(start_, end_);
     size_ = database_->ApproximateSize(&range);
+    return rocksdb::Status::OK();
   }
 
   void HandleOKCallback (napi_env env, napi_value callback) override {
@@ -1266,10 +1265,11 @@ struct CompactRangeWorker final : public PriorityWorker {
     : PriorityWorker(env, database, callback, "rocks_level.db.compact_range"),
       start_(start), end_(end) {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::Slice start = start_;
     rocksdb::Slice end = end_;
     database_->CompactRange(&start, &end);
+    return rocksdb::Status::OK();
   }
 
   const std::string start_;
@@ -1314,9 +1314,9 @@ struct DestroyWorker final : public BaseWorker {
 
   ~DestroyWorker () {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::Options options;
-    SetStatus(rocksdb::DestroyDB(location_, options));
+    return rocksdb::DestroyDB(location_, options);
   }
 
   const std::string location_;
@@ -1341,9 +1341,9 @@ struct RepairWorker final : public BaseWorker {
     : BaseWorker(env, nullptr, callback, "rocks_level.repair_db"),
       location_(location) {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::Options options;
-    SetStatus(rocksdb::RepairDB(location_, options));
+    return rocksdb::RepairDB(location_, options);
   }
 
   const std::string location_;
@@ -1420,13 +1420,14 @@ struct CloseIteratorWorker final : public BaseWorker {
     : BaseWorker(env, iterator->database_, callback, "leveldown.iterator.end"),
       iterator_(iterator) {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     iterator_->Close();
+    return rocksdb::Status::OK();
   }
 
-  void DoFinally (napi_env env) override {
+  void Finally (napi_env env) override {
     iterator_->Detach(env);
-    BaseWorker::DoFinally(env);
+    BaseWorker::Finally(env);
   }
 
 private:
@@ -1454,7 +1455,7 @@ struct NextWorker final : public BaseWorker {
                  "leveldown.iterator.next"),
       iterator_(iterator), size_(size), ok_() {}
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     if (!iterator_->DidSeek()) {
       iterator_->SeekToRange();
     }
@@ -1462,10 +1463,7 @@ struct NextWorker final : public BaseWorker {
     // Limit the size of the cache to prevent starving the event loop
     // in JS-land while we're recursively calling process.nextTick().
     ok_ = iterator_->ReadMany(size_);
-
-    if (!ok_) {
-      SetStatus(iterator_->Status());
-    }
+    return ok_ ? rocksdb::Status::OK() : iterator_->Status();
   }
 
   void HandleOKCallback (napi_env env, napi_value callback) override {
@@ -1493,8 +1491,8 @@ struct NextWorker final : public BaseWorker {
     CallFunction(env, callback, 3, argv);
   }
 
-  void DoFinally (napi_env env) override {
-    BaseWorker::DoFinally(env);
+  void Finally (napi_env env) override {
+    BaseWorker::Finally(env);
   }
 
 private:
@@ -1556,14 +1554,14 @@ struct BatchWorker final : public PriorityWorker {
     }
   }
 
-  void DoExecute () override {
-    if (hasData_) {
-      rocksdb::WriteOptions options;
-      options.sync = sync_;
-      SetStatus(database_->WriteBatch(options, &batch_));
-    } else {
-      SetStatus(rocksdb::Status::OK());
+  rocksdb::Status Execute () override {
+    if (!hasData_) {
+      rocksdb::Status::OK();
     }
+
+    rocksdb::WriteOptions options;
+    options.sync = sync_;
+    return database_->WriteBatch(options, &batch_);
   }
 
 private:
@@ -1650,15 +1648,15 @@ struct BatchWriteWorker final : public PriorityWorker {
     NAPI_STATUS_THROWS_VOID(napi_create_reference(env, batch, 1, &batchRef_));
   }
 
-  void DoExecute () override {
+  rocksdb::Status Execute () override {
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    SetStatus(database_->WriteBatch(options, batch_));
+    return database_->WriteBatch(options, batch_);
   }
 
-  void DoFinally (napi_env env) override {
+  void Finally (napi_env env) override {
     napi_delete_reference(env, batchRef_);
-    PriorityWorker::DoFinally(env);
+    PriorityWorker::Finally(env);
   }
 
 private:
