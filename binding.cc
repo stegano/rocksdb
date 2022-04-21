@@ -681,9 +681,6 @@ struct Iterator final : public BaseIterator {
       valueAsBuffer_(valueAsBuffer),
       highWaterMarkBytes_(highWaterMarkBytes),
       first_(true),
-      nexting_(false),
-      isClosing_(false),
-      closeWorker_(nullptr),
       ref_(nullptr) {
   }
 
@@ -740,9 +737,6 @@ struct Iterator final : public BaseIterator {
   const bool valueAsBuffer_;
   const uint32_t highWaterMarkBytes_;
   bool first_;
-  bool nexting_;
-  bool isClosing_;
-  BaseWorker* closeWorker_;
   std::vector<std::string> cache_;
 
 private:
@@ -933,13 +927,6 @@ NAPI_METHOD(db_close) {
 
   const auto callback = argv[1];
 
-  napi_value noop;
-  napi_create_function(env, nullptr, 0, noop_callback, nullptr, &noop);
-
-  for (auto it : database->iterators_) {
-    iterator_do_close(env, it, noop);
-  }
-  
   auto worker = new CloseWorker(env, database, callback);
 
   if (!database->HasPriorityWork()) {
@@ -1424,10 +1411,6 @@ NAPI_METHOD(iterator_seek) {
   NAPI_ARGV(2);
   NAPI_ITERATOR_CONTEXT();
 
-  if (iterator->isClosing_) {
-    napi_throw_error(env, nullptr, "iterator has closed");
-  }
-
   const auto target = ToString(env, argv[1]);
   iterator->first_ = true;
   iterator->Seek(target);
@@ -1455,28 +1438,14 @@ private:
   Iterator* iterator_;
 };
 
-/**
- * Called by NAPI_METHOD(iterator_) and also when closing
- * open iterators during NAPI_METHOD(db_close).
- */
-static void iterator_do_close (napi_env env, Iterator* iterator, napi_value cb) {
-  if (!iterator->isClosing_) {
-    auto worker = new CloseIteratorWorker(env, iterator, cb);
-    iterator->isClosing_ = true;
-
-    if (iterator->nexting_) {
-      iterator->closeWorker_ = worker;
-    } else {
-      worker->Queue(env);
-    }
-  }
-}
-
 NAPI_METHOD(iterator_close) {
   NAPI_ARGV(2);
   NAPI_ITERATOR_CONTEXT();
 
-  iterator_do_close(env, iterator, argv[1]);
+  const auto callback = argv[1];
+
+  auto worker = new CloseIteratorWorker(env, iterator, callback);
+  worker->Queue(env);
 
   return 0;
 }
@@ -1530,14 +1499,6 @@ struct NextWorker final : public BaseWorker {
   }
 
   void DoFinally (napi_env env) override {
-    // clean up & handle the next/end state
-    iterator_->nexting_ = false;
-
-    if (iterator_->closeWorker_) {
-      iterator_->closeWorker_->Queue(env);
-      iterator_->closeWorker_ = nullptr;
-    }
-
     BaseWorker::DoFinally(env);
   }
 
@@ -1557,14 +1518,7 @@ NAPI_METHOD(iterator_nextv) {
 
   const auto callback = argv[2];
 
-  if (iterator->isClosing_) {
-    napi_value argv = CreateCodeError(env, "LEVEL_ITERATOR_NOT_OPEN", "Iterator is not open");
-    NAPI_STATUS_THROWS(CallFunction(env, callback, 1, &argv));
-    return 0;
-  }
-
   auto worker = new NextWorker(env, iterator, size, callback);
-  iterator->nexting_ = true;
   worker->Queue(env);
 
   return 0;
