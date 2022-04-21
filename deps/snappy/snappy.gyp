@@ -1,4 +1,7 @@
-{'targets': [{
+{
+  "variables": {
+    "openssl_fips" : "0"
+  }, 'targets': [{
     'variables': {
         'conditions': [
             ['OS=="linux"',   {'os_include': 'linux'}]
