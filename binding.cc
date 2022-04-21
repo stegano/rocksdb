@@ -480,7 +480,6 @@ struct BaseIterator {
       iterator_(database->NewIterator([&]{
         rocksdb::ReadOptions options;
         options.fill_cache = fillCache;
-        options.verify_checksums = false;
         options.snapshot = snapshot_.get();
         return options;
       }())),
