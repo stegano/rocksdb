@@ -792,11 +792,7 @@ NAPI_METHOD(db_init) {
   return result;
 }
 
-/**
- * Worker class for opening a database.
- * TODO: shouldn't this be a PriorityWorker?
- */
-struct OpenWorker final : public BaseWorker {
+struct OpenWorker final : public PriorityWorker {
   OpenWorker (napi_env env,
               Database* database,
               napi_value callback,
