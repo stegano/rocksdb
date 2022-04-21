@@ -453,7 +453,7 @@ private:
 struct PriorityWorker : public BaseWorker {
   PriorityWorker (napi_env env, Database* database, napi_value callback, const char* resourceName)
     : BaseWorker(env, database, callback, resourceName) {
-      database_->IncrementPriorityWork(env);
+    database_->IncrementPriorityWork(env);
   }
 
   virtual ~PriorityWorker () {}
@@ -474,12 +474,14 @@ struct BaseIterator {
                const int limit,
                const bool fillCache)
     : database_(database),
-      snapshot_(database->NewSnapshot()),
-      dbIterator_(database->NewIterator([&]{
+      snapshot_(database->NewSnapshot(), [this](const rocksdb::Snapshot* ptr) {
+        database_->ReleaseSnapshot(ptr);
+      }),
+      iterator_(database->NewIterator([&]{
         rocksdb::ReadOptions options;
         options.fill_cache = fillCache;
         options.verify_checksums = false;
-        options.snapshot = snapshot_;
+        options.snapshot = snapshot_.get();
         return options;
       }())),
       didSeek_(false),
@@ -493,7 +495,7 @@ struct BaseIterator {
   }
 
   virtual ~BaseIterator () {
-    assert(!dbIterator_);
+    assert(!iterator_);
 
     delete lt_;
     delete lte_;
@@ -512,33 +514,33 @@ struct BaseIterator {
     didSeek_ = true;
 
     if (!reverse_ && gte_) {
-      dbIterator_->Seek(*gte_);
+      iterator_->Seek(*gte_);
     } else if (!reverse_ && gt_) {
-      dbIterator_->Seek(*gt_);
+      iterator_->Seek(*gt_);
 
-      if (dbIterator_->Valid() && dbIterator_->key().compare(*gt_) == 0) {
-        dbIterator_->Next();
+      if (iterator_->Valid() && iterator_->key().compare(*gt_) == 0) {
+        iterator_->Next();
       }
     } else if (reverse_ && lte_) {
-      dbIterator_->Seek(*lte_);
+      iterator_->Seek(*lte_);
 
-      if (!dbIterator_->Valid()) {
-        dbIterator_->SeekToLast();
-      } else if (dbIterator_->key().compare(*lte_) > 0) {
-        dbIterator_->Prev();
+      if (!iterator_->Valid()) {
+        iterator_->SeekToLast();
+      } else if (iterator_->key().compare(*lte_) > 0) {
+        iterator_->Prev();
       }
     } else if (reverse_ && lt_) {
-      dbIterator_->Seek(*lt_);
+      iterator_->Seek(*lt_);
 
-      if (!dbIterator_->Valid()) {
-        dbIterator_->SeekToLast();
-      } else if (dbIterator_->key().compare(*lt_) >= 0) {
-        dbIterator_->Prev();
+      if (!iterator_->Valid()) {
+        iterator_->SeekToLast();
+      } else if (iterator_->key().compare(*lt_) >= 0) {
+        iterator_->Prev();
       }
     } else if (reverse_) {
-      dbIterator_->SeekToLast();
+      iterator_->SeekToLast();
     } else {
-      dbIterator_->SeekToFirst();
+      iterator_->SeekToFirst();
     }
   }
 
@@ -552,17 +554,17 @@ struct BaseIterator {
       return SeekToEnd();
     }
 
-    dbIterator_->Seek(target);
+    iterator_->Seek(target);
 
-    if (dbIterator_->Valid()) {
-      const auto cmp = dbIterator_->key().compare(target);
+    if (iterator_->Valid()) {
+      const auto cmp = iterator_->key().compare(target);
       if (reverse_ ? cmp > 0 : cmp < 0) {
         Next();
       }
     } else {
       SeekToFirst();
-      if (dbIterator_->Valid()) {
-        const auto cmp = dbIterator_->key().compare(target);
+      if (iterator_->Valid()) {
+        const auto cmp = iterator_->key().compare(target);
         if (reverse_ ? cmp > 0 : cmp < 0) {
           SeekToEnd();
         }
@@ -571,15 +573,12 @@ struct BaseIterator {
   }
 
   void Close () {
-    if (dbIterator_) {
-      delete dbIterator_;
-      dbIterator_ = nullptr;
-      database_->ReleaseSnapshot(snapshot_);
-    }
+    snapshot_.reset();
+    iterator_.reset();
   }
 
   bool Valid () const {
-    return dbIterator_->Valid() && !OutOfRange(dbIterator_->key());
+    return iterator_->Valid() && !OutOfRange(iterator_->key());
   }
 
   bool Increment () {
@@ -587,18 +586,18 @@ struct BaseIterator {
   }
 
   void Next () {
-    if (reverse_) dbIterator_->Prev();
-    else dbIterator_->Next();
+    if (reverse_) iterator_->Prev();
+    else iterator_->Next();
   }
 
   void SeekToFirst () {
-    if (reverse_) dbIterator_->SeekToLast();
-    else dbIterator_->SeekToFirst();
+    if (reverse_) iterator_->SeekToLast();
+    else iterator_->SeekToFirst();
   }
 
   void SeekToLast () {
-    if (reverse_) dbIterator_->SeekToFirst();
-    else dbIterator_->SeekToLast();
+    if (reverse_) iterator_->SeekToFirst();
+    else iterator_->SeekToLast();
   }
 
   void SeekToEnd () {
@@ -607,15 +606,15 @@ struct BaseIterator {
   }
 
   rocksdb::Slice CurrentKey () const {
-    return dbIterator_->key();
+    return iterator_->key();
   }
 
   rocksdb::Slice CurrentValue () const {
-    return dbIterator_->value();
+    return iterator_->value();
   }
 
   rocksdb::Status Status () const {
-    return dbIterator_->status();
+    return iterator_->status();
   }
 
   bool OutOfRange (const rocksdb::Slice& target) const {
@@ -637,8 +636,8 @@ struct BaseIterator {
   Database* database_;
 
 private:
-  const rocksdb::Snapshot* snapshot_;
-  rocksdb::Iterator* dbIterator_;
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
+  std::unique_ptr<rocksdb::Iterator> iterator_;
   bool didSeek_;
   const bool reverse_;
   const std::string* lt_;
