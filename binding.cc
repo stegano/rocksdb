@@ -1523,35 +1523,55 @@ NAPI_METHOD(iterator_nextv) {
   return 0;
 }
 
-/**
- * Worker class for batch write operation.
- */
 struct BatchWorker final : public PriorityWorker {
   BatchWorker (napi_env env,
                Database* database,
                napi_value callback,
-               leveldb::WriteBatch* batch,
-               const bool sync,
-               const bool hasData)
-    : PriorityWorker(env, database, callback, "rocks_level.batch.do"),
-      batch_(batch), hasData_(hasData) {
-    options_.sync = sync;
-  }
+               napi_value array,
+               const bool sync)
+    : PriorityWorker(env, database, callback, "rocks_level.batch.do"), sync_(sync) {
+    uint32_t length;
+    NAPI_STATUS_THROWS_VOID(napi_get_array_length(env, array, &length));
 
-  ~BatchWorker () {
-    delete batch_;
+    for (uint32_t i = 0; i < length; i++) {
+      napi_value element;
+      NAPI_STATUS_THROWS_VOID(napi_get_element(env, array, i, &element));
+
+      if (!IsObject(env, element)) continue;
+
+      const auto type = StringProperty(env, element, "type");
+
+      if (type == "del") {
+        if (!HasProperty(env, element, "key")) continue;
+        const auto key = ToString(env, GetProperty(env, element, "key"));
+
+        batch_.Delete(key);
+        if (!hasData_) hasData_ = true;
+      } else if (type == "put") {
+        if (!HasProperty(env, element, "key")) continue;
+        if (!HasProperty(env, element, "value")) continue;
+
+        const auto key = ToString(env, GetProperty(env, element, "key"));
+        const auto value = ToString(env, GetProperty(env, element, "value"));
+
+        batch_.Put(key, value);
+        if (!hasData_) hasData_ = true;
+      }
+    }
   }
 
   void DoExecute () override {
     if (hasData_) {
-      SetStatus(database_->WriteBatch(options_, batch_));
+      leveldb::WriteOptions options;
+      options.sync = sync_;
+      SetStatus(database_->WriteBatch(options, &batch_));
     }
   }
 
 private:
-  leveldb::WriteOptions options_;
-  leveldb::WriteBatch* batch_;
-  const bool hasData_;
+  leveldb::WriteBatch batch_;
+  const bool sync_;
+  bool hasData_;
 };
 
 NAPI_METHOD(batch_do) {
@@ -1562,39 +1582,7 @@ NAPI_METHOD(batch_do) {
   const auto sync = BooleanProperty(env, argv[2], "sync", false);
   const auto callback = argv[3];
 
-  uint32_t length;
-  napi_get_array_length(env, array, &length);
-
-  leveldb::WriteBatch* batch = new leveldb::WriteBatch();
-  bool hasData = false;
-
-  for (uint32_t i = 0; i < length; i++) {
-    napi_value element;
-    napi_get_element(env, array, i, &element);
-
-    if (!IsObject(env, element)) continue;
-
-    std::string type = StringProperty(env, element, "type");
-
-    if (type == "del") {
-      if (!HasProperty(env, element, "key")) continue;
-      const auto key = ToString(env, GetProperty(env, element, "key"));
-
-      batch->Delete(key);
-      if (!hasData) hasData = true;
-    } else if (type == "put") {
-      if (!HasProperty(env, element, "key")) continue;
-      if (!HasProperty(env, element, "value")) continue;
-
-      const auto key = ToString(env, GetProperty(env, element, "key"));
-      const auto value = ToString(env, GetProperty(env, element, "value"));
-
-      batch->Put(key, value);
-      if (!hasData) hasData = true;
-    }
-  }
-
-  auto worker = new BatchWorker(env, database, callback, batch, sync, hasData);
+  auto worker = new BatchWorker(env, database, callback, array, sync);
   worker->Queue(env);
 
   return 0;
