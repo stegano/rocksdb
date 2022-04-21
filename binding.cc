@@ -234,27 +234,26 @@ void Convert (napi_env env, const T& s, bool asBuffer, napi_value& result) {
  * following virtual methods (listed in the order in which they're called):
  *
  * - Execute (abstract, worker pool thread): main work
- * - HandleOKCallback (main thread): call JS callback on success
- * - HandleErrorCallback (main thread): call JS callback on error
+ * - Then (main thread): call JS callback on success
+ * - Catch (main thread): call JS callback on error
  * - Finally (main thread): do cleanup regardless of success
  */
 struct BaseWorker {
-  // Note: storing env is discouraged as we'd end up using it in unsafe places.
   BaseWorker (napi_env env,
               Database* database,
               napi_value callback,
-              const char* resourceName)
+              const std::string& resourceName)
     : database_(database) {
     NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
     napi_value asyncResourceName;
-    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName,
-                                               NAPI_AUTO_LENGTH,
-                                               &asyncResourceName));
+    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(),
+                                                    NAPI_AUTO_LENGTH,
+                                                    &asyncResourceName));
     NAPI_STATUS_THROWS_VOID(napi_create_async_work(env, callback,
-                                              asyncResourceName,
-                                              BaseWorker::Execute,
-                                              BaseWorker::Complete,
-                                              this, &asyncWork_));
+                                                   asyncResourceName,
+                                                   BaseWorker::Execute,
+                                                   BaseWorker::Complete,
+                                                   this, &asyncWork_));
   }
 
   virtual ~BaseWorker () {}
@@ -271,9 +270,9 @@ struct BaseWorker {
     napi_get_reference_value(env, self->callbackRef_, &callback);
 
     if (self->status_.ok()) {
-      self->HandleOKCallback(env, callback);
+      self->Then(env, callback);
     } else {
-      self->HandleErrorCallback(env, callback);
+      self->Catch(env, callback);
     }
 
     self->Finally(env);
@@ -281,13 +280,13 @@ struct BaseWorker {
 
   virtual rocksdb::Status Execute () = 0;
 
-  virtual void HandleOKCallback (napi_env env, napi_value callback) {
+  virtual void Then (napi_env env, napi_value callback) {
     napi_value argv;
     napi_get_null(env, &argv);
     CallFunction(env, callback, 1, &argv);
   }
 
-  virtual void HandleErrorCallback (napi_env env, napi_value callback) {
+  virtual void Catch (napi_env env, napi_value callback) {
     napi_value argv;
 
     const auto msg = status_.ToString();
@@ -332,9 +331,6 @@ private:
   rocksdb::Status status_;
 };
 
-/**
- * Owns the LevelDB storage, cache, filter policy and iterators.
- */
 struct Database {
   Database ()
     : pendingCloseWorker_(nullptr),
@@ -495,20 +491,12 @@ struct BaseIterator {
 
   virtual ~BaseIterator () {
     assert(!iterator_);
-
-    delete lt_;
-    delete lte_;
-    delete gt_;
-    delete gte_;
   }
 
   bool DidSeek () const {
     return didSeek_;
   }
 
-  /**
-   * Seek to the first relevant key based on range options.
-   */
   void SeekToRange () {
     didSeek_ = true;
 
@@ -543,9 +531,6 @@ struct BaseIterator {
     }
   }
 
-  /**
-   * Seek manually (during iteration).
-   */
   void Seek (const std::string& target) {
     didSeek_ = true;
 
@@ -639,10 +624,10 @@ private:
   std::unique_ptr<rocksdb::Iterator> iterator_;
   bool didSeek_;
   const bool reverse_;
-  const std::string* lt_;
-  const std::string* lte_;
-  const std::string* gt_;
-  const std::string* gte_;
+  const std::unique_ptr<const std::string> lt_;
+  const std::unique_ptr<const std::string> lte_;
+  const std::unique_ptr<const std::string> gt_;
+  const std::unique_ptr<const std::string> gte_;
   const int limit_;
   int count_;
 };
@@ -976,7 +961,7 @@ struct GetWorker final : public PriorityWorker {
     return database_->Get(options, key_, value_);
   }
 
-  void HandleOKCallback (napi_env env, napi_value callback) override {
+  void Then (napi_env env, napi_value callback) override {
     napi_value argv[2];
     napi_get_null(env, &argv[0]);
     Convert(env, std::move(value_), asBuffer_, argv[1]);
@@ -1056,7 +1041,7 @@ struct GetManyWorker final : public PriorityWorker {
     return status;
   }
 
-  void HandleOKCallback (napi_env env, napi_value callback) override {
+  void Then (napi_env env, napi_value callback) override {
     const auto size = cache_.size();
 
     napi_value array;
@@ -1228,7 +1213,7 @@ struct ApproximateSizeWorker final : public PriorityWorker {
     return rocksdb::Status::OK();
   }
 
-  void HandleOKCallback (napi_env env, napi_value callback) override {
+  void Then (napi_env env, napi_value callback) override {
     napi_value argv[2];
     napi_get_null(env, &argv[0]);
     napi_create_int64(env, size_, &argv[1]);
@@ -1464,7 +1449,7 @@ struct NextWorker final : public BaseWorker {
     return ok_ ? rocksdb::Status::OK() : iterator_->Status();
   }
 
-  void HandleOKCallback (napi_env env, napi_value callback) override {
+  void Then (napi_env env, napi_value callback) override {
     const auto size = iterator_->cache_.size();
     napi_value result;
     napi_create_array_with_length(env, size, &result);
