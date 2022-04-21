@@ -102,6 +102,7 @@
               , 'ROCKSDB_RANGESYNC_PRESENT=1'
               , 'ROCKSDB_SCHED_GETCPU_PRESENT=1'
               # , 'ROCKSDB_IOURING_PRESENT=1'
+              # , 'USE_FOLLY_DISTRIBUTED_MUTEX=1'
               , 'HAVE_SSE42=1'
               , 'HAVE_BMI=1'
               , 'HAVE_LZCNT=1'
