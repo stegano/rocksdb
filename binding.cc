@@ -41,7 +41,7 @@ static void iterator_do_close (napi_env env, Iterator* iterator, napi_value cb);
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&iterator));
 
 #define NAPI_BATCH_CONTEXT() \
-  leveldb::WriteBatch* batch = nullptr; \
+  rocksdb::WriteBatch* batch = nullptr; \
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&batch));
 
 static bool IsString (napi_env env, napi_value value) {
@@ -267,7 +267,7 @@ struct BaseWorker {
     self->DoExecute();
   }
 
-  bool SetStatus (const leveldb::Status& status) {
+  bool SetStatus (const rocksdb::Status& status) {
     status_ = status;
     return status.ok();
   }
@@ -340,7 +340,7 @@ struct BaseWorker {
 private:
   napi_ref callbackRef_;
   napi_async_work asyncWork_;
-  leveldb::Status status_;
+  rocksdb::Status status_;
 };
 
 /**
@@ -352,17 +352,17 @@ struct Database {
       ref_(nullptr),
       priorityWork_(0) {}
 
-  leveldb::Status Open (const leveldb::Options& options,
+  rocksdb::Status Open (const rocksdb::Options& options,
                         const bool readOnly,
                         const char* location) {
     if (readOnly) {
-      leveldb::DB* db = nullptr;
+      rocksdb::DB* db = nullptr;
       const auto status = rocksdb::DB::OpenForReadOnly(options, location, &db);
       db_.reset(db);
       return status;
     } else {
-      leveldb::DB* db = nullptr;
-      const auto status = leveldb::DB::Open(options, location, &db);
+      rocksdb::DB* db = nullptr;
+      const auto status = rocksdb::DB::Open(options, location, &db);
       db_.reset(db);
       return status;
     }
@@ -372,36 +372,36 @@ struct Database {
     db_.reset();
   }
 
-  leveldb::Status Put (const leveldb::WriteOptions& options,
+  rocksdb::Status Put (const rocksdb::WriteOptions& options,
                        const std::string& key,
                        const std::string& value) {
     return db_->Put(options, db_->DefaultColumnFamily(), key, value);
   }
 
-  leveldb::Status Get (const leveldb::ReadOptions& options,
+  rocksdb::Status Get (const rocksdb::ReadOptions& options,
                        const std::string& key,
                        rocksdb::PinnableSlice& value) {
     return db_->Get(options, db_->DefaultColumnFamily(), key, &value);
   }
 
-  leveldb::Status Del (const leveldb::WriteOptions& options,
+  rocksdb::Status Del (const rocksdb::WriteOptions& options,
                        const std::string& key) {
     return db_->Delete(options, db_->DefaultColumnFamily(), key);
   }
 
-  leveldb::Status WriteBatch (const leveldb::WriteOptions& options,
-                              leveldb::WriteBatch* batch) {
+  rocksdb::Status WriteBatch (const rocksdb::WriteOptions& options,
+                              rocksdb::WriteBatch* batch) {
     return db_->Write(options, batch);
   }
 
-  uint64_t ApproximateSize (const leveldb::Range* range) {
+  uint64_t ApproximateSize (const rocksdb::Range* range) {
     uint64_t size = 0;
     db_->GetApproximateSizes(range, 1, &size);
     return size;
   }
 
-  void CompactRange (const leveldb::Slice* start,
-                     const leveldb::Slice* end) {
+  void CompactRange (const rocksdb::Slice* start,
+                     const rocksdb::Slice* end) {
     rocksdb::CompactRangeOptions options;
     db_->CompactRange(options, start, end);
   }
@@ -410,15 +410,15 @@ struct Database {
     db_->GetProperty(property, &value);
   }
 
-  const leveldb::Snapshot* NewSnapshot () {
+  const rocksdb::Snapshot* NewSnapshot () {
     return db_->GetSnapshot();
   }
 
-  leveldb::Iterator* NewIterator (const leveldb::ReadOptions& options) {
+  rocksdb::Iterator* NewIterator (const rocksdb::ReadOptions& options) {
     return db_->NewIterator(options);
   }
 
-  void ReleaseSnapshot (const leveldb::Snapshot* snapshot) {
+  void ReleaseSnapshot (const rocksdb::Snapshot* snapshot) {
     return db_->ReleaseSnapshot(snapshot);
   }
 
@@ -449,7 +449,7 @@ struct Database {
     return priorityWork_ > 0;
   }
 
-  std::unique_ptr<leveldb::DB> db_;
+  std::unique_ptr<rocksdb::DB> db_;
   BaseWorker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
   napi_ref ref_;
@@ -487,7 +487,7 @@ struct BaseIterator {
     : database_(database),
       snapshot_(database->NewSnapshot()),
       dbIterator_(database->NewIterator([&]{
-        leveldb::ReadOptions options;
+        rocksdb::ReadOptions options;
         options.fill_cache = fillCache;
         options.verify_checksums = false;
         options.snapshot = snapshot_;
@@ -617,19 +617,19 @@ struct BaseIterator {
     Next();
   }
 
-  leveldb::Slice CurrentKey () const {
+  rocksdb::Slice CurrentKey () const {
     return dbIterator_->key();
   }
 
-  leveldb::Slice CurrentValue () const {
+  rocksdb::Slice CurrentValue () const {
     return dbIterator_->value();
   }
 
-  leveldb::Status Status () const {
+  rocksdb::Status Status () const {
     return dbIterator_->status();
   }
 
-  bool OutOfRange (const leveldb::Slice& target) const {
+  bool OutOfRange (const rocksdb::Slice& target) const {
     if (lte_) {
       if (target.compare(*lte_) > 0) return true;
     } else if (lt_) {
@@ -648,8 +648,8 @@ struct BaseIterator {
   Database* database_;
 
 private:
-  const leveldb::Snapshot* snapshot_;
-  leveldb::Iterator* dbIterator_;
+  const rocksdb::Snapshot* snapshot_;
+  rocksdb::Iterator* dbIterator_;
   bool didSeek_;
   const bool reverse_;
   const std::string* lt_;
@@ -818,8 +818,8 @@ struct OpenWorker final : public BaseWorker {
     options_.create_if_missing = createIfMissing;
     options_.error_if_exists = errorIfExists;
     options_.compression = compression
-      ? leveldb::kSnappyCompression
-      : leveldb::kNoCompression;
+      ? rocksdb::kSnappyCompression
+      : rocksdb::kNoCompression;
     options_.write_buffer_size = writeBufferSize;
     options_.max_open_files = maxOpenFiles;
     options_.max_log_file_size = maxFileSize;
@@ -867,7 +867,7 @@ struct OpenWorker final : public BaseWorker {
     SetStatus(database_->Open(options_, readOnly_, location_.c_str()));
   }
 
-  leveldb::Options options_;
+  rocksdb::Options options_;
   const bool readOnly_;
   const std::string location_;
 };
@@ -950,7 +950,7 @@ struct PutWorker final : public PriorityWorker {
   }
 
   void DoExecute () override {
-    leveldb::WriteOptions options;
+    rocksdb::WriteOptions options;
     options.sync = sync_;
     SetStatus(database_->Put(options, key_, value_));
   }
@@ -987,7 +987,7 @@ struct GetWorker final : public PriorityWorker {
   }
 
   void DoExecute () override {
-    leveldb::ReadOptions options;
+    rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     SetStatus(database_->Get(options, key_, value_));
   }
@@ -1044,7 +1044,7 @@ struct GetManyWorker final : public PriorityWorker {
   void DoExecute () override {
     cache_.reserve(keys_.size());
 
-    leveldb::ReadOptions options;
+    rocksdb::ReadOptions options;
     options.snapshot = snapshot_;
     options.fill_cache = fillCache_;
     
@@ -1096,7 +1096,7 @@ private:
   const bool valueAsBuffer_;
   std::vector<rocksdb::PinnableSlice> cache_;
   const bool fillCache_;
-  const leveldb::Snapshot* snapshot_;
+  const rocksdb::Snapshot* snapshot_;
 };
 
 NAPI_METHOD(db_get_many) {
@@ -1126,7 +1126,7 @@ struct DelWorker final : public PriorityWorker {
   }
 
   void DoExecute () override {
-    leveldb::WriteOptions options;
+    rocksdb::WriteOptions options;
     options.sync = sync_;
     SetStatus(database_->Del(options, key_));
   }
@@ -1169,8 +1169,8 @@ struct ClearWorker final : public PriorityWorker {
     // TODO: add option
     const uint32_t hwm = 16 * 1024;
 
-    leveldb::WriteBatch batch;
-    leveldb::WriteOptions options;
+    rocksdb::WriteBatch batch;
+    rocksdb::WriteOptions options;
 
     while (true) {
       size_t bytesRead = 0;
@@ -1231,7 +1231,7 @@ struct ApproximateSizeWorker final : public PriorityWorker {
       start_(start), end_(end) {}
 
   void DoExecute () override {
-    leveldb::Range range(start_, end_);
+    rocksdb::Range range(start_, end_);
     size_ = database_->ApproximateSize(&range);
   }
 
@@ -1271,8 +1271,8 @@ struct CompactRangeWorker final : public PriorityWorker {
       start_(start), end_(end) {}
 
   void DoExecute () override {
-    leveldb::Slice start = start_;
-    leveldb::Slice end = end_;
+    rocksdb::Slice start = start_;
+    rocksdb::Slice end = end_;
     database_->CompactRange(&start, &end);
   }
 
@@ -1319,8 +1319,8 @@ struct DestroyWorker final : public BaseWorker {
   ~DestroyWorker () {}
 
   void DoExecute () override {
-    leveldb::Options options;
-    SetStatus(leveldb::DestroyDB(location_, options));
+    rocksdb::Options options;
+    SetStatus(rocksdb::DestroyDB(location_, options));
   }
 
   const std::string location_;
@@ -1346,8 +1346,8 @@ struct RepairWorker final : public BaseWorker {
       location_(location) {}
 
   void DoExecute () override {
-    leveldb::Options options;
-    SetStatus(leveldb::RepairDB(location_, options));
+    rocksdb::Options options;
+    SetStatus(rocksdb::RepairDB(location_, options));
   }
 
   const std::string location_;
@@ -1562,14 +1562,16 @@ struct BatchWorker final : public PriorityWorker {
 
   void DoExecute () override {
     if (hasData_) {
-      leveldb::WriteOptions options;
+      rocksdb::WriteOptions options;
       options.sync = sync_;
       SetStatus(database_->WriteBatch(options, &batch_));
+    } else {
+      SetStatus(rocksdb::Status::OK());
     }
   }
 
 private:
-  leveldb::WriteBatch batch_;
+  rocksdb::WriteBatch batch_;
   const bool sync_;
   bool hasData_;
 };
@@ -1590,7 +1592,7 @@ NAPI_METHOD(batch_do) {
 
 static void FinalizeBatch (napi_env env, void* data, void* hint) {
   if (data) {
-    delete reinterpret_cast<leveldb::WriteBatch*>(data);
+    delete reinterpret_cast<rocksdb::WriteBatch*>(data);
   }
 }
 
@@ -1598,12 +1600,10 @@ NAPI_METHOD(batch_init) {
   NAPI_ARGV(1);
   NAPI_DB_CONTEXT();
 
-  auto batch = new leveldb::WriteBatch();
+  auto batch = new rocksdb::WriteBatch();
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, batch,
-                                          FinalizeBatch,
-                                          nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, batch, FinalizeBatch, nullptr, &result));
   return result;
 }
 
@@ -1655,7 +1655,7 @@ struct BatchWriteWorker final : public PriorityWorker {
   }
 
   void DoExecute () override {
-    leveldb::WriteOptions options;
+    rocksdb::WriteOptions options;
     options.sync = sync_;
     SetStatus(database_->WriteBatch(options, batch_));
   }
@@ -1666,7 +1666,7 @@ struct BatchWriteWorker final : public PriorityWorker {
   }
 
 private:
-  leveldb::WriteBatch* batch_;
+  rocksdb::WriteBatch* batch_;
   const bool sync_;
   napi_ref batchRef_;
 };
