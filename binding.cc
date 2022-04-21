@@ -749,7 +749,7 @@ private:
  * the guarantee that no db operations will be in-flight at this time.
  */
 static void env_cleanup_hook (void* arg) {
-  Database* database = reinterpret_cast<Database*>(arg);
+  auto database = reinterpret_cast<Database*>(arg);
 
   // Do everything that db_close() does but synchronously. We're expecting that GC
   // did not (yet) collect the database because that would be a user mistake (not
@@ -770,7 +770,7 @@ static void env_cleanup_hook (void* arg) {
 
 static void FinalizeDatabase (napi_env env, void* data, void* hint) {
   if (data) {
-    Database* database = (Database*)data;
+    auto database = reinterpret_cast<Database*>(data);
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
     if (database->ref_) napi_delete_reference(env, database->ref_);
     delete database;
@@ -778,7 +778,7 @@ static void FinalizeDatabase (napi_env env, void* data, void* hint) {
 }
 
 NAPI_METHOD(db_init) {
-  Database* database = new Database();
+  auto database = new Database();
   napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
 
   napi_value result;
