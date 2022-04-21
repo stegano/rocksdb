@@ -808,7 +808,7 @@ struct OpenWorker final : public PriorityWorker {
               const uint32_t cacheSize,
               const std::string& infoLogLevel,
               const bool readOnly)
-    : BaseWorker(env, database, callback, "leveldown.db.open"),
+    : PriorityWorker(env, database, callback, "leveldown.db.open"),
       readOnly_(readOnly),
       location_(location) {
     options_.create_if_missing = createIfMissing;
