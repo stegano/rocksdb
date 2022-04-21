@@ -1168,10 +1168,9 @@ struct ClearWorker final : public PriorityWorker {
 
     // TODO: add option
     const uint32_t hwm = 16 * 1024;
-    leveldb::WriteBatch batch;
 
+    leveldb::WriteBatch batch;
     leveldb::WriteOptions options;
-    options.sync = false;
 
     while (true) {
       size_t bytesRead = 0;
