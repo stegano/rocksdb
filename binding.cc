@@ -654,50 +654,14 @@ struct Iterator final : public BaseIterator {
     if (ref_) napi_delete_reference(env, ref_);
   }
 
-  bool ReadMany (uint32_t size, std::vector<std::string>& cache) {
-    cache.reserve(cache.size() + size * 2);
-    size_t bytesRead = 0;
-
-    while (true) {
-      if (!first_) Next();
-      else first_ = false;
-
-      if (!Valid() || !Increment()) break;
-    
-      if (keys_ && values_) {
-        auto k = CurrentKey();
-        auto v = CurrentValue();
-        cache.emplace_back(k.data(), k.size());
-        cache.emplace_back(v.data(), v.size());
-        bytesRead += k.size() + v.size();
-      } else if (keys_) {
-        auto k = CurrentKey();
-        cache.emplace_back(k.data(), k.size());
-        cache.push_back({});
-        bytesRead += k.size();
-      } else if (values_) {
-        auto v = CurrentValue();
-        cache.push_back({});
-        cache.emplace_back(v.data(), v.size());
-        bytesRead += v.size();
-      }
-
-      if (bytesRead > highWaterMarkBytes_ || cache.size() / 2 >= size) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   const bool keys_;
   const bool values_;
   const bool keyAsBuffer_;
   const bool valueAsBuffer_;
+  const uint32_t highWaterMarkBytes_;
   bool first_;
 
 private:
-  const uint32_t highWaterMarkBytes_;
   napi_ref ref_;
 };
 
@@ -1421,7 +1385,7 @@ struct NextWorker final : public BaseWorker {
               napi_value callback)
     : BaseWorker(env, iterator->database_, callback,
                  "leveldown.iterator.next"),
-      iterator_(iterator), size_(size), ok_() {}
+      iterator_(iterator), size_(size) {}
 
   rocksdb::Status Execute () override {
     if (!iterator_->DidSeek()) {
@@ -1430,8 +1394,42 @@ struct NextWorker final : public BaseWorker {
 
     // Limit the size of the cache to prevent starving the event loop
     // in JS-land while we're recursively calling process.nextTick().
-    ok_ = iterator_->ReadMany(size_, cache_);
-    return ok_ ? rocksdb::Status::OK() : iterator_->Status();
+
+    finished_ = false;
+    cache_.reserve(size_ * 2);
+    size_t bytesRead = 0;
+
+    while (true) {
+      if (!iterator_->first_) iterator_->Next();
+      else iterator_->first_ = false;
+
+      if (!iterator_->Valid() || !iterator_->Increment()) break;
+    
+      if (iterator_->keys_ && iterator_->values_) {
+        auto k = iterator_->CurrentKey();
+        auto v = iterator_->CurrentValue();
+        cache_.emplace_back(k.data(), k.size());
+        cache_.emplace_back(v.data(), v.size());
+        bytesRead += k.size() + v.size();
+      } else if (iterator_->keys_) {
+        auto k = iterator_->CurrentKey();
+        cache_.emplace_back(k.data(), k.size());
+        cache_.push_back({});
+        bytesRead += k.size();
+      } else if (iterator_->values_) {
+        auto v = iterator_->CurrentValue();
+        cache_.push_back({});
+        cache_.emplace_back(v.data(), v.size());
+        bytesRead += v.size();
+      }
+
+      if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
+        finished_ = true;
+        return rocksdb::Status::OK();
+      }
+    }
+
+    return iterator_->Status();
   }
 
   void Then (napi_env env, napi_value callback) override {
@@ -1455,19 +1453,15 @@ struct NextWorker final : public BaseWorker {
     napi_value argv[3];
     napi_get_null(env, &argv[0]);
     argv[1] = result;
-    napi_get_boolean(env, !ok_, &argv[2]);
+    napi_get_boolean(env, !finished_, &argv[2]);
     CallFunction(env, callback, 3, argv);
-  }
-
-  void Finally (napi_env env) override {
-    BaseWorker::Finally(env);
   }
 
 private:
   std::vector<std::string> cache_;
-  Iterator* iterator_;
-  uint32_t size_;
-  bool ok_;
+  Iterator* iterator_ = nullptr;
+  uint32_t size_ = 0;
+  bool finished_ = false;
 };
 
 NAPI_METHOD(iterator_nextv) {
