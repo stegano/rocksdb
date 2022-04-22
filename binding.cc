@@ -30,7 +30,6 @@ public:
 
 struct Database;
 struct Iterator;
-static void iterator_do_close (napi_env env, Iterator* iterator, napi_value cb);
 
 #define NAPI_DB_CONTEXT() \
   Database* database = nullptr; \
@@ -92,8 +91,7 @@ static napi_value GetProperty (napi_env env, napi_value obj, const std::string& 
   return value;
 }
 
-static bool BooleanProperty (napi_env env, napi_value obj, const std::string& key,
-                             bool defaultValue) {
+static bool BooleanProperty (napi_env env, napi_value obj, const std::string& key, bool defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     bool result;
@@ -117,8 +115,7 @@ static bool EncodingIsBuffer (napi_env env, napi_value obj, const std::string& o
   return false;
 }
 
-static uint32_t Uint32Property (napi_env env, napi_value obj, const std::string& key,
-                                uint32_t defaultValue) {
+static uint32_t Uint32Property (napi_env env, napi_value obj, const std::string& key, uint32_t defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     uint32_t result;
@@ -129,8 +126,7 @@ static uint32_t Uint32Property (napi_env env, napi_value obj, const std::string&
   return defaultValue;
 }
 
-static int Int32Property (napi_env env, napi_value obj, const std::string& key,
-                          int defaultValue) {
+static int Int32Property (napi_env env, napi_value obj, const std::string& key, int defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     int result;
@@ -211,10 +207,7 @@ static std::vector<std::string> KeyArray (napi_env env, napi_value arr) {
   return result;
 }
 
-static napi_status CallFunction (napi_env env,
-                                 napi_value callback,
-                                 const int argc,
-                                 napi_value* argv) {
+static napi_status CallFunction (napi_env env, napi_value callback, const int argc, napi_value* argv) {
   napi_value global;
   napi_get_global(env, &global);
   return napi_call_function(env, global, callback, argc, argv, nullptr);
@@ -661,9 +654,8 @@ struct Iterator final : public BaseIterator {
     if (ref_) napi_delete_reference(env, ref_);
   }
 
-  bool ReadMany (uint32_t size) {
-    cache_.clear();
-    cache_.reserve(size * 2);
+  bool ReadMany (uint32_t size, std::vector<std::string>& cache) {
+    cache.reserve(cache.size() + size * 2);
     size_t bytesRead = 0;
 
     while (true) {
@@ -675,22 +667,22 @@ struct Iterator final : public BaseIterator {
       if (keys_ && values_) {
         auto k = CurrentKey();
         auto v = CurrentValue();
-        cache_.emplace_back(k.data(), k.size());
-        cache_.emplace_back(v.data(), v.size());
+        cache.emplace_back(k.data(), k.size());
+        cache.emplace_back(v.data(), v.size());
         bytesRead += k.size() + v.size();
       } else if (keys_) {
         auto k = CurrentKey();
-        cache_.emplace_back(k.data(), k.size());
-        cache_.push_back({});
+        cache.emplace_back(k.data(), k.size());
+        cache.push_back({});
         bytesRead += k.size();
       } else if (values_) {
         auto v = CurrentValue();
-        cache_.push_back({});
-        cache_.emplace_back(v.data(), v.size());
+        cache.push_back({});
+        cache.emplace_back(v.data(), v.size());
         bytesRead += v.size();
       }
 
-      if (bytesRead > highWaterMarkBytes_ || cache_.size() / 2 >= size) {
+      if (bytesRead > highWaterMarkBytes_ || cache.size() / 2 >= size) {
         return true;
       }
     }
@@ -702,11 +694,10 @@ struct Iterator final : public BaseIterator {
   const bool values_;
   const bool keyAsBuffer_;
   const bool valueAsBuffer_;
-  const uint32_t highWaterMarkBytes_;
   bool first_;
-  std::vector<std::string> cache_;
 
 private:
+  const uint32_t highWaterMarkBytes_;
   napi_ref ref_;
 };
 
@@ -1005,7 +996,7 @@ struct GetManyWorker final : public PriorityWorker {
   }
 
   rocksdb::Status Execute () override {
-    cache_.reserve(keys_.size());
+    values_.reserve(keys_.size());
 
     rocksdb::ReadOptions options;
     options.snapshot = snapshot_;
@@ -1018,9 +1009,9 @@ struct GetManyWorker final : public PriorityWorker {
       status = database_->Get(options, key, value);
 
       if (status.ok()) {
-        cache_.emplace_back(std::move(value));
+        values_.emplace_back(std::move(value));
       } else if (status.IsNotFound()) {
-        cache_.emplace_back(nullptr);
+        values_.emplace_back(nullptr);
         status = rocksdb::Status::OK();
       } else {
         break;
@@ -1036,15 +1027,15 @@ struct GetManyWorker final : public PriorityWorker {
   }
 
   void Then (napi_env env, napi_value callback) override {
-    const auto size = cache_.size();
+    const auto size = values_.size();
 
     napi_value array;
     napi_create_array_with_length(env, size, &array);
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
-      if (cache_[idx].GetSelf() != nullptr) {
-        Convert(env, cache_[idx], valueAsBuffer_, element);
+      if (values_[idx].GetSelf() != nullptr) {
+        Convert(env, values_[idx], valueAsBuffer_, element);
       } else {
         napi_get_undefined(env, &element);
       }
@@ -1059,8 +1050,8 @@ struct GetManyWorker final : public PriorityWorker {
 
 private:
   const std::vector<std::string> keys_;
+  std::vector<rocksdb::PinnableSlice> values_;
   const bool valueAsBuffer_;
-  std::vector<rocksdb::PinnableSlice> cache_;
   const bool fillCache_;
   const rocksdb::Snapshot* snapshot_;
 };
@@ -1439,27 +1430,27 @@ struct NextWorker final : public BaseWorker {
 
     // Limit the size of the cache to prevent starving the event loop
     // in JS-land while we're recursively calling process.nextTick().
-    ok_ = iterator_->ReadMany(size_);
+    ok_ = iterator_->ReadMany(size_, cache_);
     return ok_ ? rocksdb::Status::OK() : iterator_->Status();
   }
 
   void Then (napi_env env, napi_value callback) override {
-    const auto size = iterator_->cache_.size();
+    const auto size = cache_.size();
     napi_value result;
     napi_create_array_with_length(env, size, &result);
 
-    for (size_t idx = 0; idx < iterator_->cache_.size(); idx += 2) {
+    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
       napi_value key;
       napi_value val;
 
-      Convert(env, iterator_->cache_[idx + 0], iterator_->keyAsBuffer_, key);
-      Convert(env, iterator_->cache_[idx + 1], iterator_->valueAsBuffer_, val);
+      Convert(env, cache_[idx + 0], iterator_->keyAsBuffer_, key);
+      Convert(env, cache_[idx + 1], iterator_->valueAsBuffer_, val);
 
       napi_set_element(env, result, static_cast<int>(idx + 0), key);
       napi_set_element(env, result, static_cast<int>(idx + 1), val);
     }
 
-    iterator_->cache_.clear();
+    cache_.clear();
 
     napi_value argv[3];
     napi_get_null(env, &argv[0]);
@@ -1473,6 +1464,7 @@ struct NextWorker final : public BaseWorker {
   }
 
 private:
+  std::vector<std::string> cache_;
   Iterator* iterator_;
   uint32_t size_;
   bool ok_;
