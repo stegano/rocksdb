@@ -332,11 +332,6 @@ private:
 };
 
 struct Database {
-  Database ()
-    : pendingCloseWorker_(nullptr),
-      ref_(nullptr),
-      priorityWork_(0) {}
-
   rocksdb::Status Open (const rocksdb::Options& options,
                         const bool readOnly,
                         const char* location) {
@@ -440,7 +435,7 @@ struct Database {
   napi_ref ref_;
 
 private:
-  uint32_t priorityWork_;
+  uint32_t priorityWork_ = 0;
 };
 
 /**
