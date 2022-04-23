@@ -458,21 +458,29 @@ struct BaseIterator {
                const int limit,
                const bool fillCache)
     : database_(database),
+      lt_(lt),
+      lte_(lte),
+      gt_(gt),
+      gte_(gte),
       snapshot_(database->NewSnapshot(), [this](const rocksdb::Snapshot* ptr) {
         database_->ReleaseSnapshot(ptr);
       }),
       iterator_(database->NewIterator([&]{
         rocksdb::ReadOptions options;
+        if (lt_ && !lte_) {
+          upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
+          options.iterate_upper_bound = &upper_bound_;
+        }
+        if (gte_) {
+          lower_bound_ = rocksdb::Slice(gte_->data(), gte_->size());
+          options.iterate_lower_bound = &lower_bound_;
+        }
         options.fill_cache = fillCache;
         options.snapshot = snapshot_.get();
         return options;
       }())),
       didSeek_(false),
       reverse_(reverse),
-      lt_(lt),
-      lte_(lte),
-      gt_(gt),
-      gte_(gte),
       limit_(limit),
       count_(0) {
   }
@@ -488,9 +496,7 @@ struct BaseIterator {
   void SeekToRange () {
     didSeek_ = true;
 
-    if (!reverse_ && gte_) {
-      iterator_->Seek(*gte_);
-    } else if (!reverse_ && gt_) {
+    if (!reverse_ && gt_ && !gte_) {
       iterator_->Seek(*gt_);
 
       if (iterator_->Valid() && iterator_->key().compare(*gt_) == 0) {
@@ -502,14 +508,6 @@ struct BaseIterator {
       if (!iterator_->Valid()) {
         iterator_->SeekToLast();
       } else if (iterator_->key().compare(*lte_) > 0) {
-        iterator_->Prev();
-      }
-    } else if (reverse_ && lt_) {
-      iterator_->Seek(*lt_);
-
-      if (!iterator_->Valid()) {
-        iterator_->SeekToLast();
-      } else if (iterator_->key().compare(*lt_) >= 0) {
         iterator_->Prev();
       }
     } else if (reverse_) {
@@ -550,7 +548,19 @@ struct BaseIterator {
   }
 
   bool Valid () const {
-    return iterator_->Valid() && !OutOfRange(iterator_->key());
+    if (!iterator_->Valid()) {
+      return false;
+    }
+
+    if (lte_ && iterator_->key().compare(*lte_) > 0) {
+      return false;
+    }
+
+    if (!gte_ && gt_ && iterator_->key().compare(*gt_) <= 0) {
+      return false;
+    }
+
+    return true;
   }
 
   bool Increment () {
@@ -608,14 +618,16 @@ struct BaseIterator {
   Database* database_;
 
 private:
-  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
-  std::unique_ptr<rocksdb::Iterator> iterator_;
-  bool didSeek_;
-  const bool reverse_;
+  rocksdb::Slice lower_bound_;
+  rocksdb::Slice upper_bound_;
   const std::unique_ptr<const std::string> lt_;
   const std::unique_ptr<const std::string> lte_;
   const std::unique_ptr<const std::string> gt_;
   const std::unique_ptr<const std::string> gte_;
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
+  std::unique_ptr<rocksdb::Iterator> iterator_;
+  bool didSeek_;
+  const bool reverse_;
   const int limit_;
   int count_;
 };
