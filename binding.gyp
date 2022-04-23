@@ -31,9 +31,26 @@
             , 'cflags_cc!': [ '-fno-rtti' ]
             , 'cflags_cc+': [ '-frtti' ]
           }]
-        , ["OS == 'mac'", {
-            "cflags+": ["-fvisibility=hidden"],
-            'xcode_settings': {
+        , ['OS == "linux"', {
+            'cflags': [
+                '-msse4.2'
+              , '-mpclmul'
+              , '-mavx'
+              , '-mavx2'
+              , '-mbmi'
+              , '-mlzcnt'
+            ]
+          , 'ccflags': [ '-flto' ]
+          , 'cflags!': [ '-fno-exceptions' ]
+          , 'cflags_cc!': [ '-fno-exceptions' ]
+          , 'ldflags': [
+                '-flto'
+              , '-fuse-linker-plugin'
+            ]
+          }]
+          , ["OS == 'mac'", {
+              "cflags+": ["-fvisibility=hidden"],
+              'xcode_settings': {
                   "GCC_SYMBOLS_PRIVATE_EXTERN": "YES" # -fvisibility=hidden
                 , 'WARNING_CFLAGS': [
                     '-Wno-sign-compare'
@@ -42,26 +59,17 @@
                   , '-Wno-ignored-qualifiers'
                 ]
                 , 'OTHER_CPLUSPLUSFLAGS': [
-                    '-mmacosx-version-min=10.14'
-                  , '-std=c++17'
-                  , '-stdlib=libc++'
-                  , '-arch x86_64'
-                  , '-arch arm64'
-                ]
-                , 'OTHER_LDFLAGS': [
-                    '-stdlib=libc++'
-                  , '-arch x86_64'
-                  , '-arch arm64'
-                ]
+                      '-mmacosx-version-min=10.14'
+                    , '-std=c++17'
+                    , '-fno-omit-frame-pointer'
+                    , '-momit-leaf-frame-pointer'
+                    , '-arch x86_64'
+                    , '-arch arm64'
+                  ]
                 , 'GCC_ENABLE_CPP_RTTI': 'YES'
                 , 'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
                 , 'MACOSX_DEPLOYMENT_TARGET': '10.14'
-            }
-          }]
-        , ['OS == "linux"', {
-              'cflags': []
-            , 'cflags!': [ '-fno-tree-vrp', '-fno-exceptions' ]
-            , 'cflags_cc!': [ '-fno-exceptions' ]
+              }
           }]
         ]
       , "dependencies": [

@@ -20,7 +20,7 @@
         'ROCKSDB_BACKTRACE=1',
         'ROCKSDB_SUPPORT_THREAD_LOCAL=1',
         'USE_SSE=1',
-        'NIOSTARTS_CONTEXT=1'
+        'NIOSTATS_CONTEXT=1'
         'NPERF_CONTEXT=1'
     ]
   , 'include_dirs': [
@@ -87,11 +87,10 @@
               , '-momit-leaf-frame-pointer'
               , '-fno-builtin-memcmp'
             ]
-          , 'cflags': [
-                '-std=c++17'
-            ]
-          , 'cflags!': [ '-fno-tree-vrp', '-fno-rtti' ]
+          , 'cflags': [ '-std=c++17' ]
+          , 'cflags!': [ '-fno-rtti' ]
           , 'cflags_cc!': [ '-fno-rtti' ]
+          , 'cflags_cc+': [ '-frtti' ]
         }]
       , ['OS == "linux"', {
             'defines': [
@@ -123,9 +122,7 @@
               , '-mbmi'
               , '-mlzcnt'
             ]
-          , 'ccflags': [
-                '-flto'
-            ]
+          , 'ccflags': [ '-flto' ]
           , 'cflags!': [ '-fno-exceptions' ]
           , 'cflags_cc!': [ '-fno-exceptions' ]
           , 'ldflags': [ 
@@ -138,18 +135,17 @@
                 'OS_MACOSX=1'
             ]
           , 'xcode_settings': {
-                 'OTHER_CPLUSPLUSFLAGS': [
+                'OTHER_CPLUSPLUSFLAGS': [
                     '-mmacosx-version-min=10.14'
                   , '-std=c++17'
-                  , '-stdlib=libc++'
                   , '-fno-omit-frame-pointer'
                   , '-momit-leaf-frame-pointer'
                   , '-arch x86_64'
                   , '-arch arm64'
                 ]
-                , 'GCC_ENABLE_CPP_RTTI': 'YES'
-                , 'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
-                , 'MACOSX_DEPLOYMENT_TARGET': '10.14'
+              , 'GCC_ENABLE_CPP_RTTI': 'YES'
+              , 'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
+              , 'MACOSX_DEPLOYMENT_TARGET': '10.14'
             }
         }]
     ]
