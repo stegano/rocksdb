@@ -618,12 +618,12 @@ struct BaseIterator {
   Database* database_;
 
 private:
-  rocksdb::Slice lower_bound_;
-  rocksdb::Slice upper_bound_;
   const std::unique_ptr<const std::string> lt_;
   const std::unique_ptr<const std::string> lte_;
   const std::unique_ptr<const std::string> gt_;
   const std::unique_ptr<const std::string> gte_;
+  rocksdb::Slice lower_bound_;
+  rocksdb::Slice upper_bound_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
   bool didSeek_;
