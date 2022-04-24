@@ -750,7 +750,6 @@ struct OpenWorker final : public PriorityWorker {
     options_.write_buffer_size = writeBufferSize;
     options_.max_open_files = maxOpenFiles;
     options_.max_log_file_size = maxFileSize;
-    options_.paranoid_checks = false;
     options_.use_adaptive_mutex = true;
 
     if (infoLogLevel.size() > 0) {
