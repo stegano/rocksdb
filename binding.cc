@@ -479,10 +479,8 @@ struct BaseIterator {
         options.snapshot = snapshot_.get();
         return options;
       }())),
-      didSeek_(false),
       reverse_(reverse),
-      limit_(limit),
-      count_(0) {
+      limit_(limit) {
   }
 
   virtual ~BaseIterator () {
@@ -626,10 +624,10 @@ private:
   rocksdb::Slice upper_bound_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
-  bool didSeek_;
+  bool didSeek_ = false;
   const bool reverse_;
   const int limit_;
-  int count_;
+  int count_ = 0;
 };
 
 struct Iterator final : public BaseIterator {
