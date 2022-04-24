@@ -975,9 +975,6 @@ struct GetManyWorker final : public PriorityWorker {
     options.snapshot = snapshot_;
     options.fill_cache = fillCache_;
     
-    values_.reserve(keys_.size());
-    status_.reserve(keys_.size());
-
     status_ = database_->db_->MultiGet(
       options,
       std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()),
