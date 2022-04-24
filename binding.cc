@@ -972,34 +972,29 @@ struct GetManyWorker final : public PriorityWorker {
   }
 
   rocksdb::Status Execute () override {
-    values_.reserve(keys_.size());
-
     rocksdb::ReadOptions options;
     options.snapshot = snapshot_;
     options.fill_cache = fillCache_;
     
-    rocksdb::PinnableSlice value;
-    rocksdb::Status status;
+    values_.reserve(keys_.size());
+    status_.reserve(keys_.size());
 
-    for (const auto& key: keys_) {
-      status = database_->Get(options, key, value);
-
-      if (status.ok()) {
-        values_.emplace_back(std::move(value));
-      } else if (status.IsNotFound()) {
-        values_.emplace_back(nullptr);
-        status = rocksdb::Status::OK();
-      } else {
-        break;
-      }
-
-      value.Reset();
-    }
+    status_ = database_->db_->MultiGet(
+      options,
+      std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()),
+      &values_
+    );
 
     database_->ReleaseSnapshot(snapshot_);
     snapshot_ = nullptr;
 
-    return status;
+    for (auto status : status_) {
+      if (!status.ok() && !status.IsNotFound()) {
+        return status;
+      }
+    }
+
+    return rocksdb::Status::OK();
   }
 
   void Then (napi_env env, napi_value callback) override {
@@ -1010,7 +1005,7 @@ struct GetManyWorker final : public PriorityWorker {
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
-      if (values_[idx].GetSelf() != nullptr) {
+      if (status_[idx].ok()) {
         Convert(env, values_[idx], valueAsBuffer_, element);
       } else {
         napi_get_undefined(env, &element);
@@ -1026,7 +1021,8 @@ struct GetManyWorker final : public PriorityWorker {
 
 private:
   const std::vector<std::string> keys_;
-  std::vector<rocksdb::PinnableSlice> values_;
+  std::vector<std::string> values_;
+  std::vector<rocksdb::Status> status_;
   const bool valueAsBuffer_;
   const bool fillCache_;
   const rocksdb::Snapshot* snapshot_;
