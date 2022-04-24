@@ -34,7 +34,7 @@
           }
         ],
         [
-          "OS == \"linux\"",
+          "OS == 'linux'",
           {
             "cflags": [
               "-msse4.2",

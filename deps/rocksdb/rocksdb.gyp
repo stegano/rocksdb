@@ -18,7 +18,7 @@
       "include_dirs": ["rocksdb/", "rocksdb/include/"],
       "conditions": [
         [
-          "OS == \"win\"",
+          "OS == 'win'",
           {
             "include_dirs": ["rocksdb/port/win/"],
             "defines": [
@@ -75,7 +75,7 @@
           }
         ],
         [
-          "OS == \"linux\"",
+          "OS == 'linux'",
           {
             "defines": [
               "OS_LINUX=1",
@@ -113,7 +113,7 @@
           }
         ],
         [
-          "OS == \"mac\"",
+          "OS == 'mac'",
           {
             "defines": ["OS_MACOSX=1"],
             "xcode_settings": {
