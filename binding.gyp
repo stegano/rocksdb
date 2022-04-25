@@ -63,7 +63,7 @@
                 "-Wno-ignored-qualifiers"
               ],
               "OTHER_CPLUSPLUSFLAGS": [
-                "-mmacosx-version-min=10.14",
+                "-mmacosx-version-min=10.15",
                 "-std=c++17",
                 "-fno-omit-frame-pointer",
                 "-momit-leaf-frame-pointer",
@@ -72,7 +72,7 @@
               ],
               "GCC_ENABLE_CPP_RTTI": "YES",
               "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
-              "MACOSX_DEPLOYMENT_TARGET": "10.14"
+              "MACOSX_DEPLOYMENT_TARGET": "10.15"
             }
           }
         ]
