@@ -821,41 +821,15 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
-struct PutWorker final : public PriorityWorker {
-  PutWorker (napi_env env,
-             Database* database,
-             napi_value callback,
-             const std::string& key,
-             const std::string& value,
-             bool sync)
-    : PriorityWorker(env, database, callback, "rocks_level.db.put"),
-      key_(key), value_(value), sync_(sync) {
-  }
-
-  rocksdb::Status Execute () override {
-    rocksdb::WriteOptions options;
-    options.sync = sync_;
-    return database_->db_->Put(options, key_, value_);
-  }
-
-  const std::string key_;
-  const std::string value_;
-  const bool sync_;
-};
-
 NAPI_METHOD(db_put) {
-  NAPI_ARGV(5);
+  NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
   const auto key = ToString(env, argv[1]);
   const auto value = ToString(env, argv[2]);
-  const auto sync = BooleanProperty(env, argv[3], "sync", false);
-  const auto callback = argv[4];
 
-  auto worker = new PutWorker(env, database, callback, key, value, sync);
-  worker->Queue(env);
-
-  return 0;
+  rocksdb::WriteOptions options;
+  return ToError(env, database->db_->Put(options, key, value));
 }
 
 struct GetWorker final : public PriorityWorker {
@@ -913,15 +887,11 @@ struct GetManyWorker final : public PriorityWorker {
                  const bool valueAsBuffer,
                  const bool fillCache)
     : PriorityWorker(env, database, callback, "leveldown.get.many"),
-      keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache),
-      snapshot_(database->db_->GetSnapshot(), [&](const rocksdb::Snapshot* ptr) {
-        database_->db_->ReleaseSnapshot(ptr);
-      }) {
+      keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache) {
   }
 
   rocksdb::Status Execute () override {
     rocksdb::ReadOptions options;
-    options.snapshot = snapshot_.get();
     options.fill_cache = fillCache_;
     
     status_ = database_->db_->MultiGet(
@@ -929,8 +899,6 @@ struct GetManyWorker final : public PriorityWorker {
       std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()),
       &values_
     );
-
-    snapshot_ = nullptr;
 
     for (auto status : status_) {
       if (!status.ok() && !status.IsNotFound()) {
@@ -988,115 +956,65 @@ NAPI_METHOD(db_get_many) {
   return 0;
 }
 
-struct DelWorker final : public PriorityWorker {
-  DelWorker (napi_env env,
-             Database* database,
-             napi_value callback,
-             const std::string& key,
-             bool sync)
-    : PriorityWorker(env, database, callback, "rocks_level.db.del"),
-      key_(key), sync_(sync) {
-  }
-
-  rocksdb::Status Execute () override {
-    rocksdb::WriteOptions options;
-    options.sync = sync_;
-    return database_->db_->Delete(options, key_);
-  }
-
-  const std::string key_;
-  const bool sync_;
-};
-
 NAPI_METHOD(db_del) {
-  NAPI_ARGV(4);
-  NAPI_DB_CONTEXT();
-
-  const auto key = ToString(env, argv[1]);
-  const auto sync = BooleanProperty(env, argv[2], "sync", false);
-  const auto callback = argv[3];
-
-  auto worker = new DelWorker(env, database, callback, key, sync);
-  worker->Queue(env);
-
-  return 0;
-}
-
-struct ClearWorker final : public PriorityWorker {
-  ClearWorker (napi_env env,
-               Database* database,
-               napi_value callback,
-               const bool reverse,
-               const int limit,
-               const std::string* lt,
-               const std::string* lte,
-               const std::string* gt,
-               const std::string* gte)
-    : PriorityWorker(env, database, callback, "rocks_level.db.clear"),
-      iterator_(database, reverse, lt, lte, gt, gte, limit, false) {
-  }
-
-  rocksdb::Status Execute () override {
-    iterator_.SeekToRange();
-
-    // TODO: add option
-    const uint32_t hwm = 16 * 1024;
-
-    rocksdb::WriteBatch batch;
-    rocksdb::WriteOptions options;
-    rocksdb::Status status;
-    
-    while (true) {
-      size_t bytesRead = 0;
-
-      while (bytesRead <= hwm && iterator_.Valid() && iterator_.Increment()) {
-        const auto key = iterator_.CurrentKey();
-        batch.Delete(key);
-        bytesRead += key.size();
-        iterator_.Next();
-      }
-
-      status = iterator_.Status();
-      if (!status.ok() || bytesRead == 0) {
-        break;
-      }
-
-      status = database_->db_->Write(options, &batch);
-      if (!status.ok()) {
-        break;
-      }
-
-      batch.Clear();
-    }
-
-    iterator_.Close();
-
-    return status;
-  }
-
-private:
-  BaseIterator iterator_;
-};
-
-NAPI_METHOD(db_clear) {
   NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
 
-  napi_value options = argv[1];
-  napi_value callback = argv[2];
+  const auto key = ToString(env, argv[1]);
 
-  const auto reverse = BooleanProperty(env, options, "reverse", false);
-  const auto limit = Int32Property(env, options, "limit", -1);
+  rocksdb::WriteOptions options;
+  return ToError(env, database->db_->Delete(options, key));
+}
 
-  const auto lt = RangeOption(env, options, "lt");
-  const auto lte = RangeOption(env, options, "lte");
-  const auto gt = RangeOption(env, options, "gt");
-  const auto gte = RangeOption(env, options, "gte");
+NAPI_METHOD(db_clear) {
+  NAPI_ARGV(2);
+  NAPI_DB_CONTEXT();
 
-  auto worker = new ClearWorker(env, database, callback, reverse, limit, lt, lte, gt, gte);
-  worker->Queue(env);
+  const auto reverse = BooleanProperty(env, argv[1], "reverse", false);
+  const auto limit = Int32Property(env, argv[1], "limit", -1);
 
-  return 0;
+  const auto lt = RangeOption(env, argv[1], "lt");
+  const auto lte = RangeOption(env, argv[1], "lte");
+  const auto gt = RangeOption(env, argv[1], "gt");
+  const auto gte = RangeOption(env, argv[1], "gte");
+
+  BaseIterator it(database, reverse, lt, lte, gt, gte, limit, false);
+
+  it.SeekToRange();
+
+  // TODO: add option
+  const uint32_t hwm = 16 * 1024;
+
+  rocksdb::WriteBatch batch;
+  rocksdb::WriteOptions options;
+  rocksdb::Status status;
+  
+  while (true) {
+    size_t bytesRead = 0;
+
+    while (bytesRead <= hwm && it.Valid() && it.Increment()) {
+      const auto key = it.CurrentKey();
+      batch.Delete(key);
+      bytesRead += key.size();
+      it.Next();
+    }
+
+    status = it.Status();
+    if (!status.ok() || bytesRead == 0) {
+      break;
+    }
+
+    status = database->db_->Write(options, &batch);
+    if (!status.ok()) {
+      break;
+    }
+
+    batch.Clear();
+  }
+
+  it.Close();
+  
+  return ToError(env, status);
 }
 
 struct ApproximateSizeWorker final : public PriorityWorker {
@@ -1427,71 +1345,44 @@ NAPI_METHOD(iterator_nextv) {
   return 0;
 }
 
-struct BatchWorker final : public PriorityWorker {
-  BatchWorker (napi_env env,
-               Database* database,
-               napi_value callback,
-               napi_value array,
-               const bool sync)
-    : PriorityWorker(env, database, callback, "rocks_level.batch.do"), sync_(sync) {
-    uint32_t length;
-    NAPI_STATUS_THROWS_VOID(napi_get_array_length(env, array, &length));
-
-    for (uint32_t i = 0; i < length; i++) {
-      napi_value element;
-      NAPI_STATUS_THROWS_VOID(napi_get_element(env, array, i, &element));
-
-      if (!IsObject(env, element)) continue;
-
-      const auto type = StringProperty(env, element, "type");
-
-      if (type == "del") {
-        if (!HasProperty(env, element, "key")) continue;
-        const auto key = ToString(env, GetProperty(env, element, "key"));
-
-        batch_.Delete(key);
-        if (!hasData_) hasData_ = true;
-      } else if (type == "put") {
-        if (!HasProperty(env, element, "key")) continue;
-        if (!HasProperty(env, element, "value")) continue;
-
-        const auto key = ToString(env, GetProperty(env, element, "key"));
-        const auto value = ToString(env, GetProperty(env, element, "value"));
-
-        batch_.Put(key, value);
-        if (!hasData_) hasData_ = true;
-      }
-    }
-  }
-
-  rocksdb::Status Execute () override {
-    if (!hasData_) {
-      return rocksdb::Status::OK();
-    }
-
-    rocksdb::WriteOptions options;
-    options.sync = sync_;
-    return database_->db_->Write(options, &batch_);
-  }
-
-private:
-  rocksdb::WriteBatch batch_;
-  const bool sync_;
-  bool hasData_;
-};
-
 NAPI_METHOD(batch_do) {
-  NAPI_ARGV(4);
+  NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
 
-  const auto array = argv[1];
-  const auto sync = BooleanProperty(env, argv[2], "sync", false);
-  const auto callback = argv[3];
+  const auto operations = argv[1];
 
-  auto worker = new BatchWorker(env, database, callback, array, sync);
-  worker->Queue(env);
+  rocksdb::WriteBatch batch;
 
-  return 0;
+  uint32_t length;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, operations, &length));
+
+  for (uint32_t i = 0; i < length; i++) {
+    napi_value element;
+    NAPI_STATUS_THROWS(napi_get_element(env, operations, i, &element));
+
+    if (!IsObject(env, element)) continue;
+
+    const auto type = StringProperty(env, element, "type");
+
+    if (type == "del") {
+      if (!HasProperty(env, element, "key")) continue;
+
+      const auto key = ToString(env, GetProperty(env, element, "key"));
+
+      batch.Delete(key);
+    } else if (type == "put") {
+      if (!HasProperty(env, element, "key")) continue;
+      if (!HasProperty(env, element, "value")) continue;
+
+      const auto key = ToString(env, GetProperty(env, element, "key"));
+      const auto value = ToString(env, GetProperty(env, element, "value"));
+
+      batch.Put(key, value);
+    }
+  }
+
+  rocksdb::WriteOptions options;
+  return ToError(env, database->db_->Write(options, &batch));
 }
 
 static void FinalizeBatch (napi_env env, void* data, void* hint) {
@@ -1543,51 +1434,15 @@ NAPI_METHOD(batch_clear) {
   return 0;
 }
 
-struct BatchWriteWorker final : public PriorityWorker {
-  BatchWriteWorker (napi_env env,
-                    Database* database,
-                    napi_value batch,
-                    napi_value callback,
-                    const bool sync)
-    : PriorityWorker(env, database, callback, "leveldown.batch.write"),
-      sync_(sync) {
-
-    NAPI_STATUS_THROWS_VOID(napi_get_value_external(env, batch, reinterpret_cast<void**>(&batch_)));
-
-    // Prevent GC of batch object before we execute
-    NAPI_STATUS_THROWS_VOID(napi_create_reference(env, batch, 1, &batchRef_));
-  }
-
-  rocksdb::Status Execute () override {
-    rocksdb::WriteOptions options;
-    options.sync = sync_;
-    return database_->db_->Write(options, batch_);
-  }
-
-  void Finally (napi_env env) override {
-    napi_delete_reference(env, batchRef_);
-    PriorityWorker::Finally(env);
-  }
-
-private:
-  rocksdb::WriteBatch* batch_;
-  const bool sync_;
-  napi_ref batchRef_;
-};
-
 NAPI_METHOD(batch_write) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto batch = argv[1];
-  const auto options = argv[2];
-  const auto sync = BooleanProperty(env, options, "sync", false);
-  const auto callback = argv[3];
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
-  auto worker = new BatchWriteWorker(env, database, batch, callback, sync);
-  worker->Queue(env);
-
-  return 0;
+  rocksdb::WriteOptions options;
+  return ToError(env, database->db_->Write(options, batch));
 }
 
 NAPI_INIT() {

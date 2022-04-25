@@ -27,11 +27,10 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _write (options, callback) {
-    binding.batch_write(this[kDbContext], this[kBatchContext], options, callback)
+    process.nextTick(callback, binding.batch_write(this[kDbContext], this[kBatchContext], options))
   }
 
   _close (callback) {
-    // TODO: close native batch (currently done on GC)
     process.nextTick(callback)
   }
 }

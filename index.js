@@ -63,7 +63,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _put (key, value, options, callback) {
-    binding.db_put(this[kContext], key, value, options, callback)
+    process.nextTick(callback, binding.db_put(this[kContext], key, value, options))
   }
 
   _get (key, options, callback) {
@@ -75,11 +75,11 @@ class RocksLevel extends AbstractLevel {
   }
 
   _del (key, options, callback) {
-    binding.db_del(this[kContext], key, options, callback)
+    process.nextTick(callback, binding.db_del(this[kContext], key, options))
   }
 
   _clear (options, callback) {
-    binding.db_clear(this[kContext], options, callback)
+    process.nextTick(callback, binding.db_clear(this[kContext], options))
   }
 
   _chainedBatch () {
@@ -87,7 +87,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _batch (operations, options, callback) {
-    binding.batch_do(this[kContext], operations, options, callback)
+    process.nextTick(callback, binding.batch_do(this[kContext], operations, options))
   }
 
   approximateSize (start, end, options, callback) {
