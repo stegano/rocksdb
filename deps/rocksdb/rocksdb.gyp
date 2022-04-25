@@ -135,6 +135,7 @@
       "sources": [
         "rocksdb/cache/cache.cc",
         "rocksdb/cache/cache_entry_roles.cc",
+        "rocksdb/cache/cache_key.cc",
         "rocksdb/cache/cache_reservation_manager.cc",
         "rocksdb/cache/clock_cache.cc",
         "rocksdb/cache/lru_cache.cc",
