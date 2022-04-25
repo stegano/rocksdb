@@ -53,9 +53,7 @@
         [
           "OS == 'mac'",
           {
-            "cflags+": ["-fvisibility=hidden"],
             "xcode_settings": {
-              "GCC_SYMBOLS_PRIVATE_EXTERN": "YES",
               "WARNING_CFLAGS": [
                 "-Wno-sign-compare",
                 "-Wno-unused-variable",
