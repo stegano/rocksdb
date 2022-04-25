@@ -135,6 +135,7 @@
       "sources": [
         "rocksdb/cache/cache.cc",
         "rocksdb/cache/cache_entry_roles.cc",
+        "rocksdb/cache/cache_reservation_manager.cc",
         "rocksdb/cache/clock_cache.cc",
         "rocksdb/cache/lru_cache.cc",
         "rocksdb/cache/sharded_cache.cc",
@@ -223,6 +224,7 @@
         "rocksdb/env/file_system_tracer.cc",
         "rocksdb/env/fs_remap.cc",
         "rocksdb/env/mock_env.cc",
+        "rocksdb/env/unique_id.cc",
         "rocksdb/file/delete_scheduler.cc",
         "rocksdb/file/file_prefetch_buffer.cc",
         "rocksdb/file/file_util.cc",
@@ -345,6 +347,7 @@
         "rocksdb/util/random.cc",
         "rocksdb/util/rate_limiter.cc",
         "rocksdb/util/ribbon_config.cc",
+        "rocksdb/util/regex.cc",
         "rocksdb/util/slice.cc",
         "rocksdb/util/file_checksum_helper.cc",
         "rocksdb/util/status.cc",
