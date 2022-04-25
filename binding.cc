@@ -345,56 +345,6 @@ struct Database {
     db_.reset();
   }
 
-  rocksdb::Status Put (const rocksdb::WriteOptions& options,
-                       const std::string& key,
-                       const std::string& value) {
-    return db_->Put(options, db_->DefaultColumnFamily(), key, value);
-  }
-
-  rocksdb::Status Get (const rocksdb::ReadOptions& options,
-                       const std::string& key,
-                       rocksdb::PinnableSlice& value) {
-    return db_->Get(options, db_->DefaultColumnFamily(), key, &value);
-  }
-
-  rocksdb::Status Del (const rocksdb::WriteOptions& options,
-                       const std::string& key) {
-    return db_->Delete(options, db_->DefaultColumnFamily(), key);
-  }
-
-  rocksdb::Status WriteBatch (const rocksdb::WriteOptions& options,
-                              rocksdb::WriteBatch* batch) {
-    return db_->Write(options, batch);
-  }
-
-  uint64_t ApproximateSize (const rocksdb::Range* range) {
-    uint64_t size = 0;
-    db_->GetApproximateSizes(range, 1, &size);
-    return size;
-  }
-
-  void CompactRange (const rocksdb::Slice* start,
-                     const rocksdb::Slice* end) {
-    rocksdb::CompactRangeOptions options;
-    db_->CompactRange(options, start, end);
-  }
-
-  void GetProperty (const std::string& property, std::string& value) {
-    db_->GetProperty(property, &value);
-  }
-
-  const rocksdb::Snapshot* NewSnapshot () {
-    return db_->GetSnapshot();
-  }
-
-  rocksdb::Iterator* NewIterator (const rocksdb::ReadOptions& options) {
-    return db_->NewIterator(options);
-  }
-
-  void ReleaseSnapshot (const rocksdb::Snapshot* snapshot) {
-    return db_->ReleaseSnapshot(snapshot);
-  }
-
   void AttachIterator (napi_env env, Iterator* iterator) {
     iterators_.insert(iterator);
     IncrementPriorityWork(env);
@@ -462,10 +412,10 @@ struct BaseIterator {
       lte_(lte),
       gt_(gt),
       gte_(gte),
-      snapshot_(database->NewSnapshot(), [this](const rocksdb::Snapshot* ptr) {
-        database_->ReleaseSnapshot(ptr);
+      snapshot_(database_->db_->GetSnapshot(), [this](const rocksdb::Snapshot* ptr) {
+        database_->db_->ReleaseSnapshot(ptr);
       }),
-      iterator_(database->NewIterator([&]{
+      iterator_(database->db_->NewIterator([&]{
         rocksdb::ReadOptions options;
         if (lt_ && !lte_) {
           upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
@@ -880,7 +830,7 @@ struct PutWorker final : public PriorityWorker {
   rocksdb::Status Execute () override {
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    return database_->Put(options, key_, value_);
+    return database_->db_->Put(options, key_, value_);
   }
 
   const std::string key_;
@@ -917,7 +867,7 @@ struct GetWorker final : public PriorityWorker {
   rocksdb::Status Execute () override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
-    return database_->Get(options, key_, value_);
+    return database_->db_->Get(options, database_->db_->DefaultColumnFamily(), key_, &value_);
   }
 
   void Then (napi_env env, napi_value callback) override {
@@ -959,8 +909,8 @@ struct GetManyWorker final : public PriorityWorker {
                  const bool fillCache)
     : PriorityWorker(env, database, callback, "leveldown.get.many"),
       keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache),
-      snapshot_(database->NewSnapshot(), [&](const rocksdb::Snapshot* ptr) {
-        database_->ReleaseSnapshot(ptr);
+      snapshot_(database->db_->GetSnapshot(), [&](const rocksdb::Snapshot* ptr) {
+        database_->db_->ReleaseSnapshot(ptr);
       }) {
   }
 
@@ -1046,7 +996,7 @@ struct DelWorker final : public PriorityWorker {
   rocksdb::Status Execute () override {
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    return database_->Del(options, key_);
+    return database_->db_->Delete(options, key_);
   }
 
   const std::string key_;
@@ -1106,7 +1056,7 @@ struct ClearWorker final : public PriorityWorker {
         break;
       }
 
-      status = database_->WriteBatch(options, &batch);
+      status = database_->db_->Write(options, &batch);
       if (!status.ok()) {
         break;
       }
@@ -1155,8 +1105,7 @@ struct ApproximateSizeWorker final : public PriorityWorker {
 
   rocksdb::Status Execute () override {
     rocksdb::Range range(start_, end_);
-    size_ = database_->ApproximateSize(&range);
-    return rocksdb::Status::OK();
+    return database_->db_->GetApproximateSizes(&range, 1, &size_);
   }
 
   void Then (napi_env env, napi_value callback) override {
@@ -1179,7 +1128,7 @@ NAPI_METHOD(db_approximate_size) {
   const auto end = ToString(env, argv[2]);
   const auto callback = argv[3];
 
-  auto worker  = new ApproximateSizeWorker(env, database, callback, start, end);
+  auto worker = new ApproximateSizeWorker(env, database, callback, start, end);
   worker->Queue(env);
 
   return 0;
@@ -1197,8 +1146,8 @@ struct CompactRangeWorker final : public PriorityWorker {
   rocksdb::Status Execute () override {
     rocksdb::Slice start = start_;
     rocksdb::Slice end = end_;
-    database_->CompactRange(&start, &end);
-    return rocksdb::Status::OK();
+    rocksdb::CompactRangeOptions options;
+    return database_->db_->CompactRange(options, &start, &end);
   }
 
   const std::string start_;
@@ -1226,7 +1175,7 @@ NAPI_METHOD(db_get_property) {
   const auto property = ToString(env, argv[1]);
 
   std::string value;
-  database->GetProperty(property, value);
+  database->db_->GetProperty(property, &value);
 
   napi_value result;
   napi_create_string_utf8(env, value.data(), value.size(), &result);
@@ -1517,7 +1466,7 @@ struct BatchWorker final : public PriorityWorker {
 
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    return database_->WriteBatch(options, &batch_);
+    return database_->db_->Write(options, &batch_);
   }
 
 private:
@@ -1607,7 +1556,7 @@ struct BatchWriteWorker final : public PriorityWorker {
   rocksdb::Status Execute () override {
     rocksdb::WriteOptions options;
     options.sync = sync_;
-    return database_->WriteBatch(options, batch_);
+    return database_->db_->Write(options, batch_);
   }
 
   void Finally (napi_env env) override {
