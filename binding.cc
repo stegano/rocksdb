@@ -61,7 +61,7 @@ static bool IsObject (napi_env env, napi_value value) {
   return type == napi_object;
 }
 
-static napi_value CreateError (napi_env env, const std::string& str) {
+static napi_value CreateError (napi_env env, const std::string_view& str) {
   napi_value msg;
   napi_create_string_utf8(env, str.data(), str.size(), &msg);
   napi_value error;
@@ -69,7 +69,7 @@ static napi_value CreateError (napi_env env, const std::string& str) {
   return error;
 }
 
-static napi_value CreateCodeError (napi_env env, const std::string& code, const std::string& msg) {
+static napi_value CreateCodeError (napi_env env, const std::string_view& code, const std::string_view& msg) {
   napi_value codeValue;
   napi_create_string_utf8(env, code.data(), code.size(), &codeValue);
   napi_value msgValue;
@@ -79,19 +79,19 @@ static napi_value CreateCodeError (napi_env env, const std::string& code, const 
   return error;
 }
 
-static bool HasProperty (napi_env env, napi_value obj, const std::string& key) {
+static bool HasProperty (napi_env env, napi_value obj, const std::string_view& key) {
   bool has = false;
   napi_has_named_property(env, obj, key.data(), &has);
   return has;
 }
 
-static napi_value GetProperty (napi_env env, napi_value obj, const std::string& key) {
+static napi_value GetProperty (napi_env env, napi_value obj, const std::string_view& key) {
   napi_value value;
   napi_get_named_property(env, obj, key.data(), &value);
   return value;
 }
 
-static bool BooleanProperty (napi_env env, napi_value obj, const std::string& key, bool defaultValue) {
+static bool BooleanProperty (napi_env env, napi_value obj, const std::string_view& key, bool defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     bool result;
@@ -102,7 +102,7 @@ static bool BooleanProperty (napi_env env, napi_value obj, const std::string& ke
   return defaultValue;
 }
 
-static bool EncodingIsBuffer (napi_env env, napi_value obj, const std::string& option) {
+static bool EncodingIsBuffer (napi_env env, napi_value obj, const std::string_view& option) {
   napi_value value;
   size_t size;
 
@@ -115,7 +115,7 @@ static bool EncodingIsBuffer (napi_env env, napi_value obj, const std::string& o
   return false;
 }
 
-static uint32_t Uint32Property (napi_env env, napi_value obj, const std::string& key, uint32_t defaultValue) {
+static uint32_t Uint32Property (napi_env env, napi_value obj, const std::string_view& key, uint32_t defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     uint32_t result;
@@ -126,7 +126,7 @@ static uint32_t Uint32Property (napi_env env, napi_value obj, const std::string&
   return defaultValue;
 }
 
-static int Int32Property (napi_env env, napi_value obj, const std::string& key, int defaultValue) {
+static int Int32Property (napi_env env, napi_value obj, const std::string_view& key, int defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     int result;
@@ -154,7 +154,7 @@ static std::string ToString (napi_env env, napi_value from, const std::string& d
   return defaultValue;
 }
 
-static std::string StringProperty (napi_env env, napi_value obj, const std::string& key, const std::string& defaultValue = "") {
+static std::string StringProperty (napi_env env, napi_value obj, const std::string_view& key, const std::string& defaultValue = "") {
   if (HasProperty(env, obj, key)) {
     napi_value value = GetProperty(env, obj, key);
     if (IsString(env, value)) {
@@ -178,7 +178,7 @@ static size_t StringOrBufferLength (napi_env env, napi_value value) {
   return size;
 }
 
-static std::string* RangeOption (napi_env env, napi_value opts, const std::string& name) {
+static std::string* RangeOption (napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
     return new std::string(ToString(env, value));
