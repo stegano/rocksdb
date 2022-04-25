@@ -213,6 +213,32 @@ static napi_status CallFunction (napi_env env, napi_value callback, const int ar
   return napi_call_function(env, global, callback, argc, argv, nullptr);
 }
 
+static napi_value ToError(napi_env env, const rocksdb::Status& status) {
+  if (status.ok()) {
+    return 0;
+  }
+
+  const auto msg = status.ToString();
+
+  if (status.IsNotFound()) {
+    return CreateCodeError(env, "LEVEL_NOT_FOUND", msg);
+  } else if (status.IsCorruption()) {
+    return CreateCodeError(env, "LEVEL_CORRUPTION", msg);
+  } else if (status.IsIOError()) {
+    if (msg.find("IO error: lock ") != std::string::npos) { // env_posix.cc
+      return CreateCodeError(env, "LEVEL_LOCKED", msg);
+    } else if (msg.find("IO error: LockFile ") != std::string::npos) { // env_win.cc
+      return CreateCodeError(env, "LEVEL_LOCKED", msg);
+    } else if (msg.find("IO error: While lock file") != std::string::npos) { // env_mac.cc
+      return CreateCodeError(env, "LEVEL_LOCKED", msg);
+    } else {
+      return CreateCodeError(env, "LEVEL_IO_ERROR", msg);
+    }
+  }
+
+  return CreateError(env, msg);
+}
+
 template <typename T>
 void Convert (napi_env env, const T& s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
@@ -280,28 +306,7 @@ struct BaseWorker {
   }
 
   virtual void Catch (napi_env env, napi_value callback) {
-    napi_value argv;
-
-    const auto msg = status_.ToString();
-
-    if (status_.IsNotFound()) {
-      argv = CreateCodeError(env, "LEVEL_NOT_FOUND", msg);
-    } else if (status_.IsCorruption()) {
-      argv = CreateCodeError(env, "LEVEL_CORRUPTION", msg);
-    } else if (status_.IsIOError()) {
-      if (msg.find("IO error: lock ") != std::string::npos) { // env_posix.cc
-        argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
-      } else if (msg.find("IO error: LockFile ") != std::string::npos) { // env_win.cc
-        argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
-      } else if (msg.find("IO error: While lock file") != std::string::npos) { // env_mac.cc
-        argv = CreateCodeError(env, "LEVEL_LOCKED", msg);
-      } else {
-        argv = CreateCodeError(env, "LEVEL_IO_ERROR", msg);
-      }
-    } else {
-      argv = CreateError(env, msg);
-    }
-
+    auto argv = ToError(env, status_);
     CallFunction(env, callback, 1, &argv);
   }
 
