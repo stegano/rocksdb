@@ -151,6 +151,7 @@
         "rocksdb/db/blob/blob_log_format.cc",
         "rocksdb/db/blob/blob_log_sequential_reader.cc",
         "rocksdb/db/blob/blob_log_writer.cc",
+        "rocksdb/db/blob/prefetch_buffer_collection.cc",
         "rocksdb/db/builder.cc",
         "rocksdb/db/c.cc",
         "rocksdb/db/column_family.cc",
