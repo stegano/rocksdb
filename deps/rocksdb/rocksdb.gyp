@@ -92,7 +92,7 @@
               "HAVE_PCLMUL=1",
               "HAVE_UINT128_EXTENSION=1",
               "HAVE_ALIGNED_NEW=1",
-              "HAVE_FULLFSYNC=1",
+              # "HAVE_FULLFSYNC=1",
               # "LIBURING=1",
               # "NUMA=1",
               # "TBB=1",
