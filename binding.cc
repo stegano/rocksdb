@@ -16,6 +16,7 @@
 
 namespace leveldb = rocksdb;
 
+#include <array>
 #include <set>
 #include <memory>
 #include <string>
@@ -142,7 +143,7 @@ static std::string ToString (napi_env env, napi_value from, const std::string& d
     size_t length = 0;
     napi_get_value_string_utf8(env, from, nullptr, 0, &length);
     std::string value(length, '\0');
-    napi_get_value_string_utf8( env, from, &value[0], value.length() + 1, &length);
+    napi_get_value_string_utf8(env, from, &value[0], value.length() + 1, &length);
     return value;
   } else if (IsBuffer(env, from)) {
     char* buf = nullptr;
@@ -247,6 +248,31 @@ void Convert (napi_env env, const T& s, bool asBuffer, napi_value& result) {
     napi_create_string_utf8(env, s.data(), s.size(), &result);
   }
 }
+
+struct NapiSlice : public rocksdb::Slice {
+  NapiSlice (napi_env env, napi_value from) {
+    if (IsString(env, from)) {
+      napi_get_value_string_utf8(env, from, nullptr, 0, &size_);
+      char* data;
+      if (size_ + 1 < stack_.size()) {
+        data = stack_.data();
+      } else {
+        heap_.reset(new char[size_ + 1]);
+        data = heap_.get();
+      }
+      data[size_] = 0;
+      napi_get_value_string_utf8(env, from, data, size_ + 1, &size_);
+      data_ = data;
+    } else if (IsBuffer(env, from)) {
+      void* data;
+      napi_get_buffer_info(env, from, &data, &size_);
+      data_ = static_cast<char*>(data);
+    }
+  }
+  
+  std::unique_ptr<char[]> heap_;
+  std::array<char, 8192> stack_;
+};
 
 /**
  * Base worker class. Handles the async work. Derived classes can override the
@@ -1367,15 +1393,15 @@ NAPI_METHOD(batch_do) {
     if (type == "del") {
       if (!HasProperty(env, element, "key")) continue;
 
-      const auto key = ToString(env, GetProperty(env, element, "key"));
+      const auto key = NapiSlice(env, GetProperty(env, element, "key"));
 
       batch.Delete(key);
     } else if (type == "put") {
       if (!HasProperty(env, element, "key")) continue;
       if (!HasProperty(env, element, "value")) continue;
 
-      const auto key = ToString(env, GetProperty(env, element, "key"));
-      const auto value = ToString(env, GetProperty(env, element, "value"));
+      const auto key = NapiSlice(env, GetProperty(env, element, "key"));
+      const auto value = NapiSlice(env, GetProperty(env, element, "value"));
 
       batch.Put(key, value);
     }
@@ -1406,8 +1432,8 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(3);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
-  const auto value = ToString(env, argv[2]);
+  const auto key = NapiSlice(env, argv[1]);
+  const auto value = NapiSlice(env, argv[2]);
 
   batch->Put(key, value);
 
@@ -1418,7 +1444,7 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(2);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
+  const auto key = NapiSlice(env, argv[1]);
 
   batch->Delete(key);
 
