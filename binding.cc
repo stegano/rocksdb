@@ -959,19 +959,14 @@ struct GetManyWorker final : public PriorityWorker {
                  const bool fillCache)
     : PriorityWorker(env, database, callback, "leveldown.get.many"),
       keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache),
-      snapshot_(database->NewSnapshot()) {
-  }
-
-  ~GetManyWorker () {
-    if (snapshot_) {
-      database_->ReleaseSnapshot(snapshot_);
-      snapshot_ = nullptr;
-    }
+      snapshot_(database->NewSnapshot(), [&](const rocksdb::Snapshot* ptr) {
+        database_->ReleaseSnapshot(ptr);
+      }) {
   }
 
   rocksdb::Status Execute () override {
     rocksdb::ReadOptions options;
-    options.snapshot = snapshot_;
+    options.snapshot = snapshot_.get();
     options.fill_cache = fillCache_;
     
     status_ = database_->db_->MultiGet(
@@ -980,7 +975,6 @@ struct GetManyWorker final : public PriorityWorker {
       &values_
     );
 
-    database_->ReleaseSnapshot(snapshot_);
     snapshot_ = nullptr;
 
     for (auto status : status_) {
@@ -1020,7 +1014,7 @@ private:
   std::vector<rocksdb::Status> status_;
   const bool valueAsBuffer_;
   const bool fillCache_;
-  const rocksdb::Snapshot* snapshot_;
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
 };
 
 NAPI_METHOD(db_get_many) {
@@ -1247,8 +1241,6 @@ struct DestroyWorker final : public BaseWorker {
     : BaseWorker(env, nullptr, callback, "rocks_level.destroy_db"),
       location_(location) {}
 
-  ~DestroyWorker () {}
-
   rocksdb::Status Execute () override {
     rocksdb::Options options;
     return rocksdb::DestroyDB(location_, options);
@@ -1326,9 +1318,7 @@ NAPI_METHOD(iterator_init) {
                                keyAsBuffer, valueAsBuffer, highWaterMarkBytes);
   napi_value result;
 
-  NAPI_STATUS_THROWS(napi_create_external(env, iterator,
-                                          FinalizeIterator,
-                                          nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, iterator, FinalizeIterator, nullptr, &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.

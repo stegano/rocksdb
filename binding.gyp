@@ -27,7 +27,7 @@
             }
           },
           {
-            "cflags": ["-std=c++17"],
+            "cflags": ["-std=c++20"],
             "cflags!": ["-fno-rtti"],
             "cflags_cc!": ["-fno-rtti"],
             "cflags_cc+": ["-frtti"]
