@@ -643,8 +643,9 @@ struct Iterator final : public BaseIterator {
 
   void Detach(napi_env env) {
     database_->DetachIterator(env, this);
-    if (ref_)
+    if (ref_) {
       napi_delete_reference(env, ref_);
+    }
   }
 
   const bool keys_;
