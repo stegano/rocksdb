@@ -500,24 +500,12 @@ struct BaseIterator {
     didSeek_ = true;
 
     if (OutOfRange(target)) {
-      return SeekToEnd();
-    }
-
-    iterator_->Seek(target);
-
-    if (iterator_->Valid()) {
-      const auto cmp = iterator_->key().compare(target);
-      if (reverse_ ? cmp > 0 : cmp < 0) {
-        Next();
-      }
+      SeekToLast();
+      Next();
+    } else if (reverse_) {
+      iterator_->SeekForPrev(target);
     } else {
-      SeekToFirst();
-      if (iterator_->Valid()) {
-        const auto cmp = iterator_->key().compare(target);
-        if (reverse_ ? cmp > 0 : cmp < 0) {
-          SeekToEnd();
-        }
-      }
+      iterator_->Seek(target);
     }
   }
 
@@ -559,11 +547,6 @@ struct BaseIterator {
   void SeekToLast () {
     if (reverse_) iterator_->SeekToFirst();
     else iterator_->SeekToLast();
-  }
-
-  void SeekToEnd () {
-    SeekToLast();
-    Next();
   }
 
   rocksdb::Slice CurrentKey () const {
