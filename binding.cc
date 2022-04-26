@@ -357,8 +357,6 @@ struct Database {
     }
   }
 
-  void CloseDatabase() { db_.reset(); }
-
   void AttachIterator(napi_env env, Iterator* iterator) {
     iterators_.insert(iterator);
     IncrementPriorityWork(env);
@@ -617,7 +615,7 @@ static void env_cleanup_hook(void* arg) {
     }
 
     // Having closed the iterators (and released snapshots) we can safely close.
-    database->CloseDatabase();
+    database->db_->Close();
   }
 }
 
