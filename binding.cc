@@ -21,6 +21,7 @@ namespace leveldb = rocksdb;
 #include <memory>
 #include <string>
 #include <vector>
+#include <optional>
 
 class NullLogger : public rocksdb::Logger {
 public:
@@ -179,13 +180,13 @@ static size_t StringOrBufferLength (napi_env env, napi_value value) {
   return size;
 }
 
-static std::string* RangeOption (napi_env env, napi_value opts, const std::string_view& name) {
+static std::optional<std::string> RangeOption (napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
-    return new std::string(ToString(env, value));
+    return std::string(ToString(env, value));
   }
 
-  return nullptr;
+  return {};
 }
 
 static std::vector<std::string> KeyArray (napi_env env, napi_value arr) {
@@ -387,10 +388,10 @@ struct Database {
 struct BaseIterator {
   BaseIterator(Database* database,
                const bool reverse,
-               const std::string* lt,
-               const std::string* lte,
-               const std::string* gt,
-               const std::string* gte,
+               const std::optional<std::string> lt,
+               const std::optional<std::string> lte,
+               const std::optional<std::string> gt,
+               const std::optional<std::string> gte,
                const int limit,
                const bool fillCache)
     : database_(database),
@@ -552,10 +553,10 @@ struct BaseIterator {
   Database* database_;
 
 private:
-  const std::unique_ptr<const std::string> lt_;
-  const std::unique_ptr<const std::string> lte_;
-  const std::unique_ptr<const std::string> gt_;
-  const std::unique_ptr<const std::string> gte_;
+  const std::optional<std::string> lt_;
+  const std::optional<std::string> lte_;
+  const std::optional<std::string> gt_;
+  const std::optional<std::string> gte_;
   rocksdb::Slice lower_bound_;
   rocksdb::Slice upper_bound_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
@@ -572,10 +573,10 @@ struct Iterator final : public BaseIterator {
             const bool keys,
             const bool values,
             const int limit,
-            const std::string* lt,
-            const std::string* lte,
-            const std::string* gt,
-            const std::string* gte,
+            const std::optional<std::string> lt,
+            const std::optional<std::string> lte,
+            const std::optional<std::string> gt,
+            const std::optional<std::string> gte,
             const bool fillCache,
             const bool keyAsBuffer,
             const bool valueAsBuffer,
