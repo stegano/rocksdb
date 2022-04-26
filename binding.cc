@@ -865,13 +865,19 @@ struct GetWorker final : public PriorityWorker {
              const bool asBuffer,
              const bool fillCache)
     : PriorityWorker(env, database, callback, "rocks_level.db.get"),
-      key_(key), asBuffer_(asBuffer), fillCache_(fillCache) {
+      key_(key), asBuffer_(asBuffer), fillCache_(fillCache),
+      snapshot_(database_->db_->GetSnapshot(), [this](const rocksdb::Snapshot* ptr) {
+        database_->db_->ReleaseSnapshot(ptr);
+      }) {
   }
 
   rocksdb::Status Execute (Database& database) override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
-    return database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
+    options.snapshot = snapshot_.get();
+    auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
+    snapshot_.reset();
+    return status;
   }
 
   void OnOk (napi_env env, napi_value callback) override {
@@ -886,6 +892,7 @@ private:
   rocksdb::PinnableSlice value_;
   const bool asBuffer_;
   const bool fillCache_;
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
 };
 
 NAPI_METHOD(db_get) {
@@ -912,18 +919,23 @@ struct GetManyWorker final : public PriorityWorker {
                  const bool valueAsBuffer,
                  const bool fillCache)
     : PriorityWorker(env, database, callback, "leveldown.get.many"),
-      keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache) {
+      keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache),
+      snapshot_(database_->db_->GetSnapshot(), [this](const rocksdb::Snapshot* ptr) {
+        database_->db_->ReleaseSnapshot(ptr);
+      }) {
   }
 
   rocksdb::Status Execute (Database& database) override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
-    
+    options.snapshot = snapshot_.get();
+  
     status_ = database.db_->MultiGet(
       options,
       std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()),
       &values_
     );
+    snapshot_ = nullptr;
 
     for (auto status : status_) {
       if (!status.ok() && !status.IsNotFound()) {
