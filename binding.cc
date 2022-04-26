@@ -393,23 +393,6 @@ struct Database {
   uint32_t priorityWork_ = 0;
 };
 
-/**
- * Base worker class for doing async work that defers closing the database.
- */
-struct PriorityWorker : public BaseWorker {
-  PriorityWorker(napi_env env, Database* database, napi_value callback, const char* resourceName)
-      : BaseWorker(env, database, callback, resourceName) {
-    database_->IncrementPriorityWork(env);
-  }
-
-  virtual ~PriorityWorker() {}
-
-  void Destroy(napi_env env) override {
-    database_->DecrementPriorityWork(env);
-    BaseWorker::Destroy(env);
-  }
-};
-
 struct BaseIterator {
   BaseIterator(Database* database,
                const bool reverse,
@@ -662,7 +645,7 @@ NAPI_METHOD(db_init) {
   return result;
 }
 
-struct OpenWorker final : public PriorityWorker {
+struct OpenWorker final : public BaseWorker {
   OpenWorker(napi_env env,
              Database* database,
              napi_value callback,
@@ -678,7 +661,7 @@ struct OpenWorker final : public PriorityWorker {
              const uint32_t cacheSize,
              const std::string& infoLogLevel,
              const bool readOnly)
-      : PriorityWorker(env, database, callback, "leveldown.db.open"), readOnly_(readOnly), location_(location) {
+      : BaseWorker(env, database, callback, "leveldown.db.open"), readOnly_(readOnly), location_(location) {
     options_.create_if_missing = createIfMissing;
     options_.error_if_exists = errorIfExists;
     options_.compression = compression ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
@@ -806,19 +789,21 @@ NAPI_METHOD(db_put) {
   return ToError(env, database->db_->Put(options, key, value));
 }
 
-struct GetWorker final : public PriorityWorker {
+struct GetWorker final : public BaseWorker {
   GetWorker(napi_env env,
             Database* database,
             napi_value callback,
             const std::string& key,
             const bool asBuffer,
             const bool fillCache)
-      : PriorityWorker(env, database, callback, "rocks_level.db.get"),
+      : BaseWorker(env, database, callback, "rocks_level.db.get"),
         key_(key),
         asBuffer_(asBuffer),
         fillCache_(fillCache),
         snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {}
+                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
+    database_->IncrementPriorityWork(env);
+  }
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions options;
@@ -834,6 +819,11 @@ struct GetWorker final : public PriorityWorker {
     napi_get_null(env, &argv[0]);
     Convert(env, std::move(value_), asBuffer_, argv[1]);
     CallFunction(env, callback, 2, argv);
+  }
+
+  void Destroy(napi_env env) override {
+    database_->DecrementPriorityWork(env);
+    BaseWorker::Destroy(env);
   }
 
  private:
@@ -860,19 +850,21 @@ NAPI_METHOD(db_get) {
   return 0;
 }
 
-struct GetManyWorker final : public PriorityWorker {
+struct GetManyWorker final : public BaseWorker {
   GetManyWorker(napi_env env,
                 Database* database,
                 const std::vector<std::string>& keys,
                 napi_value callback,
                 const bool valueAsBuffer,
                 const bool fillCache)
-      : PriorityWorker(env, database, callback, "leveldown.get.many"),
+      : BaseWorker(env, database, callback, "leveldown.get.many"),
         keys_(keys),
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
         snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {}
+                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
+    database_->IncrementPriorityWork(env);
+  }
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions options;
@@ -911,6 +903,11 @@ struct GetManyWorker final : public PriorityWorker {
     napi_get_null(env, &argv[0]);
     argv[1] = array;
     CallFunction(env, callback, 2, argv);
+  }
+
+  void Destroy(napi_env env) override {
+    database_->DecrementPriorityWork(env);
+    BaseWorker::Destroy(env);
   }
 
  private:
