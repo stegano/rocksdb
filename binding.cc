@@ -183,7 +183,7 @@ static size_t StringOrBufferLength(napi_env env, napi_value value) {
 static std::optional<std::string> RangeOption(napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
-    return std::string(ToString(env, value));
+    return ToString(env, value);
   }
 
   return {};
