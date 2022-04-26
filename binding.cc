@@ -1158,7 +1158,6 @@ struct NextWorker final : public BaseWorker {
     // Limit the size of the cache to prevent starving the event loop
     // in JS-land while we're recursively calling process.nextTick().
 
-    finished_ = false;
     cache_.reserve(size_ * 2);
     size_t bytesRead = 0;
 
