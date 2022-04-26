@@ -807,8 +807,10 @@ struct GetWorker final : public BaseWorker {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
+    
     auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
-    snapshot_.reset();
+    snapshot_ = nullptr;
+
     return status;
   }
 
