@@ -279,9 +279,9 @@ struct NapiSlice : public rocksdb::Slice {
  * following virtual methods (listed in the order in which they're called):
  *
  * - Execute (abstract, worker pool thread): main work
- * - Then (main thread): call JS callback on success
- * - Catch (main thread): call JS callback on error
- * - Finally (main thread): do cleanup regardless of success
+ * - OnOk (main thread): call JS callback on success
+ * - OnError (main thread): call JS callback on error
+ * - Destroy (main thread): do cleanup regardless of success
  */
 struct BaseWorker {
   BaseWorker (napi_env env,
@@ -315,32 +315,32 @@ struct BaseWorker {
     napi_get_reference_value(env, self->callbackRef_, &callback);
 
     if (self->status_.ok()) {
-      self->Then(env, callback);
+      self->OnOk(env, callback);
     } else {
-      self->Catch(env, callback);
+      self->OnError(env, callback, ToError(env, self->status_));
     }
 
-    self->Finally(env);
+    self->Destroy(env);
+
+    napi_delete_reference(env, self->callbackRef_);
+    napi_delete_async_work(env, self->asyncWork_);
+
+    delete self;
   }
 
   virtual rocksdb::Status Execute () = 0;
 
-  virtual void Then (napi_env env, napi_value callback) {
+  virtual void OnOk (napi_env env, napi_value callback) {
     napi_value argv;
     napi_get_null(env, &argv);
     CallFunction(env, callback, 1, &argv);
   }
 
-  virtual void Catch (napi_env env, napi_value callback) {
-    auto argv = ToError(env, status_);
-    CallFunction(env, callback, 1, &argv);
+  virtual void OnError (napi_env env, napi_value callback, napi_value err) {
+    CallFunction(env, callback, 1, &err);
   }
 
-  virtual void Finally (napi_env env) {
-    napi_delete_reference(env, callbackRef_);
-    napi_delete_async_work(env, asyncWork_);
-
-    delete this;
+  virtual void Destroy (napi_env env) {
   }
 
   void Queue (napi_env env) {
@@ -423,9 +423,9 @@ struct PriorityWorker : public BaseWorker {
 
   virtual ~PriorityWorker () {}
 
-  void Finally (napi_env env) override {
+  void Destroy (napi_env env) override {
     database_->DecrementPriorityWork(env);
-    BaseWorker::Finally(env);
+    BaseWorker::Destroy(env);
   }
 };
 
@@ -875,7 +875,7 @@ struct GetWorker final : public PriorityWorker {
     return database_->db_->Get(options, database_->db_->DefaultColumnFamily(), key_, &value_);
   }
 
-  void Then (napi_env env, napi_value callback) override {
+  void OnOk (napi_env env, napi_value callback) override {
     napi_value argv[2];
     napi_get_null(env, &argv[0]);
     Convert(env, std::move(value_), asBuffer_, argv[1]);
@@ -935,7 +935,7 @@ struct GetManyWorker final : public PriorityWorker {
     return rocksdb::Status::OK();
   }
 
-  void Then (napi_env env, napi_value callback) override {
+  void OnOk (napi_env env, napi_value callback) override {
     const auto size = values_.size();
 
     napi_value array;
@@ -1120,9 +1120,9 @@ struct CloseIteratorWorker final : public BaseWorker {
     return rocksdb::Status::OK();
   }
 
-  void Finally (napi_env env) override {
+  void Destroy (napi_env env) override {
     iterator_->Detach(env);
-    BaseWorker::Finally(env);
+    BaseWorker::Destroy(env);
   }
 
 private:
@@ -1194,7 +1194,7 @@ struct NextWorker final : public BaseWorker {
     return iterator_->Status();
   }
 
-  void Then (napi_env env, napi_value callback) override {
+  void OnOk (napi_env env, napi_value callback) override {
     const auto size = cache_.size();
     napi_value result;
     napi_create_array_with_length(env, size, &result);
