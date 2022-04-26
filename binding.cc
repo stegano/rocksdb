@@ -189,25 +189,6 @@ static std::optional<std::string> RangeOption(napi_env env, napi_value opts, con
   return {};
 }
 
-static std::vector<std::string> KeyArray(napi_env env, napi_value arr) {
-  uint32_t length;
-  std::vector<std::string> result;
-
-  if (napi_get_array_length(env, arr, &length) == napi_ok) {
-    result.reserve(length);
-
-    for (uint32_t i = 0; i < length; i++) {
-      napi_value element;
-
-      if (napi_get_element(env, arr, i, &element) == napi_ok && StringOrBufferLength(env, element) > 0) {
-        result.push_back(ToString(env, element));
-      }
-    }
-  }
-
-  return result;
-}
-
 static napi_status CallFunction(napi_env env, napi_value callback, const int argc, napi_value* argv) {
   napi_value global;
   napi_get_global(env, &global);
@@ -921,7 +902,21 @@ NAPI_METHOD(db_get_many) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto keys = KeyArray(env, argv[1]);
+  std::vector<std::string> keys;
+  {
+    uint32_t length;
+    NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
+
+    keys.reserve(length);
+
+    for (uint32_t i = 0; i < length; i++) {
+      napi_value element;
+
+      NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
+      keys.push_back(ToString(env, element));
+    }
+  }
+
   const auto options = argv[2];
   const bool asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const bool fillCache = BooleanProperty(env, options, "fillCache", true);
