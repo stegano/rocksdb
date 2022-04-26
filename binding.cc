@@ -13,8 +13,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
-namespace leveldb = rocksdb;
-
 #include <array>
 #include <memory>
 #include <optional>
@@ -290,7 +288,7 @@ struct BaseWorker {
       : database_(database) {
     NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
     napi_value asyncResourceName;
-    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), NAPI_AUTO_LENGTH, &asyncResourceName));
+    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), resourceName.size(), &asyncResourceName));
     NAPI_STATUS_THROWS_VOID(napi_create_async_work(env, callback, asyncResourceName, BaseWorker::Execute,
                                                    BaseWorker::Complete, this, &asyncWork_));
   }
