@@ -499,6 +499,9 @@ struct BaseIterator {
   void Seek (const std::string& target) {
     didSeek_ = true;
 
+    // TODO (fix): Only check for (gt && !gte) and lte.
+    // See, https://github.com/facebook/rocksdb/issues/9904.
+
     if (OutOfRange(target)) {
       SeekToLast();
       Next();
