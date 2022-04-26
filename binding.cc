@@ -482,13 +482,7 @@ struct BaseIterator {
         iterator_->Next();
       }
     } else if (reverse_ && lte_) {
-      iterator_->Seek(*lte_);
-
-      if (!iterator_->Valid()) {
-        iterator_->SeekToLast();
-      } else if (iterator_->key().compare(*lte_) > 0) {
-        iterator_->Prev();
-      }
+      iterator_->SeekForPrev(*lte_);
     } else if (reverse_) {
       iterator_->SeekToLast();
     } else {
