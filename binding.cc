@@ -70,9 +70,7 @@ static napi_value CreateError(napi_env env, const std::string_view& str) {
   return error;
 }
 
-static napi_value CreateCodeError(napi_env env,
-                                  const std::string_view& code,
-                                  const std::string_view& msg) {
+static napi_value CreateCodeError(napi_env env, const std::string_view& code, const std::string_view& msg) {
   napi_value codeValue;
   napi_create_string_utf8(env, code.data(), code.size(), &codeValue);
   napi_value msgValue;
@@ -82,26 +80,19 @@ static napi_value CreateCodeError(napi_env env,
   return error;
 }
 
-static bool HasProperty(napi_env env,
-                        napi_value obj,
-                        const std::string_view& key) {
+static bool HasProperty(napi_env env, napi_value obj, const std::string_view& key) {
   bool has = false;
   napi_has_named_property(env, obj, key.data(), &has);
   return has;
 }
 
-static napi_value GetProperty(napi_env env,
-                              napi_value obj,
-                              const std::string_view& key) {
+static napi_value GetProperty(napi_env env, napi_value obj, const std::string_view& key) {
   napi_value value;
   napi_get_named_property(env, obj, key.data(), &value);
   return value;
 }
 
-static bool BooleanProperty(napi_env env,
-                            napi_value obj,
-                            const std::string_view& key,
-                            bool defaultValue) {
+static bool BooleanProperty(napi_env env, napi_value obj, const std::string_view& key, bool defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     bool result;
@@ -112,9 +103,7 @@ static bool BooleanProperty(napi_env env,
   return defaultValue;
 }
 
-static bool EncodingIsBuffer(napi_env env,
-                             napi_value obj,
-                             const std::string_view& option) {
+static bool EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& option) {
   napi_value value;
   size_t size;
 
@@ -127,10 +116,7 @@ static bool EncodingIsBuffer(napi_env env,
   return false;
 }
 
-static uint32_t Uint32Property(napi_env env,
-                               napi_value obj,
-                               const std::string_view& key,
-                               uint32_t defaultValue) {
+static uint32_t Uint32Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     uint32_t result;
@@ -141,10 +127,7 @@ static uint32_t Uint32Property(napi_env env,
   return defaultValue;
 }
 
-static int Int32Property(napi_env env,
-                         napi_value obj,
-                         const std::string_view& key,
-                         int defaultValue) {
+static int Int32Property(napi_env env, napi_value obj, const std::string_view& key, int defaultValue) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     int result;
@@ -155,15 +138,12 @@ static int Int32Property(napi_env env,
   return defaultValue;
 }
 
-static std::string ToString(napi_env env,
-                            napi_value from,
-                            const std::string& defaultValue = "") {
+static std::string ToString(napi_env env, napi_value from, const std::string& defaultValue = "") {
   if (IsString(env, from)) {
     size_t length = 0;
     napi_get_value_string_utf8(env, from, nullptr, 0, &length);
     std::string value(length, '\0');
-    napi_get_value_string_utf8(env, from, &value[0], value.length() + 1,
-                               &length);
+    napi_get_value_string_utf8(env, from, &value[0], value.length() + 1, &length);
     return value;
   } else if (IsBuffer(env, from)) {
     char* buf = nullptr;
@@ -202,9 +182,7 @@ static size_t StringOrBufferLength(napi_env env, napi_value value) {
   return size;
 }
 
-static std::optional<std::string> RangeOption(napi_env env,
-                                              napi_value opts,
-                                              const std::string_view& name) {
+static std::optional<std::string> RangeOption(napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
     return std::string(ToString(env, value));
@@ -223,8 +201,7 @@ static std::vector<std::string> KeyArray(napi_env env, napi_value arr) {
     for (uint32_t i = 0; i < length; i++) {
       napi_value element;
 
-      if (napi_get_element(env, arr, i, &element) == napi_ok &&
-          StringOrBufferLength(env, element) > 0) {
+      if (napi_get_element(env, arr, i, &element) == napi_ok && StringOrBufferLength(env, element) > 0) {
         result.push_back(ToString(env, element));
       }
     }
@@ -233,10 +210,7 @@ static std::vector<std::string> KeyArray(napi_env env, napi_value arr) {
   return result;
 }
 
-static napi_status CallFunction(napi_env env,
-                                napi_value callback,
-                                const int argc,
-                                napi_value* argv) {
+static napi_status CallFunction(napi_env env, napi_value callback, const int argc, napi_value* argv) {
   napi_value global;
   napi_get_global(env, &global);
   return napi_call_function(env, global, callback, argc, argv, nullptr);
@@ -256,11 +230,9 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
   } else if (status.IsIOError()) {
     if (msg.find("IO error: lock ") != std::string::npos) {  // env_posix.cc
       return CreateCodeError(env, "LEVEL_LOCKED", msg);
-    } else if (msg.find("IO error: LockFile ") !=
-               std::string::npos) {  // env_win.cc
+    } else if (msg.find("IO error: LockFile ") != std::string::npos) {  // env_win.cc
       return CreateCodeError(env, "LEVEL_LOCKED", msg);
-    } else if (msg.find("IO error: While lock file") !=
-               std::string::npos) {  // env_mac.cc
+    } else if (msg.find("IO error: While lock file") != std::string::npos) {  // env_mac.cc
       return CreateCodeError(env, "LEVEL_LOCKED", msg);
     } else {
       return CreateCodeError(env, "LEVEL_IO_ERROR", msg);
@@ -314,19 +286,13 @@ struct NapiSlice : public rocksdb::Slice {
  * - Destroy (main thread): do cleanup regardless of success
  */
 struct BaseWorker {
-  BaseWorker(napi_env env,
-             Database* database,
-             napi_value callback,
-             const std::string& resourceName)
+  BaseWorker(napi_env env, Database* database, napi_value callback, const std::string& resourceName)
       : database_(database) {
-    NAPI_STATUS_THROWS_VOID(
-        napi_create_reference(env, callback, 1, &callbackRef_));
+    NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
     napi_value asyncResourceName;
-    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(
-        env, resourceName.data(), NAPI_AUTO_LENGTH, &asyncResourceName));
-    NAPI_STATUS_THROWS_VOID(napi_create_async_work(
-        env, callback, asyncResourceName, BaseWorker::Execute,
-        BaseWorker::Complete, this, &asyncWork_));
+    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), NAPI_AUTO_LENGTH, &asyncResourceName));
+    NAPI_STATUS_THROWS_VOID(napi_create_async_work(env, callback, asyncResourceName, BaseWorker::Execute,
+                                                   BaseWorker::Complete, this, &asyncWork_));
   }
 
   virtual ~BaseWorker() {}
@@ -364,9 +330,7 @@ struct BaseWorker {
     CallFunction(env, callback, 1, &argv);
   }
 
-  virtual void OnError(napi_env env, napi_value callback, napi_value err) {
-    CallFunction(env, callback, 1, &err);
-  }
+  virtual void OnError(napi_env env, napi_value callback, napi_value err) { CallFunction(env, callback, 1, &err); }
 
   virtual void Destroy(napi_env env) {}
 
@@ -381,9 +345,7 @@ struct BaseWorker {
 };
 
 struct Database {
-  rocksdb::Status Open(const rocksdb::Options& options,
-                       const bool readOnly,
-                       const char* location) {
+  rocksdb::Status Open(const rocksdb::Options& options, const bool readOnly, const char* location) {
     if (readOnly) {
       rocksdb::DB* db = nullptr;
       const auto status = rocksdb::DB::OpenForReadOnly(options, location, &db);
@@ -409,9 +371,7 @@ struct Database {
     DecrementPriorityWork(env);
   }
 
-  void IncrementPriorityWork(napi_env env) {
-    napi_reference_ref(env, prioritRef_, &priorityWork_);
-  }
+  void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, prioritRef_, &priorityWork_); }
 
   void DecrementPriorityWork(napi_env env) {
     napi_reference_unref(env, prioritRef_, &priorityWork_);
@@ -437,10 +397,7 @@ struct Database {
  * Base worker class for doing async work that defers closing the database.
  */
 struct PriorityWorker : public BaseWorker {
-  PriorityWorker(napi_env env,
-                 Database* database,
-                 napi_value callback,
-                 const char* resourceName)
+  PriorityWorker(napi_env env, Database* database, napi_value callback, const char* resourceName)
       : BaseWorker(env, database, callback, resourceName) {
     database_->IncrementPriorityWork(env);
   }
@@ -468,9 +425,7 @@ struct BaseIterator {
         gt_(gt),
         gte_(gte),
         snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) {
-                    database_->db_->ReleaseSnapshot(ptr);
-                  }),
+                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }),
         iterator_(database->db_->NewIterator([&] {
           rocksdb::ReadOptions options;
           if (lt_ && !lte_) {
@@ -700,11 +655,9 @@ NAPI_METHOD(db_init) {
   napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
 
   napi_value result;
-  NAPI_STATUS_THROWS(
-      napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
 
-  NAPI_STATUS_THROWS(
-      napi_create_reference(env, result, 0, &database->prioritRef_));
+  NAPI_STATUS_THROWS(napi_create_reference(env, result, 0, &database->prioritRef_));
 
   return result;
 }
@@ -725,13 +678,10 @@ struct OpenWorker final : public PriorityWorker {
              const uint32_t cacheSize,
              const std::string& infoLogLevel,
              const bool readOnly)
-      : PriorityWorker(env, database, callback, "leveldown.db.open"),
-        readOnly_(readOnly),
-        location_(location) {
+      : PriorityWorker(env, database, callback, "leveldown.db.open"), readOnly_(readOnly), location_(location) {
     options_.create_if_missing = createIfMissing;
     options_.error_if_exists = errorIfExists;
-    options_.compression =
-        compression ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
+    options_.compression = compression ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
     options_.write_buffer_size = writeBufferSize;
     options_.max_open_files = maxOpenFiles;
     options_.max_log_file_size = maxFileSize;
@@ -777,13 +727,10 @@ struct OpenWorker final : public PriorityWorker {
     tableOptions.format_version = 5;
     tableOptions.checksum = rocksdb::kxxHash64;
 
-    options_.table_factory.reset(
-        rocksdb::NewBlockBasedTableFactory(tableOptions));
+    options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
   }
 
-  rocksdb::Status Execute(Database& database) override {
-    return database.Open(options_, readOnly_, location_.c_str());
-  }
+  rocksdb::Status Execute(Database& database) override { return database.Open(options_, readOnly_, location_.c_str()); }
 
   rocksdb::Options options_;
   const bool readOnly_;
@@ -796,30 +743,25 @@ NAPI_METHOD(db_open) {
 
   const auto location = ToString(env, argv[1]);
   const auto options = argv[2];
-  const auto createIfMissing =
-      BooleanProperty(env, options, "createIfMissing", true);
-  const auto errorIfExists =
-      BooleanProperty(env, options, "errorIfExists", false);
+  const auto createIfMissing = BooleanProperty(env, options, "createIfMissing", true);
+  const auto errorIfExists = BooleanProperty(env, options, "errorIfExists", false);
   const auto compression = BooleanProperty(env, options, "compression", true);
   const auto readOnly = BooleanProperty(env, options, "readOnly", false);
 
   const auto infoLogLevel = StringProperty(env, options, "infoLogLevel");
 
   const auto cacheSize = Uint32Property(env, options, "cacheSize", 8 << 20);
-  const auto writeBufferSize =
-      Uint32Property(env, options, "writeBufferSize", 4 << 20);
+  const auto writeBufferSize = Uint32Property(env, options, "writeBufferSize", 4 << 20);
   const auto blockSize = Uint32Property(env, options, "blockSize", 4096);
   const auto maxOpenFiles = Uint32Property(env, options, "maxOpenFiles", 1000);
-  const auto blockRestartInterval =
-      Uint32Property(env, options, "blockRestartInterval", 16);
+  const auto blockRestartInterval = Uint32Property(env, options, "blockRestartInterval", 16);
   const auto maxFileSize = Uint32Property(env, options, "maxFileSize", 2 << 20);
 
   const auto callback = argv[3];
 
-  auto worker = new OpenWorker(
-      env, database, callback, location, createIfMissing, errorIfExists,
-      compression, writeBufferSize, blockSize, maxOpenFiles,
-      blockRestartInterval, maxFileSize, cacheSize, infoLogLevel, readOnly);
+  auto worker =
+      new OpenWorker(env, database, callback, location, createIfMissing, errorIfExists, compression, writeBufferSize,
+                     blockSize, maxOpenFiles, blockRestartInterval, maxFileSize, cacheSize, infoLogLevel, readOnly);
   worker->Queue(env);
 
   return 0;
@@ -829,9 +771,7 @@ struct CloseWorker final : public BaseWorker {
   CloseWorker(napi_env env, Database* database, napi_value callback)
       : BaseWorker(env, database, callback, "leveldown.db.close") {}
 
-  rocksdb::Status Execute(Database& database) override {
-    return database.db_->Close();
-  }
+  rocksdb::Status Execute(Database& database) override { return database.db_->Close(); }
 };
 
 napi_value noop_callback(napi_env env, napi_callback_info info) {
@@ -878,16 +818,13 @@ struct GetWorker final : public PriorityWorker {
         asBuffer_(asBuffer),
         fillCache_(fillCache),
         snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) {
-                    database_->db_->ReleaseSnapshot(ptr);
-                  }) {}
+                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {}
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
-    auto status = database.db_->Get(
-        options, database.db_->DefaultColumnFamily(), key_, &value_);
+    auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
     snapshot_.reset();
     return status;
   }
@@ -917,8 +854,7 @@ NAPI_METHOD(db_get) {
   const auto fillCache = BooleanProperty(env, options, "fillCache", true);
   const auto callback = argv[3];
 
-  auto worker =
-      new GetWorker(env, database, callback, key, asBuffer, fillCache);
+  auto worker = new GetWorker(env, database, callback, key, asBuffer, fillCache);
   worker->Queue(env);
 
   return 0;
@@ -936,18 +872,14 @@ struct GetManyWorker final : public PriorityWorker {
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
         snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) {
-                    database_->db_->ReleaseSnapshot(ptr);
-                  }) {}
+                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {}
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
 
-    status_ = database.db_->MultiGet(
-        options, std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()),
-        &values_);
+    status_ = database.db_->MultiGet(options, std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()), &values_);
     snapshot_ = nullptr;
 
     for (auto status : status_) {
@@ -1000,8 +932,7 @@ NAPI_METHOD(db_get_many) {
   const bool fillCache = BooleanProperty(env, options, "fillCache", true);
   const auto callback = argv[3];
 
-  auto worker =
-      new GetManyWorker(env, database, keys, callback, asBuffer, fillCache);
+  auto worker = new GetManyWorker(env, database, keys, callback, asBuffer, fillCache);
   worker->Queue(env);
 
   return 0;
@@ -1103,21 +1034,18 @@ NAPI_METHOD(iterator_init) {
   const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto limit = Int32Property(env, options, "limit", -1);
-  const auto highWaterMarkBytes =
-      Uint32Property(env, options, "highWaterMarkBytes", 16 * 1024);
+  const auto highWaterMarkBytes = Uint32Property(env, options, "highWaterMarkBytes", 16 * 1024);
 
   const auto lt = RangeOption(env, options, "lt");
   const auto lte = RangeOption(env, options, "lte");
   const auto gt = RangeOption(env, options, "gt");
   const auto gte = RangeOption(env, options, "gte");
 
-  auto iterator =
-      new Iterator(database, reverse, keys, values, limit, lt, lte, gt, gte,
-                   fillCache, keyAsBuffer, valueAsBuffer, highWaterMarkBytes);
+  auto iterator = new Iterator(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
+                               valueAsBuffer, highWaterMarkBytes);
   napi_value result;
 
-  NAPI_STATUS_THROWS(
-      napi_create_external(env, iterator, FinalizeIterator, nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, iterator, FinalizeIterator, nullptr, &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
@@ -1139,11 +1067,7 @@ NAPI_METHOD(iterator_seek) {
 
 struct CloseIteratorWorker final : public BaseWorker {
   CloseIteratorWorker(napi_env env, Iterator* iterator, napi_value callback)
-      : BaseWorker(env,
-                   iterator->database_,
-                   callback,
-                   "leveldown.iterator.end"),
-        iterator_(iterator) {}
+      : BaseWorker(env, iterator->database_, callback, "leveldown.iterator.end"), iterator_(iterator) {}
 
   rocksdb::Status Execute(Database& database) override {
     iterator_->Close();
@@ -1172,16 +1096,8 @@ NAPI_METHOD(iterator_close) {
 }
 
 struct NextWorker final : public BaseWorker {
-  NextWorker(napi_env env,
-             Iterator* iterator,
-             uint32_t size,
-             napi_value callback)
-      : BaseWorker(env,
-                   iterator->database_,
-                   callback,
-                   "leveldown.iterator.next"),
-        iterator_(iterator),
-        size_(size) {}
+  NextWorker(napi_env env, Iterator* iterator, uint32_t size, napi_value callback)
+      : BaseWorker(env, iterator->database_, callback, "leveldown.iterator.next"), iterator_(iterator), size_(size) {}
 
   rocksdb::Status Execute(Database& database) override {
     if (!iterator_->DidSeek()) {
@@ -1221,8 +1137,7 @@ struct NextWorker final : public BaseWorker {
         bytesRead += v.size();
       }
 
-      if (bytesRead > iterator_->highWaterMarkBytes_ ||
-          cache_.size() / 2 >= size_) {
+      if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
         finished_ = true;
         return rocksdb::Status::OK();
       }
@@ -1337,8 +1252,7 @@ NAPI_METHOD(batch_init) {
   auto batch = new rocksdb::WriteBatch();
 
   napi_value result;
-  NAPI_STATUS_THROWS(
-      napi_create_external(env, batch, FinalizeBatch, nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, batch, FinalizeBatch, nullptr, &result));
   return result;
 }
 
@@ -1379,8 +1293,7 @@ NAPI_METHOD(batch_write) {
   NAPI_DB_CONTEXT();
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(
-      napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
   rocksdb::WriteOptions options;
   return ToError(env, database->db_->Write(options, batch));
