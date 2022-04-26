@@ -283,8 +283,8 @@ struct NapiSlice : public rocksdb::Slice {
  * - OnError (main thread): call JS callback on error
  * - Destroy (main thread): do cleanup regardless of success
  */
-struct BaseWorker {
-  BaseWorker (napi_env env,
+struct Worker {
+  Worker (napi_env env,
               Database* database,
               napi_value callback,
               const std::string& resourceName)
@@ -296,20 +296,20 @@ struct BaseWorker {
                                                     &asyncResourceName));
     NAPI_STATUS_THROWS_VOID(napi_create_async_work(env, callback,
                                                    asyncResourceName,
-                                                   BaseWorker::Execute,
-                                                   BaseWorker::Complete,
+                                                   Worker::Execute,
+                                                   Worker::Complete,
                                                    this, &asyncWork_));
   }
 
-  virtual ~BaseWorker () {}
+  virtual ~Worker() {}
 
   static void Execute (napi_env env, void* data) {
-    auto self = reinterpret_cast<BaseWorker*>(data);
+    auto self = reinterpret_cast<Worker*>(data);
     self->status_ = self->Execute();
   }
 
   static void Complete (napi_env env, napi_status status, void* data) {
-    auto self = reinterpret_cast<BaseWorker*>(data);
+    auto self = reinterpret_cast<Worker*>(data);
 
     napi_value callback;
     napi_get_reference_value(env, self->callbackRef_, &callback);
@@ -372,61 +372,17 @@ struct Database {
     }
   }
 
-  void CloseDatabase () {
-    db_.reset();
-  }
-
   void AttachIterator (napi_env env, Iterator* iterator) {
     iterators_.insert(iterator);
-    IncrementPriorityWork(env);
   }
 
   void DetachIterator (napi_env env, Iterator* iterator) {
     iterators_.erase(iterator);
-    DecrementPriorityWork(env);
-  }
-
-  void IncrementPriorityWork (napi_env env) {
-    napi_reference_ref(env, prioritRef_, &priorityWork_);
-  }
-
-  void DecrementPriorityWork (napi_env env) {
-    napi_reference_unref(env, prioritRef_, &priorityWork_);
-
-    if (priorityWork_ == 0 && pendingCloseWorker_) {
-      pendingCloseWorker_->Queue(env);
-      pendingCloseWorker_ = nullptr;
-    }
-  }
-
-  bool HasPriorityWork () const {
-    return priorityWork_ > 0;
   }
 
   std::unique_ptr<rocksdb::DB> db_;
-  BaseWorker* pendingCloseWorker_;
+  Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
-  napi_ref prioritRef_;
-
-private:
-  uint32_t priorityWork_ = 0;
-};
-
-/**
- * Base worker class for doing async work that defers closing the database.
- */
-struct PriorityWorker : public BaseWorker {
-  PriorityWorker (napi_env env, Database* database, napi_value callback, const char* resourceName)
-    : BaseWorker(env, database, callback, resourceName) {
-    database_->IncrementPriorityWork(env);
-  }
-
-  virtual ~PriorityWorker () {}
-
-  void Destroy (napi_env env) override {
-    database_->DecrementPriorityWork(env);
-    BaseWorker::Destroy(env);
-  }
 };
 
 struct BaseIterator {
@@ -677,7 +633,7 @@ static void env_cleanup_hook (void* arg) {
     }
 
     // Having closed the iterators (and released snapshots) we can safely close.
-    database->CloseDatabase();
+    database->db_->Close();
   }
 }
 
@@ -685,7 +641,6 @@ static void FinalizeDatabase (napi_env env, void* data, void* hint) {
   if (data) {
     auto database = reinterpret_cast<Database*>(data);
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    if (database->prioritRef_) napi_delete_reference(env, database->prioritRef_);
     delete database;
   }
 }
@@ -699,12 +654,10 @@ NAPI_METHOD(db_init) {
                                           FinalizeDatabase,
                                           nullptr, &result));
 
-  NAPI_STATUS_THROWS(napi_create_reference(env, result, 0, &database->prioritRef_));
-
   return result;
 }
 
-struct OpenWorker final : public PriorityWorker {
+struct OpenWorker final : public Worker {
   OpenWorker (napi_env env,
               Database* database,
               napi_value callback,
@@ -720,7 +673,7 @@ struct OpenWorker final : public PriorityWorker {
               const uint32_t cacheSize,
               const std::string& infoLogLevel,
               const bool readOnly)
-    : PriorityWorker(env, database, callback, "leveldown.db.open"),
+    : Worker(env, database, callback, "leveldown.db.open"),
       readOnly_(readOnly),
       location_(location) {
     options_.create_if_missing = createIfMissing;
@@ -814,15 +767,14 @@ NAPI_METHOD(db_open) {
   return 0;
 }
 
-struct CloseWorker final : public BaseWorker {
+struct CloseWorker final : public Worker {
   CloseWorker (napi_env env,
                Database* database,
                napi_value callback)
-    : BaseWorker(env, database, callback, "leveldown.db.close") {}
+    : Worker(env, database, callback, "leveldown.db.close") {}
 
   rocksdb::Status Execute () override {
-    database_->CloseDatabase();
-    return rocksdb::Status::OK();
+    return database_->db_->Close();
   }
 };
 
@@ -837,12 +789,7 @@ NAPI_METHOD(db_close) {
   const auto callback = argv[1];
 
   auto worker = new CloseWorker(env, database, callback);
-
-  if (!database->HasPriorityWork()) {
-    worker->Queue(env);
-  } else {
-    database->pendingCloseWorker_ = worker;
-  }
+  worker->Queue(env);
 
   return 0;
 }
@@ -858,14 +805,14 @@ NAPI_METHOD(db_put) {
   return ToError(env, database->db_->Put(options, key, value));
 }
 
-struct GetWorker final : public PriorityWorker {
+struct GetWorker final : public Worker {
   GetWorker (napi_env env,
              Database* database,
              napi_value callback,
              const std::string& key,
              const bool asBuffer,
              const bool fillCache)
-    : PriorityWorker(env, database, callback, "rocks_level.db.get"),
+    : Worker(env, database, callback, "rocks_level.db.get"),
       key_(key), asBuffer_(asBuffer), fillCache_(fillCache) {
   }
 
@@ -905,14 +852,14 @@ NAPI_METHOD(db_get) {
   return 0;
 }
 
-struct GetManyWorker final : public PriorityWorker {
+struct GetManyWorker final : public Worker {
   GetManyWorker (napi_env env,
                  Database* database,
                  const std::vector<std::string>& keys,
                  napi_value callback,
                  const bool valueAsBuffer,
                  const bool fillCache)
-    : PriorityWorker(env, database, callback, "leveldown.get.many"),
+    : Worker(env, database, callback, "leveldown.get.many"),
       keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache) {
   }
 
@@ -1108,11 +1055,11 @@ NAPI_METHOD(iterator_seek) {
   return 0;
 }
 
-struct CloseIteratorWorker final : public BaseWorker {
+struct CloseIteratorWorker final : public Worker {
   CloseIteratorWorker (napi_env env,
                        Iterator* iterator,
                        napi_value callback)
-    : BaseWorker(env, iterator->database_, callback, "leveldown.iterator.end"),
+    : Worker(env, iterator->database_, callback, "leveldown.iterator.end"),
       iterator_(iterator) {}
 
   rocksdb::Status Execute () override {
@@ -1122,7 +1069,7 @@ struct CloseIteratorWorker final : public BaseWorker {
 
   void Destroy (napi_env env) override {
     iterator_->Detach(env);
-    BaseWorker::Destroy(env);
+    Worker::Destroy(env);
   }
 
 private:
@@ -1141,12 +1088,12 @@ NAPI_METHOD(iterator_close) {
   return 0;
 }
 
-struct NextWorker final : public BaseWorker {
+struct NextWorker final : public Worker {
   NextWorker (napi_env env,
               Iterator* iterator,
               uint32_t size,
               napi_value callback)
-    : BaseWorker(env, iterator->database_, callback,
+    : Worker(env, iterator->database_, callback,
                  "leveldown.iterator.next"),
       iterator_(iterator), size_(size) {}
 
