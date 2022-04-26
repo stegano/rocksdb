@@ -2,13 +2,11 @@
 
 const { AbstractLevel } = require('abstract-level')
 const ModuleError = require('module-error')
-const { fromCallback } = require('catering')
 const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
 
-const kPromise = Symbol('promise')
 const kContext = Symbol('context')
 const kLocation = Symbol('location')
 
@@ -32,11 +30,7 @@ class RocksLevel extends AbstractLevel {
       },
       seek: true,
       createIfMissing: true,
-      errorIfExists: true,
-      additionalMethods: {
-        approximateSize: true,
-        compactRange: true
-      }
+      errorIfExists: true
     }, options)
 
     this[kLocation] = location
@@ -90,62 +84,6 @@ class RocksLevel extends AbstractLevel {
     process.nextTick(callback, binding.batch_do(this[kContext], operations, options))
   }
 
-  approximateSize (start, end, options, callback) {
-    if (arguments.length < 2 || typeof start === 'function' || typeof end === 'function') {
-      throw new TypeError("The arguments 'start' and 'end' are required")
-    } else if (typeof options === 'function') {
-      callback = options
-      options = null
-    } else if (typeof options !== 'object') {
-      options = null
-    }
-
-    callback = fromCallback(callback, kPromise)
-
-    if (this.status === 'opening') {
-      this.defer(() => this.approximateSize(start, end, options, callback))
-    } else if (this.status !== 'open') {
-      this.nextTick(callback, new ModuleError('Database is not open: cannot call approximateSize()', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      }))
-    } else {
-      const keyEncoding = this.keyEncoding(options && options.keyEncoding)
-      start = keyEncoding.encode(start)
-      end = keyEncoding.encode(end)
-      binding.db_approximate_size(this[kContext], start, end, callback)
-    }
-
-    return callback[kPromise]
-  }
-
-  compactRange (start, end, options, callback) {
-    if (arguments.length < 2 || typeof start === 'function' || typeof end === 'function') {
-      throw new TypeError("The arguments 'start' and 'end' are required")
-    } else if (typeof options === 'function') {
-      callback = options
-      options = null
-    } else if (typeof options !== 'object') {
-      options = null
-    }
-
-    callback = fromCallback(callback, kPromise)
-
-    if (this.status === 'opening') {
-      this.defer(() => this.compactRange(start, end, options, callback))
-    } else if (this.status !== 'open') {
-      this.nextTick(callback, new ModuleError('Database is not open: cannot call compactRange()', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      }))
-    } else {
-      const keyEncoding = this.keyEncoding(options && options.keyEncoding)
-      start = keyEncoding.encode(start)
-      end = keyEncoding.encode(end)
-      binding.db_compact_range(this[kContext], start, end, callback)
-    }
-
-    return callback[kPromise]
-  }
-
   getProperty (property) {
     if (typeof property !== 'string') {
       throw new TypeError("The first argument 'property' must be a string")
@@ -163,26 +101,6 @@ class RocksLevel extends AbstractLevel {
 
   _iterator (options) {
     return new Iterator(this, this[kContext], options)
-  }
-
-  static destroy (location, callback) {
-    if (typeof location !== 'string' || location === '') {
-      throw new TypeError("The first argument 'location' must be a non-empty string")
-    }
-
-    callback = fromCallback(callback, kPromise)
-    binding.destroy_db(location, callback)
-    return callback[kPromise]
-  }
-
-  static repair (location, callback) {
-    if (typeof location !== 'string' || location === '') {
-      throw new TypeError("The first argument 'location' must be a non-empty string")
-    }
-
-    callback = fromCallback(callback, kPromise)
-    binding.repair_db(location, callback)
-    return callback[kPromise]
   }
 }
 

@@ -1043,80 +1043,6 @@ NAPI_METHOD(db_clear) {
   return ToError(env, status);
 }
 
-struct ApproximateSizeWorker final : public PriorityWorker {
-  ApproximateSizeWorker (napi_env env,
-                         Database* database,
-                         napi_value callback,
-                         const std::string& start,
-                         const std::string& end)
-    : PriorityWorker(env, database, callback, "rocks_level.db.approximate_size"),
-      start_(start), end_(end) {}
-
-  rocksdb::Status Execute () override {
-    rocksdb::Range range(start_, end_);
-    return database_->db_->GetApproximateSizes(&range, 1, &size_);
-  }
-
-  void Then (napi_env env, napi_value callback) override {
-    napi_value argv[2];
-    napi_get_null(env, &argv[0]);
-    napi_create_int64(env, size_, &argv[1]);
-    CallFunction(env, callback, 2, argv);
-  }
-
-  std::string start_;
-  std::string end_;
-  uint64_t size_;
-};
-
-NAPI_METHOD(db_approximate_size) {
-  NAPI_ARGV(4);
-  NAPI_DB_CONTEXT();
-
-  const auto start = ToString(env, argv[1]);
-  const auto end = ToString(env, argv[2]);
-  const auto callback = argv[3];
-
-  auto worker = new ApproximateSizeWorker(env, database, callback, start, end);
-  worker->Queue(env);
-
-  return 0;
-}
-
-struct CompactRangeWorker final : public PriorityWorker {
-  CompactRangeWorker (napi_env env,
-                      Database* database,
-                      napi_value callback,
-                      const std::string& start,
-                      const std::string& end)
-    : PriorityWorker(env, database, callback, "rocks_level.db.compact_range"),
-      start_(start), end_(end) {}
-
-  rocksdb::Status Execute () override {
-    rocksdb::Slice start = start_;
-    rocksdb::Slice end = end_;
-    rocksdb::CompactRangeOptions options;
-    return database_->db_->CompactRange(options, &start, &end);
-  }
-
-  const std::string start_;
-  const std::string end_;
-};
-
-NAPI_METHOD(db_compact_range) {
-  NAPI_ARGV(4);
-  NAPI_DB_CONTEXT();
-
-  const auto start = ToString(env, argv[1]);
-  const auto end = ToString(env, argv[2]);
-  const auto callback = argv[3];
-
-  auto worker  = new CompactRangeWorker(env, database, callback, start, end);
-  worker->Queue(env);
-
-  return 0;
-}
-
 NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
@@ -1130,60 +1056,6 @@ NAPI_METHOD(db_get_property) {
   napi_create_string_utf8(env, value.data(), value.size(), &result);
 
   return result;
-}
-
-struct DestroyWorker final : public BaseWorker {
-  DestroyWorker (napi_env env,
-                 const std::string& location,
-                 napi_value callback)
-    : BaseWorker(env, nullptr, callback, "rocks_level.destroy_db"),
-      location_(location) {}
-
-  rocksdb::Status Execute () override {
-    rocksdb::Options options;
-    return rocksdb::DestroyDB(location_, options);
-  }
-
-  const std::string location_;
-};
-
-NAPI_METHOD(destroy_db) {
-  NAPI_ARGV(2);
-
-  const auto location = ToString(env, argv[0]);
-  const auto callback = argv[1];
-
-  auto worker = new DestroyWorker(env, location, callback);
-  worker->Queue(env);
-
-  return 0;
-}
-
-struct RepairWorker final : public BaseWorker {
-  RepairWorker (napi_env env,
-                const std::string& location,
-                napi_value callback)
-    : BaseWorker(env, nullptr, callback, "rocks_level.repair_db"),
-      location_(location) {}
-
-  rocksdb::Status Execute () override {
-    rocksdb::Options options;
-    return rocksdb::RepairDB(location_, options);
-  }
-
-  const std::string location_;
-};
-
-NAPI_METHOD(repair_db) {
-  NAPI_ARGV(2);
-
-  const auto location = ToString(env, argv[1]);
-  const auto callback = argv[1];
-
-  auto worker = new RepairWorker(env, location, callback);
-  worker->Queue(env);
-
-  return 0;
 }
 
 static void FinalizeIterator (napi_env env, void* data, void* hint) {
@@ -1480,12 +1352,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_get_many);
   NAPI_EXPORT_FUNCTION(db_del);
   NAPI_EXPORT_FUNCTION(db_clear);
-  NAPI_EXPORT_FUNCTION(db_approximate_size);
-  NAPI_EXPORT_FUNCTION(db_compact_range);
   NAPI_EXPORT_FUNCTION(db_get_property);
-
-  NAPI_EXPORT_FUNCTION(destroy_db);
-  NAPI_EXPORT_FUNCTION(repair_db);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
