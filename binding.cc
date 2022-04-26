@@ -420,15 +420,15 @@ struct BaseIterator {
                const int limit,
                const bool fillCache)
       : database_(database),
-        lt_(lt),
+        lt_(!lte ? lt : std::nullopt),
         lte_(lte),
-        gt_(gt),
+        gt_(!gte ? gt : std::nullopt),
         gte_(gte),
         snapshot_(database_->db_->GetSnapshot(),
                   [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }),
         iterator_(database->db_->NewIterator([&] {
           rocksdb::ReadOptions options;
-          if (lt_ && !lte_) {
+          if (lt_) {
             upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
             options.iterate_upper_bound = &upper_bound_;
           }
@@ -450,7 +450,7 @@ struct BaseIterator {
   void SeekToRange() {
     didSeek_ = true;
 
-    if (!reverse_ && gt_ && !gte_) {
+    if (!reverse_ && gt_) {
       iterator_->Seek(*gt_);
 
       if (iterator_->Valid() && iterator_->key().compare(*gt_) == 0) {
@@ -495,7 +495,7 @@ struct BaseIterator {
       return false;
     }
 
-    if (!gte_ && gt_ && iterator_->key().compare(*gt_) <= 0) {
+    if (gt_ && iterator_->key().compare(*gt_) <= 0) {
       return false;
     }
 
