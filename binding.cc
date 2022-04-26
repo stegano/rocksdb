@@ -305,7 +305,7 @@ struct Worker {
 
   static void Execute (napi_env env, void* data) {
     auto self = reinterpret_cast<Worker*>(data);
-    self->status_ = self->Execute();
+    self->status_ = self->Execute(*self->database_);
   }
 
   static void Complete (napi_env env, napi_status status, void* data) {
@@ -328,7 +328,7 @@ struct Worker {
     delete self;
   }
 
-  virtual rocksdb::Status Execute () = 0;
+  virtual rocksdb::Status Execute (Database& database) = 0;
 
   virtual void OnOk (napi_env env, napi_value callback) {
     napi_value argv;
@@ -347,9 +347,8 @@ struct Worker {
     napi_queue_async_work(env, asyncWork_);
   }
 
-  Database* database_;
-
 private:
+  Database* database_;
   napi_ref callbackRef_;
   napi_async_work asyncWork_;
   rocksdb::Status status_;
@@ -724,8 +723,8 @@ struct OpenWorker final : public Worker {
     );
   }
 
-  rocksdb::Status Execute () override {
-    return database_->Open(options_, readOnly_, location_.c_str());
+  rocksdb::Status Execute (Database& database) override {
+    return database.Open(options_, readOnly_, location_.c_str());
   }
 
   rocksdb::Options options_;
@@ -773,8 +772,8 @@ struct CloseWorker final : public Worker {
                napi_value callback)
     : Worker(env, database, callback, "leveldown.db.close") {}
 
-  rocksdb::Status Execute () override {
-    return database_->db_->Close();
+  rocksdb::Status Execute (Database& database) override {
+    return database.db_->Close();
   }
 };
 
@@ -816,10 +815,10 @@ struct GetWorker final : public Worker {
       key_(key), asBuffer_(asBuffer), fillCache_(fillCache) {
   }
 
-  rocksdb::Status Execute () override {
+  rocksdb::Status Execute (Database& database) override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
-    return database_->db_->Get(options, database_->db_->DefaultColumnFamily(), key_, &value_);
+    return database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
   }
 
   void OnOk (napi_env env, napi_value callback) override {
@@ -863,11 +862,11 @@ struct GetManyWorker final : public Worker {
       keys_(keys), valueAsBuffer_(valueAsBuffer), fillCache_(fillCache) {
   }
 
-  rocksdb::Status Execute () override {
+  rocksdb::Status Execute (Database& database) override {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     
-    status_ = database_->db_->MultiGet(
+    status_ = database.db_->MultiGet(
       options,
       std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()),
       &values_
@@ -1062,7 +1061,7 @@ struct CloseIteratorWorker final : public Worker {
     : Worker(env, iterator->database_, callback, "leveldown.iterator.end"),
       iterator_(iterator) {}
 
-  rocksdb::Status Execute () override {
+  rocksdb::Status Execute (Database& database) override {
     iterator_->Close();
     return rocksdb::Status::OK();
   }
@@ -1097,7 +1096,7 @@ struct NextWorker final : public Worker {
                  "leveldown.iterator.next"),
       iterator_(iterator), size_(size) {}
 
-  rocksdb::Status Execute () override {
+  rocksdb::Status Execute (Database& database) override {
     if (!iterator_->DidSeek()) {
       iterator_->SeekToRange();
     }
