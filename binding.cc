@@ -167,19 +167,6 @@ static std::string StringProperty(napi_env env,
   return defaultValue;
 }
 
-static size_t StringOrBufferLength(napi_env env, napi_value value) {
-  size_t size = 0;
-
-  if (IsString(env, value)) {
-    napi_get_value_string_utf8(env, value, nullptr, 0, &size);
-  } else if (IsBuffer(env, value)) {
-    char* buf = nullptr;
-    napi_get_buffer_info(env, value, (void**)&buf, &size);
-  }
-
-  return size;
-}
-
 static std::optional<std::string> RangeOption(napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
