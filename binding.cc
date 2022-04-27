@@ -380,10 +380,8 @@ struct BaseIterator {
                const int limit,
                const bool fillCache)
       : database_(database),
-        lt_(!lte ? lt : std::nullopt),
-        lte_(lte),
-        gt_(!gte ? gt : std::nullopt),
-        gte_(gte),
+        lt_(!lte ? lt : *lte + '\0'),
+        gte_(gte ? gte : (gt ? std::optional<std::string>(*gt + '\0') : std::nullopt)),
         snapshot_(database_->db_->GetSnapshot(),
                   [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }),
         iterator_(database->db_->NewIterator([&] {
@@ -410,15 +408,7 @@ struct BaseIterator {
   void SeekToRange() {
     didSeek_ = true;
 
-    if (!reverse_ && gt_) {
-      iterator_->Seek(*gt_);
-
-      if (iterator_->Valid() && iterator_->key().compare(*gt_) == 0) {
-        iterator_->Next();
-      }
-    } else if (reverse_ && lte_) {
-      iterator_->SeekForPrev(*lte_);
-    } else if (reverse_) {
+    if (reverse_) {
       iterator_->SeekToLast();
     } else {
       iterator_->SeekToFirst();
@@ -428,12 +418,13 @@ struct BaseIterator {
   void Seek(const std::string& target) {
     didSeek_ = true;
 
-    // TODO (fix): Only check for (gt && !gte) and lte.
-    // See, https://github.com/facebook/rocksdb/issues/9904.
-
-    if (OutOfRange(target)) {
-      SeekToLast();
-      Next();
+    if ((lt_ && target.compare(*lt_) >= 0) || (gte_ && target.compare(*gte_) < 0)) {
+      // TODO (fix): Why is this required? Seek should handle it?
+      // https://github.com/facebook/rocksdb/issues/9904
+      iterator_->SeekToLast();
+      if (iterator_->Valid()) {
+        iterator_->Next();
+      }
     } else if (reverse_) {
       iterator_->SeekForPrev(target);
     } else {
@@ -446,21 +437,7 @@ struct BaseIterator {
     iterator_.reset();
   }
 
-  bool Valid() const {
-    if (!iterator_->Valid()) {
-      return false;
-    }
-
-    if (lte_ && iterator_->key().compare(*lte_) > 0) {
-      return false;
-    }
-
-    if (gt_ && iterator_->key().compare(*gt_) <= 0) {
-      return false;
-    }
-
-    return true;
-  }
+  bool Valid() const { return iterator_->Valid(); }
 
   bool Increment() { return limit_ < 0 || ++count_ <= limit_; }
 
@@ -471,52 +448,16 @@ struct BaseIterator {
       iterator_->Next();
   }
 
-  void SeekToFirst() {
-    if (reverse_)
-      iterator_->SeekToLast();
-    else
-      iterator_->SeekToFirst();
-  }
-
-  void SeekToLast() {
-    if (reverse_)
-      iterator_->SeekToFirst();
-    else
-      iterator_->SeekToLast();
-  }
-
   rocksdb::Slice CurrentKey() const { return iterator_->key(); }
 
   rocksdb::Slice CurrentValue() const { return iterator_->value(); }
 
   rocksdb::Status Status() const { return iterator_->status(); }
 
-  bool OutOfRange(const rocksdb::Slice& target) const {
-    if (lte_) {
-      if (target.compare(*lte_) > 0)
-        return true;
-    } else if (lt_) {
-      if (target.compare(*lt_) >= 0)
-        return true;
-    }
-
-    if (gte_) {
-      if (target.compare(*gte_) < 0)
-        return true;
-    } else if (gt_) {
-      if (target.compare(*gt_) <= 0)
-        return true;
-    }
-
-    return false;
-  }
-
   Database* database_;
 
  private:
   const std::optional<std::string> lt_;
-  const std::optional<std::string> lte_;
-  const std::optional<std::string> gt_;
   const std::optional<std::string> gte_;
   rocksdb::Slice lower_bound_;
   rocksdb::Slice upper_bound_;
@@ -786,7 +727,7 @@ struct GetWorker final : public BaseWorker {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
-    
+
     auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
     snapshot_ = nullptr;
 
@@ -1279,7 +1220,7 @@ NAPI_METHOD(batch_clear) {
 }
 
 NAPI_METHOD(batch_write) {
-  NAPI_ARGV(4);
+  NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
 
   rocksdb::WriteBatch* batch;
