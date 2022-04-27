@@ -1,11 +1,11 @@
 {
   "name": "@nxtedition/rocksdb",
-  "version": "5.2.30",
+  "version": "5.2.31",
   "description": "A low-level Node.js RocksDB binding",
   "license": "MIT",
   "main": "index.js",
   "scripts": {
-    "install": "npx@4.3.0 node-gyp-build",
+    "install": "npx node-gyp-build@4.3.0",
     "test": "standard && (nyc -s tape test/*-test.js | faucet) && nyc report",
     "test-gc": "node --expose-gc test/gc.js",
     "test-electron": "electron test/electron.js",
