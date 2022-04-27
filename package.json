@@ -1,6 +1,6 @@
 {
   "name": "@nxtedition/rocksdb",
-  "version": "5.2.29",
+  "version": "5.2.30",
   "description": "A low-level Node.js RocksDB binding",
   "license": "MIT",
   "main": "index.js",
