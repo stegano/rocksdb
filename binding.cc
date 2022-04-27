@@ -177,9 +177,20 @@ static std::optional<std::string> RangeOption(napi_env env, napi_value opts, con
 }
 
 static napi_status CallFunction(napi_env env, napi_value callback, const int argc, napi_value* argv) {
+  napi_status status;
   napi_value global;
-  napi_get_global(env, &global);
-  return napi_call_function(env, global, callback, argc, argv, nullptr);
+
+  status = napi_get_global(env, &global);
+  if (status != napi_ok) {
+    return status;
+  }
+
+  status = napi_call_function(env, global, callback, argc, argv, nullptr);
+  if (status != napi_ok) {
+    return status;
+  }
+
+  return napi_ok;
 }
 
 static napi_value ToError(napi_env env, const rocksdb::Status& status) {
@@ -209,11 +220,11 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
 }
 
 template <typename T>
-void Convert(napi_env env, const T& s, bool asBuffer, napi_value& result) {
+napi_status Convert(napi_env env, const T& s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
-    napi_create_buffer_copy(env, s.size(), s.data(), nullptr, &result);
+    return napi_create_buffer_copy(env, s.size(), s.data(), nullptr, &result);
   } else {
-    napi_create_string_utf8(env, s.data(), s.size(), &result);
+    return napi_create_string_utf8(env, s.data(), s.size(), &result);
   }
 }
 
