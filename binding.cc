@@ -727,6 +727,8 @@ struct GetWorker final : public Worker {
     options.snapshot = snapshot_.get();
 
     auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
+
+    key_.clear();
     snapshot_ = nullptr;
 
     return status;
@@ -735,7 +737,11 @@ struct GetWorker final : public Worker {
   void OnOk(napi_env env, napi_value callback) override {
     napi_value argv[2];
     napi_get_null(env, &argv[0]);
-    Convert(env, std::move(value_), asBuffer_, argv[1]);
+
+    Convert(env, value_, asBuffer_, argv[1]);
+
+    value_.Reset();
+
     CallFunction(env, callback, 2, argv);
   }
 
@@ -745,7 +751,7 @@ struct GetWorker final : public Worker {
   }
 
  private:
-  const std::string key_;
+  std::string key_;
   rocksdb::PinnableSlice value_;
   const bool asBuffer_;
   const bool fillCache_;
@@ -790,6 +796,8 @@ struct GetManyWorker final : public Worker {
     options.snapshot = snapshot_.get();
 
     status_ = database.db_->MultiGet(options, std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()), &values_);
+
+    keys_.clear();
     snapshot_ = nullptr;
 
     for (auto status : status_) {
@@ -817,6 +825,9 @@ struct GetManyWorker final : public Worker {
       napi_set_element(env, array, static_cast<uint32_t>(idx), element);
     }
 
+    values_.clear();
+    status_.clear();
+
     napi_value argv[2];
     napi_get_null(env, &argv[0]);
     argv[1] = array;
@@ -829,7 +840,7 @@ struct GetManyWorker final : public Worker {
   }
 
  private:
-  const std::vector<std::string> keys_;
+  std::vector<std::string> keys_;
   std::vector<std::string> values_;
   std::vector<rocksdb::Status> status_;
   const bool valueAsBuffer_;
