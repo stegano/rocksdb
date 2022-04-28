@@ -223,9 +223,18 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
 }
 
 template <typename T>
-napi_status Convert(napi_env env, const T& s, bool asBuffer, napi_value& result) {
+static void Finalize(napi_env env, void* data, void* hint) {
+  if (hint) {
+    delete reinterpret_cast<T*>(hint);
+  }
+}
+
+template <typename T>
+napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
-    return napi_create_buffer_copy(env, s.size(), s.data(), nullptr, &result);
+    typedef typename std::remove_reference<T>::type value_type;
+    auto ptr = new value_type(std::forward<T>(s));
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<value_type>, ptr, &result);
   } else {
     return napi_create_string_utf8(env, s.data(), s.size(), &result);
   }
@@ -743,11 +752,7 @@ struct GetWorker final : public Worker {
   napi_status OnOk(napi_env env, napi_value callback) override {
     napi_value argv[2];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-    NAPI_STATUS_RETURN(Convert(env, value_, asBuffer_, argv[1]));
-
-    value_.Reset();
-
+    NAPI_STATUS_RETURN(Convert(env, std::move(value_), asBuffer_, argv[1]));
     return CallFunction(env, callback, 2, argv);
   }
 
@@ -826,7 +831,7 @@ struct GetManyWorker final : public Worker {
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
       if (status_[idx].ok()) {
-        NAPI_STATUS_RETURN(Convert(env, values_[idx], valueAsBuffer_, element));
+        NAPI_STATUS_RETURN(Convert(env, std::move(values_[idx]), valueAsBuffer_, element));
       } else {
         NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
       }
@@ -1093,8 +1098,8 @@ struct NextWorker final : public Worker {
       napi_value key;
       napi_value val;
 
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], iterator_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], iterator_->valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 0]), iterator_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 1]), iterator_->valueAsBuffer_, val));
 
       NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
       NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
