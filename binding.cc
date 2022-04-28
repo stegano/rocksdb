@@ -1044,9 +1044,6 @@ struct NextWorker final : public Worker {
       iterator_->SeekToRange();
     }
 
-    // Limit the size of the cache to prevent starving the event loop
-    // in JS-land while we're recursively calling process.nextTick().
-
     cache_.reserve(size_ * 2);
     size_t bytesRead = 0;
 
