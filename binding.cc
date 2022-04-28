@@ -964,8 +964,10 @@ NAPI_METHOD(db_get_property) {
   NAPI_PENDING_EXCEPTION();
 
   std::string value;
-  // TODO (fix): Handle return value?
-  database->db_->GetProperty(property, &value);
+  if (!database->db_->GetProperty(property, &value)) {
+    napi_throw_error(env, nullptr, "invalid property failed");
+    return nullptr;
+  }
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
