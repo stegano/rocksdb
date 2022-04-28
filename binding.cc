@@ -338,10 +338,10 @@ struct Database {
     DecrementPriorityWork(env);
   }
 
-  void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, prioritRef_, &priorityWork_); }
+  void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, priorityRef_, &priorityWork_); }
 
   void DecrementPriorityWork(napi_env env) {
-    napi_reference_unref(env, prioritRef_, &priorityWork_);
+    napi_reference_unref(env, priorityRef_, &priorityWork_);
 
     if (priorityWork_ == 0 && pendingCloseWorker_) {
       pendingCloseWorker_->Queue(env);
@@ -354,7 +354,7 @@ struct Database {
   std::unique_ptr<rocksdb::DB> db_;
   Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
-  napi_ref prioritRef_;
+  napi_ref priorityRef_;
 
  private:
   uint32_t priorityWork_ = 0;
@@ -552,8 +552,8 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   if (data) {
     auto database = reinterpret_cast<Database*>(data);
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    if (database->prioritRef_)
-      napi_delete_reference(env, database->prioritRef_);
+    if (database->priorityRef_)
+      napi_delete_reference(env, database->priorityRef_);
     delete database;
   }
 }
@@ -565,7 +565,7 @@ NAPI_METHOD(db_init) {
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
 
-  NAPI_STATUS_THROWS(napi_create_reference(env, result, 0, &database->prioritRef_));
+  NAPI_STATUS_THROWS(napi_create_reference(env, result, 0, &database->priorityRef_));
 
   return result;
 }
