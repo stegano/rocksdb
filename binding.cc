@@ -229,12 +229,10 @@ static void Finalize(napi_env env, void* data, void* hint) {
   }
 }
 
-template <typename T>
-napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
+napi_status Convert(napi_env env, std::string s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
-    typedef typename std::remove_reference<T>::type value_type;
-    auto ptr = new value_type(std::forward<T>(s));
-    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<value_type>, ptr, &result);
+    auto ptr = new std::string(std::move(s));
+    return napi_create_external_buffer(env, ptr->size(), ptr->data(), Finalize<std::string>, ptr, &result);
   } else {
     return napi_create_string_utf8(env, s.data(), s.size(), &result);
   }
@@ -741,7 +739,7 @@ struct GetWorker final : public Worker {
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
 
-    auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
+    auto status = database.db_->Get(options, key_, &value_);
 
     key_.clear();
     snapshot_ = nullptr;
@@ -763,7 +761,7 @@ struct GetWorker final : public Worker {
 
  private:
   std::string key_;
-  rocksdb::PinnableSlice value_;
+  std::string value_;
   const bool asBuffer_;
   const bool fillCache_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
@@ -977,12 +975,6 @@ NAPI_METHOD(db_get_property) {
   return result;
 }
 
-static void FinalizeIterator(napi_env env, void* data, void* hint) {
-  if (data) {
-    delete reinterpret_cast<Iterator*>(data);
-  }
-}
-
 NAPI_METHOD(iterator_init) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
@@ -1008,7 +1000,7 @@ NAPI_METHOD(iterator_init) {
                                valueAsBuffer, highWaterMarkBytes);
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), FinalizeIterator, nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
@@ -1182,12 +1174,6 @@ NAPI_METHOD(batch_do) {
   return ToError(env, database->db_->Write(options, &batch));
 }
 
-static void FinalizeBatch(napi_env env, void* data, void* hint) {
-  if (data) {
-    delete reinterpret_cast<rocksdb::WriteBatch*>(data);
-  }
-}
-
 NAPI_METHOD(batch_init) {
   NAPI_ARGV(1);
   NAPI_DB_CONTEXT();
@@ -1195,7 +1181,7 @@ NAPI_METHOD(batch_init) {
   auto batch = new rocksdb::WriteBatch();
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, batch, FinalizeBatch, nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, batch, Finalize<rocksdb::WriteBatch>, batch, &result));
   return result;
 }
 
