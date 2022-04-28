@@ -681,6 +681,8 @@ NAPI_METHOD(db_open) {
 
   const auto callback = argv[3];
 
+  NAPI_PENDING_EXCEPTION();
+
   auto worker =
       new OpenWorker(env, database, callback, location, createIfMissing, errorIfExists, compression, writeBufferSize,
                      blockSize, maxOpenFiles, blockRestartInterval, maxFileSize, cacheSize, infoLogLevel, readOnly);
