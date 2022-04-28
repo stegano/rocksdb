@@ -589,68 +589,12 @@ struct OpenWorker final : public Worker {
              Database* database,
              napi_value callback,
              const std::string& location,
-             const bool createIfMissing,
-             const bool errorIfExists,
-             const bool compression,
-             const uint32_t writeBufferSize,
-             const uint32_t blockSize,
-             const uint32_t maxOpenFiles,
-             const uint32_t blockRestartInterval,
-             const uint32_t maxFileSize,
-             const uint32_t cacheSize,
-             const std::string& infoLogLevel,
+             rocksdb::Options options,
              const bool readOnly)
-      : Worker(env, database, callback, "leveldown.db.open"), readOnly_(readOnly), location_(location) {
-    options_.create_if_missing = createIfMissing;
-    options_.error_if_exists = errorIfExists;
-    options_.compression = compression ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
-    options_.write_buffer_size = writeBufferSize;
-    options_.max_open_files = maxOpenFiles;
-    options_.max_log_file_size = maxFileSize;
-    options_.use_adaptive_mutex = true;
-
-    if (infoLogLevel.size() > 0) {
-      rocksdb::InfoLogLevel lvl = {};
-
-      if (infoLogLevel == "debug")
-        lvl = rocksdb::InfoLogLevel::DEBUG_LEVEL;
-      else if (infoLogLevel == "info")
-        lvl = rocksdb::InfoLogLevel::INFO_LEVEL;
-      else if (infoLogLevel == "warn")
-        lvl = rocksdb::InfoLogLevel::WARN_LEVEL;
-      else if (infoLogLevel == "error")
-        lvl = rocksdb::InfoLogLevel::ERROR_LEVEL;
-      else if (infoLogLevel == "fatal")
-        lvl = rocksdb::InfoLogLevel::FATAL_LEVEL;
-      else if (infoLogLevel == "header")
-        lvl = rocksdb::InfoLogLevel::HEADER_LEVEL;
-      else
-        napi_throw_error(env, nullptr, "invalid log level");
-
-      options_.info_log_level = lvl;
-    } else {
-      // In some places RocksDB checks this option to see if it should prepare
-      // debug information (ahead of logging), so set it to the highest level.
-      options_.info_log_level = rocksdb::InfoLogLevel::HEADER_LEVEL;
-      options_.info_log.reset(new NullLogger());
-    }
-
-    rocksdb::BlockBasedTableOptions tableOptions;
-
-    if (cacheSize) {
-      tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
-    } else {
-      tableOptions.no_block_cache = true;
-    }
-
-    tableOptions.block_size = blockSize;
-    tableOptions.block_restart_interval = blockRestartInterval;
-    tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
-    tableOptions.format_version = 5;
-    tableOptions.checksum = rocksdb::kxxHash64;
-
-    options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
-  }
+      : Worker(env, database, callback, "leveldown.db.open"),
+        options_(options),
+        readOnly_(readOnly),
+        location_(location) {}
 
   rocksdb::Status Execute(Database& database) override { return database.Open(options_, readOnly_, location_.c_str()); }
 
@@ -663,29 +607,71 @@ NAPI_METHOD(db_open) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
+  rocksdb::Options options;
+
+  options.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism", 4));
+
   const auto location = ToString(env, argv[1]);
-  const auto options = argv[2];
-  const auto createIfMissing = BooleanProperty(env, options, "createIfMissing", true);
-  const auto errorIfExists = BooleanProperty(env, options, "errorIfExists", false);
-  const auto compression = BooleanProperty(env, options, "compression", true);
-  const auto readOnly = BooleanProperty(env, options, "readOnly", false);
+  options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing", true);
+  options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists", false);
+  options.compression =
+      BooleanProperty(env, argv[2], "compression", true) ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
+  options.max_open_files = Uint32Property(env, argv[2], "maxOpenFiles", 1000);
+  options.max_log_file_size = Uint32Property(env, argv[2], "maxFileSize", 2 << 20);
+  options.write_buffer_size = Uint32Property(env, argv[2], "writeBufferSize", 4 << 20);
+  options.use_adaptive_mutex = true;
 
-  const auto infoLogLevel = StringProperty(env, options, "infoLogLevel");
+  const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel");
+  if (infoLogLevel.size() > 0) {
+    rocksdb::InfoLogLevel lvl = {};
 
-  const auto cacheSize = Uint32Property(env, options, "cacheSize", 8 << 20);
-  const auto writeBufferSize = Uint32Property(env, options, "writeBufferSize", 4 << 20);
-  const auto blockSize = Uint32Property(env, options, "blockSize", 4096);
-  const auto maxOpenFiles = Uint32Property(env, options, "maxOpenFiles", 1000);
-  const auto blockRestartInterval = Uint32Property(env, options, "blockRestartInterval", 16);
-  const auto maxFileSize = Uint32Property(env, options, "maxFileSize", 2 << 20);
+    if (infoLogLevel == "debug")
+      lvl = rocksdb::InfoLogLevel::DEBUG_LEVEL;
+    else if (infoLogLevel == "info")
+      lvl = rocksdb::InfoLogLevel::INFO_LEVEL;
+    else if (infoLogLevel == "warn")
+      lvl = rocksdb::InfoLogLevel::WARN_LEVEL;
+    else if (infoLogLevel == "error")
+      lvl = rocksdb::InfoLogLevel::ERROR_LEVEL;
+    else if (infoLogLevel == "fatal")
+      lvl = rocksdb::InfoLogLevel::FATAL_LEVEL;
+    else if (infoLogLevel == "header")
+      lvl = rocksdb::InfoLogLevel::HEADER_LEVEL;
+    else
+      napi_throw_error(env, nullptr, "invalid log level");
+
+    options.info_log_level = lvl;
+  } else {
+    // In some places RocksDB checks this option to see if it should prepare
+    // debug information (ahead of logging), so set it to the highest level.
+    options.info_log_level = rocksdb::InfoLogLevel::HEADER_LEVEL;
+    options.info_log.reset(new NullLogger());
+  }
+
+  const auto readOnly = BooleanProperty(env, argv[2], "readOnly", false);
+  const auto cacheSize = Uint32Property(env, argv[2], "cacheSize", 8 << 20);
+
+  rocksdb::BlockBasedTableOptions tableOptions;
+
+  if (cacheSize) {
+    tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
+  } else {
+    tableOptions.no_block_cache = true;
+  }
+
+  tableOptions.block_size = Uint32Property(env, argv[2], "blockSize", 4096);
+  tableOptions.block_restart_interval = Uint32Property(env, argv[2], "blockRestartInterval", 16);
+  tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+  tableOptions.format_version = 5;
+  tableOptions.checksum = rocksdb::kxxHash64;
+
+  options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
   const auto callback = argv[3];
 
   NAPI_PENDING_EXCEPTION();
 
-  auto worker =
-      new OpenWorker(env, database, callback, location, createIfMissing, errorIfExists, compression, writeBufferSize,
-                     blockSize, maxOpenFiles, blockRestartInterval, maxFileSize, cacheSize, infoLogLevel, readOnly);
+  auto worker = new OpenWorker(env, database, callback, location, options, readOnly);
   worker->Queue(env);
 
   return 0;
