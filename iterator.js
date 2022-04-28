@@ -103,7 +103,7 @@ class Iterator extends AbstractIterator {
     this[kCache] = empty
     this[kCallback] = null
 
-    binding.iterator_close(this[kContext], callback)
+    process.nextTick(callback, binding.iterator_close(this[kContext]))
   }
 
   _end (callback) {

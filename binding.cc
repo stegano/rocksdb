@@ -402,12 +402,12 @@ struct BaseIterator {
     }
   }
 
-  void Seek(const std::string& target) {
+  void Seek(const rocksdb::Slice& target) {
     if (!iterator_) {
       Init();
     }
 
-    if ((lt_ && target.compare(*lt_) >= 0) || (gte_ && target.compare(*gte_) < 0)) {
+    if ((lt_ && target.compare(upper_bound_) >= 0) || (gte_ && target.compare(lower_bound_) < 0)) {
       // TODO (fix): Why is this required? Seek should handle it?
       // https://github.com/facebook/rocksdb/issues/9904
       iterator_->SeekToLast();
@@ -1006,39 +1006,19 @@ NAPI_METHOD(iterator_seek) {
   NAPI_ARGV(2);
   NAPI_ITERATOR_CONTEXT();
 
-  const auto target = ToString(env, argv[1]);
+  const auto target = NapiSlice(env, argv[1]);
   iterator->first_ = true;
   iterator->Seek(target);
 
   return 0;
 }
 
-struct CloseIteratorWorker final : public Worker {
-  CloseIteratorWorker(napi_env env, Iterator* iterator, napi_value callback)
-      : Worker(env, iterator->database_, callback, "leveldown.iterator.end"), iterator_(iterator) {}
-
-  rocksdb::Status Execute(Database& database) override {
-    iterator_->Close();
-    return rocksdb::Status::OK();
-  }
-
-  void Destroy(napi_env env) override {
-    iterator_->Detach(env);
-    Worker::Destroy(env);
-  }
-
- private:
-  Iterator* iterator_;
-};
-
 NAPI_METHOD(iterator_close) {
-  NAPI_ARGV(2);
+  NAPI_ARGV(1);
   NAPI_ITERATOR_CONTEXT();
 
-  const auto callback = argv[1];
-
-  auto worker = new CloseIteratorWorker(env, iterator, callback);
-  worker->Queue(env);
+  iterator->Detach(env);
+  iterator->Close();
 
   return 0;
 }
