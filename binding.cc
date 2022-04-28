@@ -263,13 +263,12 @@ struct NapiSlice : public rocksdb::Slice {
  * - Destroy (main thread): do cleanup regardless of success
  */
 struct Worker {
-  Worker(napi_env env, Database* database, napi_value callback, const std::string& resourceName)
-      : database_(database) {
+  Worker(napi_env env, Database* database, napi_value callback, const std::string& resourceName) : database_(database) {
     NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
     napi_value asyncResourceName;
     NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), resourceName.size(), &asyncResourceName));
-    NAPI_STATUS_THROWS_VOID(napi_create_async_work(env, callback, asyncResourceName, Worker::Execute,
-                                                   Worker::Complete, this, &asyncWork_));
+    NAPI_STATUS_THROWS_VOID(
+        napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, this, &asyncWork_));
   }
 
   virtual ~Worker() {}
@@ -446,8 +445,7 @@ struct BaseIterator {
   Database* database_;
 
  private:
-
-  void Init () {
+  void Init() {
     rocksdb::ReadOptions options;
     if (lt_) {
       upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
