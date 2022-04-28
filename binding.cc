@@ -917,8 +917,12 @@ NAPI_METHOD(db_del) {
   NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
 
+  const auto key = NapiSlice(env, argv[1]);
+
+  NAPI_PENDING_EXCEPTION();
+
   rocksdb::WriteOptions options;
-  return ToError(env, database->db_->Delete(options, NapiSlice(env, argv[1])));
+  return ToError(env, database->db_->Delete(options, key));
 }
 
 NAPI_METHOD(db_clear) {
@@ -932,6 +936,8 @@ NAPI_METHOD(db_clear) {
   const auto lte = RangeOption(env, argv[1], "lte");
   const auto gt = RangeOption(env, argv[1], "gt");
   const auto gte = RangeOption(env, argv[1], "gte");
+
+  NAPI_PENDING_EXCEPTION();
 
   // TODO (perf): Use DeleteRange.
 
@@ -1017,10 +1023,13 @@ NAPI_METHOD(iterator_init) {
   const auto gt = RangeOption(env, options, "gt");
   const auto gte = RangeOption(env, options, "gte");
 
+  NAPI_PENDING_EXCEPTION();
+
   auto iterator = new Iterator(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
                                valueAsBuffer, highWaterMarkBytes);
-  napi_value result;
 
+  napi_value result;
+  // TODO (fix): If this "throws" then the iterator is leaked.
   NAPI_STATUS_THROWS(napi_create_external(env, iterator, FinalizeIterator, nullptr, &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
