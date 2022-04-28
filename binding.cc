@@ -384,18 +384,22 @@ struct BaseIterator {
         fillCache_(fillCache) {
     if (lte) {
       upper_bound_ = std::make_unique<rocksdb::PinnableSlice>();
-      upper_bound_->PinSelf(*lte + '\0');
+      *upper_bound_->GetSelf() = std::move(*lte) + '\0';
+      upper_bound_->PinSelf();
     } else if (lt) {
       upper_bound_ = std::make_unique<rocksdb::PinnableSlice>();
-      upper_bound_->PinSelf(*lt);
+      *upper_bound_->GetSelf() = std::move(*lt);
+      upper_bound_->PinSelf();
     }
 
     if (gte) {
       lower_bound_ = std::make_unique<rocksdb::PinnableSlice>();
-      lower_bound_->PinSelf(*gte);
+      *lower_bound_->GetSelf() = std::move(*gte);
+      lower_bound_->PinSelf();
     } else if (gt) {
       lower_bound_ = std::make_unique<rocksdb::PinnableSlice>();
-      lower_bound_->PinSelf(*gt + '\0');
+      *lower_bound_->GetSelf() = std::move(*gt) + '\0';
+      lower_bound_->PinSelf();
     }
   }
 
