@@ -718,11 +718,8 @@ NAPI_METHOD(db_put) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
-  const auto value = ToString(env, argv[2]);
-
   rocksdb::WriteOptions options;
-  return ToError(env, database->db_->Put(options, key, value));
+  return ToError(env, database->db_->Put(options, NapiSlice(env, argv[1]), NapiSlice(env, argv[2])));
 }
 
 struct GetWorker final : public Worker {
@@ -902,10 +899,8 @@ NAPI_METHOD(db_del) {
   NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
 
-  const auto key = ToString(env, argv[1]);
-
   rocksdb::WriteOptions options;
-  return ToError(env, database->db_->Delete(options, key));
+  return ToError(env, database->db_->Delete(options, NapiSlice(env, argv[1])));
 }
 
 NAPI_METHOD(db_clear) {
@@ -1196,10 +1191,7 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(3);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = NapiSlice(env, argv[1]);
-  const auto value = NapiSlice(env, argv[2]);
-
-  batch->Put(key, value);
+  batch->Put(NapiSlice(env, argv[1]), NapiSlice(env, argv[2]));
 
   return 0;
 }
@@ -1208,9 +1200,7 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(2);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = NapiSlice(env, argv[1]);
-
-  batch->Delete(key);
+  batch->Delete(NapiSlice(env, argv[1]));
 
   return 0;
 }
