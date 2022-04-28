@@ -30,6 +30,14 @@ class NullLogger : public rocksdb::Logger {
 struct Database;
 struct Iterator;
 
+#define NAPI_STATUS_RETURN(call) \
+  {  \
+    const auto status = (call);  \
+    if (status != napi_ok) {  \
+      return status;  \
+    }  \
+  }
+
 #define NAPI_DB_CONTEXT()       \
   Database* database = nullptr; \
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
@@ -177,18 +185,10 @@ static std::optional<std::string> RangeOption(napi_env env, napi_value opts, con
 }
 
 static napi_status CallFunction(napi_env env, napi_value callback, const int argc, napi_value* argv) {
-  napi_status status;
   napi_value global;
 
-  status = napi_get_global(env, &global);
-  if (status != napi_ok) {
-    return status;
-  }
-
-  status = napi_call_function(env, global, callback, argc, argv, nullptr);
-  if (status != napi_ok) {
-    return status;
-  }
+  NAPI_STATUS_RETURN(napi_get_global(env, &global));
+  NAPI_STATUS_RETURN(napi_call_function(env, global, callback, argc, argv, nullptr));
 
   return napi_ok;
 }
@@ -281,6 +281,8 @@ struct Worker {
   static void Complete(napi_env env, napi_status status, void* data) {
     auto self = reinterpret_cast<Worker*>(data);
 
+    // TODO (fix): napi status handling...
+
     napi_value callback;
     napi_get_reference_value(env, self->callbackRef_, &callback);
 
@@ -300,13 +302,13 @@ struct Worker {
 
   virtual rocksdb::Status Execute(Database& database) = 0;
 
-  virtual void OnOk(napi_env env, napi_value callback) {
+  virtual napi_status OnOk(napi_env env, napi_value callback) {
     napi_value argv;
-    napi_get_null(env, &argv);
-    CallFunction(env, callback, 1, &argv);
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv));
+    return CallFunction(env, callback, 1, &argv);
   }
 
-  virtual void OnError(napi_env env, napi_value callback, napi_value err) { CallFunction(env, callback, 1, &err); }
+  virtual napi_status OnError(napi_env env, napi_value callback, napi_value err) { return CallFunction(env, callback, 1, &err); }
 
   virtual void Destroy(napi_env env) {}
 
@@ -740,15 +742,15 @@ struct GetWorker final : public Worker {
     return status;
   }
 
-  void OnOk(napi_env env, napi_value callback) override {
+  napi_status OnOk(napi_env env, napi_value callback) override {
     napi_value argv[2];
-    napi_get_null(env, &argv[0]);
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
-    Convert(env, value_, asBuffer_, argv[1]);
+    NAPI_STATUS_RETURN(Convert(env, value_, asBuffer_, argv[1]));
 
     value_.Reset();
 
-    CallFunction(env, callback, 2, argv);
+    return CallFunction(env, callback, 2, argv);
   }
 
   void Destroy(napi_env env) override {
@@ -815,29 +817,29 @@ struct GetManyWorker final : public Worker {
     return rocksdb::Status::OK();
   }
 
-  void OnOk(napi_env env, napi_value callback) override {
+  napi_status OnOk(napi_env env, napi_value callback) override {
     const auto size = values_.size();
 
     napi_value array;
-    napi_create_array_with_length(env, size, &array);
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &array));
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
       if (status_[idx].ok()) {
-        Convert(env, values_[idx], valueAsBuffer_, element);
+        NAPI_STATUS_RETURN(Convert(env, values_[idx], valueAsBuffer_, element));
       } else {
-        napi_get_undefined(env, &element);
+        NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
       }
-      napi_set_element(env, array, static_cast<uint32_t>(idx), element);
+      NAPI_STATUS_RETURN(napi_set_element(env, array, static_cast<uint32_t>(idx), element));
     }
 
     values_.clear();
     status_.clear();
 
     napi_value argv[2];
-    napi_get_null(env, &argv[0]);
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
     argv[1] = array;
-    CallFunction(env, callback, 2, argv);
+    return CallFunction(env, callback, 2, argv);
   }
 
   void Destroy(napi_env env) override {
@@ -951,13 +953,14 @@ NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
 
-  const auto property = ToString(env, argv[1]);
+  const auto property = NapiSlice(env, argv[1]);
 
   std::string value;
+  // TODO (fix): Handle return value?
   database->db_->GetProperty(property, &value);
 
   napi_value result;
-  napi_create_string_utf8(env, value.data(), value.size(), &result);
+  NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
 
   return result;
 }
@@ -1069,29 +1072,29 @@ struct NextWorker final : public Worker {
     return iterator_->Status();
   }
 
-  void OnOk(napi_env env, napi_value callback) override {
+  napi_status OnOk(napi_env env, napi_value callback) override {
     const auto size = cache_.size();
     napi_value result;
-    napi_create_array_with_length(env, size, &result);
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
 
     for (size_t idx = 0; idx < cache_.size(); idx += 2) {
       napi_value key;
       napi_value val;
 
-      Convert(env, cache_[idx + 0], iterator_->keyAsBuffer_, key);
-      Convert(env, cache_[idx + 1], iterator_->valueAsBuffer_, val);
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], iterator_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], iterator_->valueAsBuffer_, val));
 
-      napi_set_element(env, result, static_cast<int>(idx + 0), key);
-      napi_set_element(env, result, static_cast<int>(idx + 1), val);
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
     }
 
     cache_.clear();
 
     napi_value argv[3];
-    napi_get_null(env, &argv[0]);
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
     argv[1] = result;
-    napi_get_boolean(env, !finished_, &argv[2]);
-    CallFunction(env, callback, 3, argv);
+    NAPI_STATUS_RETURN(napi_get_boolean(env, !finished_, &argv[2]));
+    return CallFunction(env, callback, 3, argv);
   }
 
  private:
