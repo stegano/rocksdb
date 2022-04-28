@@ -31,11 +31,11 @@ struct Database;
 struct Iterator;
 
 #define NAPI_STATUS_RETURN(call) \
-  {  \
+  {                              \
     const auto status = (call);  \
-    if (status != napi_ok) {  \
-      return status;  \
-    }  \
+    if (status != napi_ok) {     \
+      return status;             \
+    }                            \
   }
 
 #define NAPI_DB_CONTEXT()       \
@@ -308,7 +308,9 @@ struct Worker {
     return CallFunction(env, callback, 1, &argv);
   }
 
-  virtual napi_status OnError(napi_env env, napi_value callback, napi_value err) { return CallFunction(env, callback, 1, &err); }
+  virtual napi_status OnError(napi_env env, napi_value callback, napi_value err) {
+    return CallFunction(env, callback, 1, &err);
+  }
 
   virtual void Destroy(napi_env env) {}
 
