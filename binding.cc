@@ -382,29 +382,18 @@ struct BaseIterator {
         gte_(gte ? gte : (gt ? std::optional<std::string>(*gt + '\0') : std::nullopt)),
         snapshot_(database_->db_->GetSnapshot(),
                   [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }),
-        iterator_(database->db_->NewIterator([&] {
-          rocksdb::ReadOptions options;
-          if (lt_) {
-            upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
-            options.iterate_upper_bound = &upper_bound_;
-          }
-          if (gte_) {
-            lower_bound_ = rocksdb::Slice(gte_->data(), gte_->size());
-            options.iterate_lower_bound = &lower_bound_;
-          }
-          options.fill_cache = fillCache;
-          options.snapshot = snapshot_.get();
-          return options;
-        }())),
         reverse_(reverse),
-        limit_(limit) {}
+        limit_(limit),
+        fillCache_(fillCache) {}
 
   virtual ~BaseIterator() { assert(!iterator_); }
 
-  bool DidSeek() const { return didSeek_; }
+  bool DidSeek() const { return iterator_ != nullptr; }
 
   void SeekToRange() {
-    didSeek_ = true;
+    if (!iterator_) {
+      Init();
+    }
 
     if (reverse_) {
       iterator_->SeekToLast();
@@ -414,7 +403,9 @@ struct BaseIterator {
   }
 
   void Seek(const std::string& target) {
-    didSeek_ = true;
+    if (!iterator_) {
+      Init();
+    }
 
     if ((lt_ && target.compare(*lt_) >= 0) || (gte_ && target.compare(*gte_) < 0)) {
       // TODO (fix): Why is this required? Seek should handle it?
@@ -455,16 +446,33 @@ struct BaseIterator {
   Database* database_;
 
  private:
+
+  void Init () {
+    rocksdb::ReadOptions options;
+    if (lt_) {
+      upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
+      options.iterate_upper_bound = &upper_bound_;
+    }
+    if (gte_) {
+      lower_bound_ = rocksdb::Slice(gte_->data(), gte_->size());
+      options.iterate_lower_bound = &lower_bound_;
+    }
+    options.fill_cache = fillCache_;
+    options.snapshot = snapshot_.get();
+
+    iterator_.reset(database_->db_->NewIterator(options));
+  }
+
   const std::optional<std::string> lt_;
   const std::optional<std::string> gte_;
   rocksdb::Slice lower_bound_;
   rocksdb::Slice upper_bound_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
-  bool didSeek_ = false;
   const bool reverse_;
   const int limit_;
   int count_ = 0;
+  const bool fillCache_;
 };
 
 struct Iterator final : public BaseIterator {
