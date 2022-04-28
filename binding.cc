@@ -253,7 +253,7 @@ struct NapiSlice : public rocksdb::Slice {
   }
 
   std::unique_ptr<char[]> heap_;
-  std::array<char, 8192> stack_;
+  std::array<char, 1024> stack_;
 };
 
 /**
