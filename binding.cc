@@ -38,6 +38,15 @@ struct Iterator;
     }                            \
   }
 
+#define NAPI_PENDING_EXCEPTION()                                 \
+  {                                                              \
+    bool result;                                                 \
+    NAPI_STATUS_THROWS(napi_is_exception_pending(env, &result)); \
+    if (result) {                                                \
+      return nullptr;                                            \
+    }                                                            \
+  }
+
 #define NAPI_DB_CONTEXT()       \
   Database* database = nullptr; \
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
@@ -231,7 +240,7 @@ napi_status Convert(napi_env env, const T& s, bool asBuffer, napi_value& result)
 struct NapiSlice : public rocksdb::Slice {
   NapiSlice(napi_env env, napi_value from) {
     if (IsString(env, from)) {
-      napi_get_value_string_utf8(env, from, nullptr, 0, &size_);
+      NAPI_STATUS_THROWS_VOID(napi_get_value_string_utf8(env, from, nullptr, 0, &size_));
       char* data;
       if (size_ + 1 < stack_.size()) {
         data = stack_.data();
@@ -240,11 +249,11 @@ struct NapiSlice : public rocksdb::Slice {
         data = heap_.get();
       }
       data[size_] = 0;
-      napi_get_value_string_utf8(env, from, data, size_ + 1, &size_);
+      NAPI_STATUS_THROWS_VOID(napi_get_value_string_utf8(env, from, data, size_ + 1, &size_));
       data_ = data;
     } else if (IsBuffer(env, from)) {
       void* data;
-      napi_get_buffer_info(env, from, &data, &size_);
+      NAPI_STATUS_THROWS_VOID(napi_get_buffer_info(env, from, &data, &size_));
       data_ = static_cast<char*>(data);
     }
   }
@@ -718,8 +727,13 @@ NAPI_METHOD(db_put) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
+  const auto key = NapiSlice(env, argv[1]);
+  const auto val = NapiSlice(env, argv[2]);
+
+  NAPI_PENDING_EXCEPTION();
+
   rocksdb::WriteOptions options;
-  return ToError(env, database->db_->Put(options, NapiSlice(env, argv[1]), NapiSlice(env, argv[2])));
+  return ToError(env, database->db_->Put(options, key, val));
 }
 
 struct GetWorker final : public Worker {
@@ -784,6 +798,8 @@ NAPI_METHOD(db_get) {
   const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto fillCache = BooleanProperty(env, options, "fillCache", true);
   const auto callback = argv[3];
+
+  NAPI_PENDING_EXCEPTION();
 
   auto worker = new GetWorker(env, database, callback, key, asBuffer, fillCache);
   worker->Queue(env);
@@ -889,6 +905,8 @@ NAPI_METHOD(db_get_many) {
   const bool fillCache = BooleanProperty(env, options, "fillCache", true);
   const auto callback = argv[3];
 
+  NAPI_PENDING_EXCEPTION();
+
   auto worker = new GetManyWorker(env, database, keys, callback, asBuffer, fillCache);
   worker->Queue(env);
 
@@ -962,6 +980,8 @@ NAPI_METHOD(db_get_property) {
 
   const auto property = NapiSlice(env, argv[1]);
 
+  NAPI_PENDING_EXCEPTION();
+
   std::string value;
   // TODO (fix): Handle return value?
   database->db_->GetProperty(property, &value);
@@ -1015,6 +1035,9 @@ NAPI_METHOD(iterator_seek) {
   NAPI_ITERATOR_CONTEXT();
 
   const auto target = NapiSlice(env, argv[1]);
+
+  NAPI_PENDING_EXCEPTION();
+
   iterator->first_ = true;
   iterator->Seek(target);
 
@@ -1166,6 +1189,8 @@ NAPI_METHOD(batch_do) {
     }
   }
 
+  NAPI_PENDING_EXCEPTION();
+
   rocksdb::WriteOptions options;
   return ToError(env, database->db_->Write(options, &batch));
 }
@@ -1191,7 +1216,12 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(3);
   NAPI_BATCH_CONTEXT();
 
-  batch->Put(NapiSlice(env, argv[1]), NapiSlice(env, argv[2]));
+  const auto key = NapiSlice(env, argv[1]);
+  const auto val = NapiSlice(env, argv[2]);
+
+  NAPI_PENDING_EXCEPTION();
+
+  batch->Put(key, val);
 
   return 0;
 }
@@ -1200,7 +1230,11 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(2);
   NAPI_BATCH_CONTEXT();
 
-  batch->Delete(NapiSlice(env, argv[1]));
+  const auto key = NapiSlice(env, argv[1]);
+
+  NAPI_PENDING_EXCEPTION();
+
+  batch->Delete(key);
 
   return 0;
 }
