@@ -328,20 +328,6 @@ struct Worker {
 };
 
 struct Database {
-  rocksdb::Status Open(const rocksdb::Options& options, const bool readOnly, const char* location) {
-    if (readOnly) {
-      rocksdb::DB* db = nullptr;
-      const auto status = rocksdb::DB::OpenForReadOnly(options, location, &db);
-      db_.reset(db);
-      return status;
-    } else {
-      rocksdb::DB* db = nullptr;
-      const auto status = rocksdb::DB::Open(options, location, &db);
-      db_.reset(db);
-      return status;
-    }
-  }
-
   void AttachIterator(napi_env env, Iterator* iterator) {
     iterators_.insert(iterator);
     IncrementPriorityWork(env);
@@ -596,7 +582,14 @@ struct OpenWorker final : public Worker {
         readOnly_(readOnly),
         location_(location) {}
 
-  rocksdb::Status Execute(Database& database) override { return database.Open(options_, readOnly_, location_.c_str()); }
+  rocksdb::Status Execute(Database& database) override { 
+    rocksdb::DB* db;
+    const auto status = readOnly_
+      ? rocksdb::DB::OpenForReadOnly(options_, location_, &db)
+      : rocksdb::DB::Open(options_, location_, &db);
+    database.db_.reset(db);
+    return status;
+  }
 
   rocksdb::Options options_;
   const bool readOnly_;
