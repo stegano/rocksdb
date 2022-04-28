@@ -1109,8 +1109,6 @@ NAPI_METHOD(iterator_nextv) {
 
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &size));
-  if (size == 0)
-    size = 1;
 
   const auto callback = argv[2];
 
