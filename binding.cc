@@ -964,10 +964,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_PENDING_EXCEPTION();
 
   std::string value;
-  if (!database->db_->GetProperty(property, &value)) {
-    napi_throw_error(env, nullptr, "invalid property failed");
-    return nullptr;
-  }
+  database->db_->GetProperty(property, &value);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
@@ -1002,16 +999,15 @@ NAPI_METHOD(iterator_init) {
 
   NAPI_PENDING_EXCEPTION();
 
-  auto iterator = new Iterator(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
+  auto iterator = std::make_unique<Iterator>(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
                                valueAsBuffer, highWaterMarkBytes);
 
   napi_value result;
-  // TODO (fix): If this "throws" then the iterator is leaked.
-  NAPI_STATUS_THROWS(napi_create_external(env, iterator, FinalizeIterator, nullptr, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), FinalizeIterator, nullptr, &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  iterator->Attach(env, result);
+  iterator.release()->Attach(env, result);
 
   return result;
 }
