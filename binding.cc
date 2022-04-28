@@ -77,21 +77,15 @@ static bool IsObject(napi_env env, napi_value value) {
   return type == napi_object;
 }
 
-static napi_value CreateError(napi_env env, const std::string_view& str) {
-  napi_value msg;
-  napi_create_string_utf8(env, str.data(), str.size(), &msg);
-  napi_value error;
-  napi_create_error(env, nullptr, msg, &error);
-  return error;
-}
-
-static napi_value CreateCodeError(napi_env env, const std::string_view& code, const std::string_view& msg) {
-  napi_value codeValue;
-  napi_create_string_utf8(env, code.data(), code.size(), &codeValue);
+static napi_value CreateError(napi_env env, const std::optional<std::string_view>& code, const std::string_view& msg) {
+  napi_value codeValue = nullptr;
+  if (code) {
+    NAPI_STATUS_THROWS(napi_create_string_utf8(env, code->data(), code->size(), &codeValue));
+  }
   napi_value msgValue;
-  napi_create_string_utf8(env, msg.data(), msg.size(), &msgValue);
+  NAPI_STATUS_THROWS(napi_create_string_utf8(env, msg.data(), msg.size(), &msgValue));
   napi_value error;
-  napi_create_error(env, codeValue, msgValue, &error);
+  NAPI_STATUS_THROWS(napi_create_error(env, codeValue, msgValue, &error));
   return error;
 }
 
@@ -210,22 +204,22 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
   const auto msg = status.ToString();
 
   if (status.IsNotFound()) {
-    return CreateCodeError(env, "LEVEL_NOT_FOUND", msg);
+    return CreateError(env, "LEVEL_NOT_FOUND", msg);
   } else if (status.IsCorruption()) {
-    return CreateCodeError(env, "LEVEL_CORRUPTION", msg);
+    return CreateError(env, "LEVEL_CORRUPTION", msg);
   } else if (status.IsIOError()) {
     if (msg.find("IO error: lock ") != std::string::npos) {  // env_posix.cc
-      return CreateCodeError(env, "LEVEL_LOCKED", msg);
+      return CreateError(env, "LEVEL_LOCKED", msg);
     } else if (msg.find("IO error: LockFile ") != std::string::npos) {  // env_win.cc
-      return CreateCodeError(env, "LEVEL_LOCKED", msg);
+      return CreateError(env, "LEVEL_LOCKED", msg);
     } else if (msg.find("IO error: While lock file") != std::string::npos) {  // env_mac.cc
-      return CreateCodeError(env, "LEVEL_LOCKED", msg);
+      return CreateError(env, "LEVEL_LOCKED", msg);
     } else {
-      return CreateCodeError(env, "LEVEL_IO_ERROR", msg);
+      return CreateError(env, "LEVEL_IO_ERROR", msg);
     }
   }
 
-  return CreateError(env, msg);
+  return CreateError(env, {}, msg);
 }
 
 template <typename T>
