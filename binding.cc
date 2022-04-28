@@ -379,13 +379,27 @@ struct BaseIterator {
                const int limit,
                const bool fillCache)
       : database_(database),
-        lt_(!lte ? lt : *lte + '\0'),
-        gte_(gte ? gte : (gt ? std::optional<std::string>(*gt + '\0') : std::nullopt)),
         snapshot_(database_->db_->GetSnapshot(),
                   [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }),
         reverse_(reverse),
         limit_(limit),
-        fillCache_(fillCache) {}
+        fillCache_(fillCache) {
+    if (lte) {
+      upper_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      upper_bound_->PinSelf(*lte + '\0');
+    } else if (lt) {
+      upper_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      upper_bound_->PinSelf(*lt);
+    }
+
+    if (gte) {
+      lower_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      lower_bound_->PinSelf(*gte);
+    } else if (gt) {
+      lower_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      lower_bound_->PinSelf(*gt + '\0');
+    }
+  }
 
   virtual ~BaseIterator() { assert(!iterator_); }
 
@@ -408,7 +422,7 @@ struct BaseIterator {
       Init();
     }
 
-    if ((lt_ && target.compare(upper_bound_) >= 0) || (gte_ && target.compare(lower_bound_) < 0)) {
+    if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
       // TODO (fix): Why is this required? Seek should handle it?
       // https://github.com/facebook/rocksdb/issues/9904
       iterator_->SeekToLast();
@@ -449,13 +463,11 @@ struct BaseIterator {
  private:
   void Init() {
     rocksdb::ReadOptions options;
-    if (lt_) {
-      upper_bound_ = rocksdb::Slice(lt_->data(), lt_->size());
-      options.iterate_upper_bound = &upper_bound_;
+    if (upper_bound_) {
+      options.iterate_upper_bound = &*upper_bound_;
     }
-    if (gte_) {
-      lower_bound_ = rocksdb::Slice(gte_->data(), gte_->size());
-      options.iterate_lower_bound = &lower_bound_;
+    if (lower_bound_) {
+      options.iterate_lower_bound = &*lower_bound_;
     }
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
@@ -463,10 +475,8 @@ struct BaseIterator {
     iterator_.reset(database_->db_->NewIterator(options));
   }
 
-  const std::optional<std::string> lt_;
-  const std::optional<std::string> gte_;
-  rocksdb::Slice lower_bound_;
-  rocksdb::Slice upper_bound_;
+  std::unique_ptr<rocksdb::PinnableSlice> lower_bound_;
+  std::unique_ptr<rocksdb::PinnableSlice> upper_bound_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
