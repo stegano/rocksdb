@@ -118,7 +118,7 @@
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
                 "-mmacosx-version-min=10.15",
-                "-std=c++17",
+                "-std=c++20",
                 "-fno-omit-frame-pointer",
                 "-momit-leaf-frame-pointer",
                 "-arch x86_64",

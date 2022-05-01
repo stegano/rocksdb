@@ -393,21 +393,21 @@ struct BaseIterator {
         limit_(limit),
         fillCache_(fillCache) {
     if (lte) {
-      upper_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      upper_bound_ = rocksdb::PinnableSlice();
       *upper_bound_->GetSelf() = std::move(*lte) + '\0';
       upper_bound_->PinSelf();
     } else if (lt) {
-      upper_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      upper_bound_ = rocksdb::PinnableSlice();
       *upper_bound_->GetSelf() = std::move(*lt);
       upper_bound_->PinSelf();
     }
 
     if (gte) {
-      lower_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      lower_bound_ = rocksdb::PinnableSlice();
       *lower_bound_->GetSelf() = std::move(*gte);
       lower_bound_->PinSelf();
     } else if (gt) {
-      lower_bound_ = std::make_unique<rocksdb::PinnableSlice>();
+      lower_bound_ = rocksdb::PinnableSlice();
       *lower_bound_->GetSelf() = std::move(*gt) + '\0';
       lower_bound_->PinSelf();
     }
@@ -487,8 +487,8 @@ struct BaseIterator {
     iterator_.reset(database_->db_->NewIterator(options));
   }
 
-  std::unique_ptr<rocksdb::PinnableSlice> lower_bound_;
-  std::unique_ptr<rocksdb::PinnableSlice> upper_bound_;
+  std::optional<rocksdb::PinnableSlice> lower_bound_;
+  std::optional<rocksdb::PinnableSlice> upper_bound_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
