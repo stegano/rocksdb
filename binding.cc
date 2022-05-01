@@ -238,6 +238,16 @@ napi_status Convert(napi_env env, std::string s, bool asBuffer, napi_value& resu
   }
 }
 
+napi_status Convert(napi_env env, rocksdb::PinnableSlice s, bool asBuffer, napi_value& result) {
+  if (asBuffer) {
+    auto ptr = new rocksdb::PinnableSlice(std::move(s));
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<std::string>, ptr,
+                                       &result);
+  } else {
+    return napi_create_string_utf8(env, s.data(), s.size(), &result);
+  }
+}
+
 struct NapiSlice : public rocksdb::Slice {
   NapiSlice(napi_env env, napi_value from) {
     if (IsString(env, from)) {
@@ -593,11 +603,10 @@ struct OpenWorker final : public Worker {
         readOnly_(readOnly),
         location_(location) {}
 
-  rocksdb::Status Execute(Database& database) override { 
+  rocksdb::Status Execute(Database& database) override {
     rocksdb::DB* db;
-    const auto status = readOnly_
-      ? rocksdb::DB::OpenForReadOnly(options_, location_, &db)
-      : rocksdb::DB::Open(options_, location_, &db);
+    const auto status = readOnly_ ? rocksdb::DB::OpenForReadOnly(options_, location_, &db)
+                                  : rocksdb::DB::Open(options_, location_, &db);
     database.db_.reset(db);
     return status;
   }
@@ -810,12 +819,24 @@ struct GetManyWorker final : public Worker {
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
 
-    status_ = database.db_->MultiGet(options, std::vector<rocksdb::Slice>(keys_.begin(), keys_.end()), &values_);
+    const auto numKeys = keys_.size();
+
+    std::vector<rocksdb::Slice> keys;
+    keys.reserve(keys_.size());
+    for (const auto& key : keys_) {
+      keys.emplace_back(key);
+    }
+
+    statuses_.resize(numKeys);
+    values_.resize(numKeys);
+
+    database.db_->MultiGet(options, database.db_->DefaultColumnFamily(), numKeys, keys.data(), values_.data(),
+                           statuses_.data());
 
     keys_.clear();
     snapshot_ = nullptr;
 
-    for (auto status : status_) {
+    for (auto status : statuses_) {
       if (!status.ok() && !status.IsNotFound()) {
         return status;
       }
@@ -832,7 +853,7 @@ struct GetManyWorker final : public Worker {
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
-      if (status_[idx].ok()) {
+      if (statuses_[idx].ok()) {
         NAPI_STATUS_RETURN(Convert(env, std::move(values_[idx]), valueAsBuffer_, element));
       } else {
         NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
@@ -841,7 +862,7 @@ struct GetManyWorker final : public Worker {
     }
 
     values_.clear();
-    status_.clear();
+    statuses_.clear();
 
     napi_value argv[2];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
@@ -856,8 +877,8 @@ struct GetManyWorker final : public Worker {
 
  private:
   std::vector<std::string> keys_;
-  std::vector<std::string> values_;
-  std::vector<rocksdb::Status> status_;
+  std::vector<rocksdb::PinnableSlice> values_;
+  std::vector<rocksdb::Status> statuses_;
   const bool valueAsBuffer_;
   const bool fillCache_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
@@ -1000,8 +1021,8 @@ NAPI_METHOD(iterator_init) {
 
   NAPI_PENDING_EXCEPTION();
 
-  auto iterator = std::make_unique<Iterator>(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
-                               valueAsBuffer, highWaterMarkBytes);
+  auto iterator = std::make_unique<Iterator>(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache,
+                                             keyAsBuffer, valueAsBuffer, highWaterMarkBytes);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
