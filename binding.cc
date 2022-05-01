@@ -101,7 +101,7 @@ static napi_value GetProperty(napi_env env, napi_value obj, const std::string_vi
   return value;
 }
 
-static bool BooleanProperty(napi_env env, napi_value obj, const std::string_view& key, bool defaultValue) {
+static std::optional<bool> BooleanProperty(napi_env env, napi_value obj, const std::string_view& key) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     bool result;
@@ -109,7 +109,7 @@ static bool BooleanProperty(napi_env env, napi_value obj, const std::string_view
     return result;
   }
 
-  return defaultValue;
+  return {};
 }
 
 static bool EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& option) {
@@ -125,7 +125,7 @@ static bool EncodingIsBuffer(napi_env env, napi_value obj, const std::string_vie
   return false;
 }
 
-static uint32_t Uint32Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t defaultValue) {
+static std::optional<uint32_t> Uint32Property(napi_env env, napi_value obj, const std::string_view& key) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     uint32_t result;
@@ -133,10 +133,10 @@ static uint32_t Uint32Property(napi_env env, napi_value obj, const std::string_v
     return result;
   }
 
-  return defaultValue;
+  return {};
 }
 
-static int Int32Property(napi_env env, napi_value obj, const std::string_view& key, int defaultValue) {
+static std::optional<int> Int32Property(napi_env env, napi_value obj, const std::string_view& key) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
     int result;
@@ -144,7 +144,7 @@ static int Int32Property(napi_env env, napi_value obj, const std::string_view& k
     return result;
   }
 
-  return defaultValue;
+  return {};
 }
 
 static std::string ToString(napi_env env, napi_value from, const std::string& defaultValue = "") {
@@ -164,26 +164,11 @@ static std::string ToString(napi_env env, napi_value from, const std::string& de
   return defaultValue;
 }
 
-static std::string StringProperty(napi_env env,
-                                  napi_value obj,
-                                  const std::string_view& key,
-                                  const std::string& defaultValue = "") {
-  if (HasProperty(env, obj, key)) {
-    napi_value value = GetProperty(env, obj, key);
-    if (IsString(env, value)) {
-      return ToString(env, value);
-    }
-  }
-
-  return defaultValue;
-}
-
-static std::optional<std::string> RangeOption(napi_env env, napi_value opts, const std::string_view& name) {
+static std::optional<std::string> StringProperty(napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto value = GetProperty(env, opts, name);
     return ToString(env, value);
   }
-
   return {};
 }
 
@@ -622,19 +607,19 @@ NAPI_METHOD(db_open) {
 
   rocksdb::Options options;
 
-  options.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism", 4));
+  options.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism").value_or(4));
 
   const auto location = ToString(env, argv[1]);
-  options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing", true);
-  options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists", false);
+  options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
+  options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
   options.compression =
-      BooleanProperty(env, argv[2], "compression", true) ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
-  options.max_open_files = Uint32Property(env, argv[2], "maxOpenFiles", 1000);
-  options.max_log_file_size = Uint32Property(env, argv[2], "maxFileSize", 2 << 20);
-  options.write_buffer_size = Uint32Property(env, argv[2], "writeBufferSize", 4 << 20);
+      BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
+  options.max_open_files = Uint32Property(env, argv[2], "maxOpenFiles").value_or(1000);
+  options.max_log_file_size = Uint32Property(env, argv[2], "maxFileSize").value_or(2 << 20);
+  options.write_buffer_size = Uint32Property(env, argv[2], "writeBufferSize").value_or(4 << 20);
   options.use_adaptive_mutex = true;
 
-  const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel");
+  const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
 
@@ -661,8 +646,8 @@ NAPI_METHOD(db_open) {
     options.info_log.reset(new NullLogger());
   }
 
-  const auto readOnly = BooleanProperty(env, argv[2], "readOnly", false);
-  const auto cacheSize = Uint32Property(env, argv[2], "cacheSize", 8 << 20);
+  const auto readOnly = BooleanProperty(env, argv[2], "readOnly").value_or(false);
+  const auto cacheSize = Uint32Property(env, argv[2], "cacheSize").value_or(8 << 20);
 
   rocksdb::BlockBasedTableOptions tableOptions;
 
@@ -672,8 +657,8 @@ NAPI_METHOD(db_open) {
     tableOptions.no_block_cache = true;
   }
 
-  tableOptions.block_size = Uint32Property(env, argv[2], "blockSize", 4096);
-  tableOptions.block_restart_interval = Uint32Property(env, argv[2], "blockRestartInterval", 16);
+  tableOptions.block_size = Uint32Property(env, argv[2], "blockSize").value_or(4096);
+  tableOptions.block_restart_interval = Uint32Property(env, argv[2], "blockRestartInterval").value_or(16);
   tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kxxHash64;
@@ -905,7 +890,7 @@ NAPI_METHOD(db_get_many) {
 
   const auto options = argv[2];
   const bool asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const bool fillCache = BooleanProperty(env, options, "fillCache", true);
+  const bool fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
   const auto callback = argv[3];
 
   NAPI_PENDING_EXCEPTION();
@@ -932,13 +917,13 @@ NAPI_METHOD(db_clear) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
 
-  const auto reverse = BooleanProperty(env, argv[1], "reverse", false);
-  const auto limit = Int32Property(env, argv[1], "limit", -1);
+  const auto reverse = BooleanProperty(env, argv[1], "reverse").value_or(false);
+  const auto limit = Int32Property(env, argv[1], "limit").value_or(-1);
 
-  const auto lt = RangeOption(env, argv[1], "lt");
-  const auto lte = RangeOption(env, argv[1], "lte");
-  const auto gt = RangeOption(env, argv[1], "gt");
-  const auto gte = RangeOption(env, argv[1], "gte");
+  const auto lt = StringProperty(env, argv[1], "lt");
+  const auto lte = StringProperty(env, argv[1], "lte");
+  const auto gt = StringProperty(env, argv[1], "gt");
+  const auto gte = StringProperty(env, argv[1], "gte");
 
   NAPI_PENDING_EXCEPTION();
 
@@ -1005,19 +990,19 @@ NAPI_METHOD(iterator_init) {
   NAPI_DB_CONTEXT();
 
   const auto options = argv[1];
-  const auto reverse = BooleanProperty(env, options, "reverse", false);
-  const auto keys = BooleanProperty(env, options, "keys", true);
-  const auto values = BooleanProperty(env, options, "values", true);
-  const auto fillCache = BooleanProperty(env, options, "fillCache", false);
+  const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
+  const auto keys = BooleanProperty(env, options, "keys").value_or(true);
+  const auto values = BooleanProperty(env, options, "values").value_or(true);
+  const auto fillCache = BooleanProperty(env, options, "fillCache").value_or(false);
   const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const auto limit = Int32Property(env, options, "limit", -1);
-  const auto highWaterMarkBytes = Uint32Property(env, options, "highWaterMarkBytes", 16 * 1024);
+  const auto limit = Int32Property(env, options, "limit").value_or(-1);
+  const auto highWaterMarkBytes = Uint32Property(env, options, "highWaterMarkBytes").value_or(16 * 1024);
 
-  const auto lt = RangeOption(env, options, "lt");
-  const auto lte = RangeOption(env, options, "lte");
-  const auto gt = RangeOption(env, options, "gt");
-  const auto gte = RangeOption(env, options, "gte");
+  const auto lt = StringProperty(env, options, "lt");
+  const auto lte = StringProperty(env, options, "lte");
+  const auto gt = StringProperty(env, options, "gt");
+  const auto gte = StringProperty(env, options, "gte");
 
   NAPI_PENDING_EXCEPTION();
 
