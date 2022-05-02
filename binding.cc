@@ -96,7 +96,7 @@ static bool HasProperty(napi_env env, napi_value obj, const std::string_view& ke
 }
 
 static napi_value GetProperty(napi_env env, napi_value obj, const std::string_view& key) {
-  napi_value value;
+  napi_value value = nullptr;
   napi_get_named_property(env, obj, key.data(), &value);
   return value;
 }
@@ -1150,20 +1150,12 @@ NAPI_METHOD(batch_do) {
     const auto type = StringProperty(env, element, "type");
 
     if (type == "del") {
-      if (!HasProperty(env, element, "key"))
-        continue;
-
       const auto key = NapiSlice(env, GetProperty(env, element, "key"));
 
       NAPI_PENDING_EXCEPTION();
 
       batch.Delete(key);
     } else if (type == "put") {
-      if (!HasProperty(env, element, "key"))
-        continue;
-      if (!HasProperty(env, element, "value"))
-        continue;
-
       const auto key = NapiSlice(env, GetProperty(env, element, "key"));
       const auto value = NapiSlice(env, GetProperty(env, element, "value"));
 
