@@ -501,9 +501,7 @@ struct Iterator final : public BaseIterator {
         values_(values),
         keyAsBuffer_(keyAsBuffer),
         valueAsBuffer_(valueAsBuffer),
-        highWaterMarkBytes_(highWaterMarkBytes),
-        first_(true),
-        ref_(nullptr) {}
+        highWaterMarkBytes_(highWaterMarkBytes) {}
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
@@ -522,10 +520,10 @@ struct Iterator final : public BaseIterator {
   const bool keyAsBuffer_;
   const bool valueAsBuffer_;
   const uint32_t highWaterMarkBytes_;
-  bool first_;
+  bool first_ = true;
 
  private:
-  napi_ref ref_;
+  napi_ref ref_ = nullptr;
 };
 
 /**
@@ -612,11 +610,8 @@ NAPI_METHOD(db_open) {
   const auto location = ToString(env, argv[1]);
   options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
   options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
-  options.compression =
-      BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kSnappyCompression : rocksdb::kNoCompression;
-  options.max_open_files = Uint32Property(env, argv[2], "maxOpenFiles").value_or(1000);
-  options.max_log_file_size = Uint32Property(env, argv[2], "maxFileSize").value_or(2 << 20);
-  options.write_buffer_size = Uint32Property(env, argv[2], "writeBufferSize").value_or(4 << 20);
+  options.compression = BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kSnappyCompression
+                                                                                      : rocksdb::kNoCompression;
   options.use_adaptive_mutex = true;
 
   const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
@@ -772,7 +767,7 @@ NAPI_METHOD(db_get) {
   const auto key = ToString(env, argv[1]);
   const auto options = argv[2];
   const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const auto fillCache = BooleanProperty(env, options, "fillCache", true);
+  const auto fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
   const auto callback = argv[3];
 
   NAPI_PENDING_EXCEPTION();
@@ -925,8 +920,6 @@ NAPI_METHOD(db_clear) {
   const auto gt = StringProperty(env, argv[1], "gt");
   const auto gte = StringProperty(env, argv[1], "gte");
 
-  NAPI_PENDING_EXCEPTION();
-
   // TODO (perf): Use DeleteRange.
 
   BaseIterator it(database, reverse, lt, lte, gt, gte, limit, false);
@@ -1003,8 +996,6 @@ NAPI_METHOD(iterator_init) {
   const auto lte = StringProperty(env, options, "lte");
   const auto gt = StringProperty(env, options, "gt");
   const auto gte = StringProperty(env, options, "gte");
-
-  NAPI_PENDING_EXCEPTION();
 
   auto iterator = std::make_unique<Iterator>(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache,
                                              keyAsBuffer, valueAsBuffer, highWaterMarkBytes);
@@ -1164,6 +1155,8 @@ NAPI_METHOD(batch_do) {
 
       const auto key = NapiSlice(env, GetProperty(env, element, "key"));
 
+      NAPI_PENDING_EXCEPTION();
+
       batch.Delete(key);
     } else if (type == "put") {
       if (!HasProperty(env, element, "key"))
@@ -1174,11 +1167,11 @@ NAPI_METHOD(batch_do) {
       const auto key = NapiSlice(env, GetProperty(env, element, "key"));
       const auto value = NapiSlice(env, GetProperty(env, element, "value"));
 
+      NAPI_PENDING_EXCEPTION();
+
       batch.Put(key, value);
     }
   }
-
-  NAPI_PENDING_EXCEPTION();
 
   rocksdb::WriteOptions options;
   return ToError(env, database->db_->Write(options, &batch));
