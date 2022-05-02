@@ -38,15 +38,6 @@ struct Iterator;
     }                            \
   }
 
-#define NAPI_PENDING_EXCEPTION()                                 \
-  {                                                              \
-    bool result;                                                 \
-    NAPI_STATUS_THROWS(napi_is_exception_pending(env, &result)); \
-    if (result) {                                                \
-      return nullptr;                                            \
-    }                                                            \
-  }
-
 #define NAPI_DB_CONTEXT()       \
   Database* database = nullptr; \
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
@@ -234,29 +225,30 @@ napi_status Convert(napi_env env, rocksdb::PinnableSlice s, bool asBuffer, napi_
 }
 
 struct NapiSlice : public rocksdb::Slice {
-  NapiSlice(napi_env env, napi_value from) {
-    if (IsString(env, from)) {
-      NAPI_STATUS_THROWS_VOID(napi_get_value_string_utf8(env, from, nullptr, 0, &size_));
-      char* data;
-      if (size_ + 1 < stack_.size()) {
-        data = stack_.data();
-      } else {
-        heap_.reset(new char[size_ + 1]);
-        data = heap_.get();
-      }
-      data[size_] = 0;
-      NAPI_STATUS_THROWS_VOID(napi_get_value_string_utf8(env, from, data, size_ + 1, &size_));
-      data_ = data;
-    } else if (IsBuffer(env, from)) {
-      void* data;
-      NAPI_STATUS_THROWS_VOID(napi_get_buffer_info(env, from, &data, &size_));
-      data_ = static_cast<char*>(data);
-    }
-  }
-
   std::unique_ptr<char[]> heap_;
   std::array<char, 1024> stack_;
 };
+
+napi_status ToNapiSlice(napi_env env, napi_value from, NapiSlice& slice) {
+  if (IsString(env, from)) {
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &slice.size_));
+    char* data;
+    if (slice.size_ + 1 < slice.stack_.size()) {
+      data = slice.stack_.data();
+    } else {
+      slice.heap_.reset(new char[slice.size_ + 1]);
+      data = slice.heap_.get();
+    }
+    data[slice.size_] = 0;
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, data, slice.size_ + 1, &slice.size_));
+    slice.data_ = data;
+  } else if (IsBuffer(env, from)) {
+    void* data;
+    NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, &data, &slice.size_));
+    slice.data_ = static_cast<char*>(data);
+  }
+  return napi_ok;
+}
 
 /**
  * Base worker class. Handles the async work. Derived classes can override the
@@ -662,8 +654,6 @@ NAPI_METHOD(db_open) {
 
   const auto callback = argv[3];
 
-  NAPI_PENDING_EXCEPTION();
-
   auto worker = new OpenWorker(env, database, callback, location, options, readOnly);
   worker->Queue(env);
 
@@ -702,10 +692,11 @@ NAPI_METHOD(db_put) {
   NAPI_ARGV(4);
   NAPI_DB_CONTEXT();
 
-  const auto key = NapiSlice(env, argv[1]);
-  const auto val = NapiSlice(env, argv[2]);
+  NapiSlice key;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
 
-  NAPI_PENDING_EXCEPTION();
+  NapiSlice val;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[2], val));
 
   rocksdb::WriteOptions options;
   return ToError(env, database->db_->Put(options, key, val));
@@ -769,8 +760,6 @@ NAPI_METHOD(db_get) {
   const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
   const auto callback = argv[3];
-
-  NAPI_PENDING_EXCEPTION();
 
   auto worker = new GetWorker(env, database, callback, key, asBuffer, fillCache);
   worker->Queue(env);
@@ -888,8 +877,6 @@ NAPI_METHOD(db_get_many) {
   const bool fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
   const auto callback = argv[3];
 
-  NAPI_PENDING_EXCEPTION();
-
   auto worker = new GetManyWorker(env, database, std::move(keys), callback, asBuffer, fillCache);
   worker->Queue(env);
 
@@ -900,9 +887,8 @@ NAPI_METHOD(db_del) {
   NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
 
-  const auto key = NapiSlice(env, argv[1]);
-
-  NAPI_PENDING_EXCEPTION();
+  NapiSlice key;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
 
   rocksdb::WriteOptions options;
   return ToError(env, database->db_->Delete(options, key));
@@ -965,9 +951,8 @@ NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
 
-  const auto property = NapiSlice(env, argv[1]);
-
-  NAPI_PENDING_EXCEPTION();
+  NapiSlice property;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], property));
 
   std::string value;
   database->db_->GetProperty(property, &value);
@@ -1014,9 +999,8 @@ NAPI_METHOD(iterator_seek) {
   NAPI_ARGV(2);
   NAPI_ITERATOR_CONTEXT();
 
-  const auto target = NapiSlice(env, argv[1]);
-
-  NAPI_PENDING_EXCEPTION();
+  NapiSlice target;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], target));
 
   iterator->first_ = true;
   iterator->Seek(target);
@@ -1144,23 +1128,18 @@ NAPI_METHOD(batch_do) {
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, operations, i, &element));
 
-    if (!IsObject(env, element))
-      continue;
-
-    const auto type = StringProperty(env, element, "type");
+    NapiSlice type;
+    NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "type"), type));
 
     if (type == "del") {
-      const auto key = NapiSlice(env, GetProperty(env, element, "key"));
-
-      NAPI_PENDING_EXCEPTION();
-
+      NapiSlice key;
+      NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
       batch.Delete(key);
     } else if (type == "put") {
-      const auto key = NapiSlice(env, GetProperty(env, element, "key"));
-      const auto value = NapiSlice(env, GetProperty(env, element, "value"));
-
-      NAPI_PENDING_EXCEPTION();
-
+      NapiSlice key;
+      NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
+      NapiSlice value;
+      NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "value"), value));
       batch.Put(key, value);
     }
   }
@@ -1184,10 +1163,11 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(3);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = NapiSlice(env, argv[1]);
-  const auto val = NapiSlice(env, argv[2]);
-
-  NAPI_PENDING_EXCEPTION();
+  NapiSlice key;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
+  
+  NapiSlice val;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[2], val));
 
   batch->Put(key, val);
 
@@ -1198,9 +1178,8 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(2);
   NAPI_BATCH_CONTEXT();
 
-  const auto key = NapiSlice(env, argv[1]);
-
-  NAPI_PENDING_EXCEPTION();
+  NapiSlice key;
+  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
 
   batch->Delete(key);
 
