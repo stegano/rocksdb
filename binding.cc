@@ -226,7 +226,7 @@ napi_status Convert(napi_env env, std::string s, bool asBuffer, napi_value& resu
 napi_status Convert(napi_env env, rocksdb::PinnableSlice s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
     auto ptr = new rocksdb::PinnableSlice(std::move(s));
-    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<std::string>, ptr,
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr,
                                        &result);
   } else {
     return napi_create_string_utf8(env, s.data(), s.size(), &result);
