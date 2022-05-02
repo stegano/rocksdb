@@ -781,12 +781,12 @@ NAPI_METHOD(db_get) {
 struct GetManyWorker final : public Worker {
   GetManyWorker(napi_env env,
                 Database* database,
-                const std::vector<std::string>& keys,
+                std::vector<std::string> keys,
                 napi_value callback,
                 const bool valueAsBuffer,
                 const bool fillCache)
       : Worker(env, database, callback, "leveldown.get.many"),
-        keys_(keys),
+        keys_(std::move(keys)),
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
         snapshot_(database_->db_->GetSnapshot(),
@@ -890,7 +890,7 @@ NAPI_METHOD(db_get_many) {
 
   NAPI_PENDING_EXCEPTION();
 
-  auto worker = new GetManyWorker(env, database, keys, callback, asBuffer, fillCache);
+  auto worker = new GetManyWorker(env, database, std::move(keys), callback, asBuffer, fillCache);
   worker->Queue(env);
 
   return 0;
