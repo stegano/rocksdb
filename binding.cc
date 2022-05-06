@@ -579,7 +579,7 @@ struct OpenWorker final : public Worker {
         location_(location) {}
 
   rocksdb::Status Execute(Database& database) override {
-    rocksdb::DB* db;
+    rocksdb::DB* db = nullptr;
     const auto status = readOnly_ ? rocksdb::DB::OpenForReadOnly(options_, location_, &db)
                                   : rocksdb::DB::Open(options_, location_, &db);
     database.db_.reset(db);
