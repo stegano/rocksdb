@@ -19,6 +19,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <thread>
 
 class NullLogger : public rocksdb::Logger {
  public:
@@ -606,6 +607,7 @@ NAPI_METHOD(db_open) {
   options.compression = BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kSnappyCompression
                                                                                       : rocksdb::kNoCompression;
   options.use_adaptive_mutex = true;
+  options.enable_pipelined_write = true;
 
   const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
