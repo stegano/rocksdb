@@ -217,8 +217,8 @@ napi_status Convert(napi_env env, std::string s, bool asBuffer, napi_value& resu
 napi_status Convert(napi_env env, rocksdb::PinnableSlice s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
     auto ptr = new rocksdb::PinnableSlice(std::move(s));
-    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr,
-                                       &result);
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
+                                       Finalize<rocksdb::PinnableSlice>, ptr, &result);
   } else {
     return napi_create_string_utf8(env, s.data(), s.size(), &result);
   }
@@ -597,7 +597,8 @@ NAPI_METHOD(db_open) {
 
   rocksdb::Options options;
 
-  options.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism").value_or(4));
+  options.IncreaseParallelism(
+      Uint32Property(env, argv[2], "parallelism").value_or(std::thread::hardware_concurrency() / 2));
 
   const auto location = ToString(env, argv[1]);
   options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
@@ -1165,7 +1166,7 @@ NAPI_METHOD(batch_put) {
 
   NapiSlice key;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
-  
+
   NapiSlice val;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[2], val));
 
