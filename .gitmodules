@@ -1,3 +1,6 @@
 [submodule "deps/rocksdb/rocksdb"]
 	path = deps/rocksdb/rocksdb
 	url = https://github.com/facebook/rocksdb.git
+[submodule "deps/liburing/liburing"]
+	path = deps/liburing/liburing
+	url = https://github.com/axboe/liburing.git

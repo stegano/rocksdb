@@ -83,7 +83,7 @@
               "ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1",
               "ROCKSDB_RANGESYNC_PRESENT=1",
               "ROCKSDB_SCHED_GETCPU_PRESENT=1",
-              # "ROCKSDB_IOURING_PRESENT=1",
+              "ROCKSDB_IOURING_PRESENT=1",
               "HAVE_SSE42=1",
               "HAVE_BMI=1",
               "HAVE_LZCNT=1",
@@ -95,6 +95,7 @@
               # "NUMA=1",
               # "TBB=1",
             ],
+            "dependencies": ["../liburing/liburing.gyp:liburing"],
             "cflags": [
               "-msse4.2",
               "-mpclmul",
