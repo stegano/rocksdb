@@ -221,7 +221,7 @@ napi_status Convert(napi_env env, rocksdb::PinnableSlice s, bool asBuffer, napi_
 
 struct NapiSlice : public rocksdb::Slice {
   std::unique_ptr<char[]> heap_;
-  std::array<char, 1024> stack_;
+  std::array<char, 128> stack_;
 };
 
 napi_status ToNapiSlice(napi_env env, napi_value from, NapiSlice& slice) {
