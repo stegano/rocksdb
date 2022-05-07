@@ -640,8 +640,10 @@ NAPI_METHOD(db_open) {
 
   if (cacheSize) {
     tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
+    tableOptions.cache_index_and_filter_blocks = BooleanProperty(env, argv[2], "cacheIndexAndFilterBlocks").value_or(true);
   } else {
     tableOptions.no_block_cache = true;
+    tableOptions.cache_index_and_filter_blocks = false;
   }
 
   tableOptions.block_size = Uint32Property(env, argv[2], "blockSize").value_or(4096);
@@ -650,7 +652,6 @@ NAPI_METHOD(db_open) {
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
   tableOptions.optimize_filters_for_memory = BooleanProperty(env, argv[2], "optimizeFiltersForMemory").value_or(true);
-  tableOptions.cache_index_and_filter_blocks = BooleanProperty(env, argv[2], "cacheIndexAndFilterBlocks").value_or(true);
 
   options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
