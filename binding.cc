@@ -649,10 +649,11 @@ NAPI_METHOD(db_open) {
 
   tableOptions.block_size = Uint32Property(env, argv[2], "blockSize").value_or(4096);
   tableOptions.block_restart_interval = Uint32Property(env, argv[2], "blockRestartInterval").value_or(16);
-  tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+  tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kxxHash64;
   tableOptions.optimize_filters_for_memory = true;
+  // tableOptions.cache_index_and_filter_blocks = true; // TODO
 
   options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
