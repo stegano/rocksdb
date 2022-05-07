@@ -609,6 +609,9 @@ NAPI_METHOD(db_open) {
   options.use_adaptive_mutex = true;
   options.enable_pipelined_write = true;
 
+  // TODO: Consider direct IO (https://github.com/facebook/rocksdb/wiki/Direct-IO) once
+  // secondary compressed cache is stable.
+
   const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
@@ -653,7 +656,9 @@ NAPI_METHOD(db_open) {
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kxxHash64;
   tableOptions.optimize_filters_for_memory = true;
-  // tableOptions.cache_index_and_filter_blocks = true; // TODO
+
+  // TODO: Consider cache_index_and_filter_blocks and cache_index_and_filter_blocks_with_high_priority
+  // once considered stable.
 
   options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
