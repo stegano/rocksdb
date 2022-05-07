@@ -84,6 +84,8 @@
               "ROCKSDB_RANGESYNC_PRESENT=1",
               "ROCKSDB_SCHED_GETCPU_PRESENT=1",
               "ROCKSDB_IOURING_PRESENT=1",
+              # "ROCKSDB_JEMALLOC=1",
+              # "JEMALLOC_NO_DEMANGLE=1",
               "HAVE_SSE42=1",
               "HAVE_BMI=1",
               "HAVE_LZCNT=1",
