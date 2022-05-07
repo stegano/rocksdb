@@ -656,9 +656,7 @@ NAPI_METHOD(db_open) {
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kxxHash64;
   tableOptions.optimize_filters_for_memory = true;
-
-  // TODO: Consider cache_index_and_filter_blocks and cache_index_and_filter_blocks_with_high_priority
-  // once considered stable.
+  tableOptions.cache_index_and_filter_blocks = true;
 
   options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
