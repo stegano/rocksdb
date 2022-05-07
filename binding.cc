@@ -652,6 +652,7 @@ NAPI_METHOD(db_open) {
   tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kxxHash64;
+  tableOptions.optimize_filters_for_memory = true;
 
   options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
