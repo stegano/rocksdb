@@ -63,12 +63,6 @@ static bool IsBuffer(napi_env env, napi_value value) {
   return isBuffer;
 }
 
-static bool IsObject(napi_env env, napi_value value) {
-  napi_valuetype type;
-  napi_typeof(env, value, &type);
-  return type == napi_object;
-}
-
 static napi_value CreateError(napi_env env, const std::optional<std::string_view>& code, const std::string_view& msg) {
   napi_value codeValue = nullptr;
   if (code) {
