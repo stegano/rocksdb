@@ -600,8 +600,8 @@ NAPI_METHOD(db_open) {
   options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
   options.compression = BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kSnappyCompression
                                                                                       : rocksdb::kNoCompression;
-  options.use_adaptive_mutex = true;
-  options.enable_pipelined_write = true;
+  options.use_adaptive_mutex = BooleanProperty(env, argv[2], "useAdaptiveMutex").value_or(true);
+  options.enable_pipelined_write = BooleanProperty(env, argv[2], "enablePipelinedWrite").value_or(true);
   options.max_background_jobs =
       Uint32Property(env, argv[2], "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
 
