@@ -18,8 +18,8 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <vector>
 #include <thread>
+#include <vector>
 
 class NullLogger : public rocksdb::Logger {
  public:
@@ -602,7 +602,8 @@ NAPI_METHOD(db_open) {
                                                                                       : rocksdb::kNoCompression;
   options.use_adaptive_mutex = true;
   options.enable_pipelined_write = true;
-  options.max_background_jobs = std::thread::hardware_concurrency() / 4;
+  options.max_background_jobs =
+      Uint32Property(env, argv[2], "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
 
   // TODO: Consider direct IO (https://github.com/facebook/rocksdb/wiki/Direct-IO) once
   // secondary compressed cache is stable.
@@ -641,7 +642,8 @@ NAPI_METHOD(db_open) {
 
   if (cacheSize) {
     tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
-    tableOptions.cache_index_and_filter_blocks = BooleanProperty(env, argv[2], "cacheIndexAndFilterBlocks").value_or(true);
+    tableOptions.cache_index_and_filter_blocks =
+        BooleanProperty(env, argv[2], "cacheIndexAndFilterBlocks").value_or(true);
   } else {
     tableOptions.no_block_cache = true;
     tableOptions.cache_index_and_filter_blocks = false;
