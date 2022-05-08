@@ -602,6 +602,7 @@ NAPI_METHOD(db_open) {
                                                                                       : rocksdb::kNoCompression;
   options.use_adaptive_mutex = true;
   options.enable_pipelined_write = true;
+  options.max_background_jobs = std::thread::hardware_concurrency() / 4;
 
   // TODO: Consider direct IO (https://github.com/facebook/rocksdb/wiki/Direct-IO) once
   // secondary compressed cache is stable.
