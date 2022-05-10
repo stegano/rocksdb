@@ -911,46 +911,72 @@ NAPI_METHOD(db_clear) {
   const auto lte = StringProperty(env, argv[1], "lte");
   const auto gt = StringProperty(env, argv[1], "gt");
   const auto gte = StringProperty(env, argv[1], "gte");
-
-  // TODO (perf): Use DeleteRange.
-
-  BaseIterator it(database, reverse, lt, lte, gt, gte, limit, false);
-
-  it.SeekToRange();
-
-  // TODO: add option
-  const uint32_t hwm = 16 * 1024;
-
-  rocksdb::WriteBatch batch;
-  rocksdb::WriteOptions options;
-  rocksdb::Status status;
-
-  while (true) {
-    size_t bytesRead = 0;
-
-    while (bytesRead <= hwm && it.Valid() && it.Increment()) {
-      const auto key = it.CurrentKey();
-      batch.Delete(key);
-      bytesRead += key.size();
-      it.Next();
+  
+  if (!reverse && limit == -1 && (lte || lt)) {
+    rocksdb::Slice begin;
+    if (gte) {
+      begin = *gte;
+    } else if (gt) {
+      begin = *gt + '\0';
     }
 
-    status = it.Status();
-    if (!status.ok() || bytesRead == 0) {
-      break;
+    rocksdb::Slice end;
+    if (lte) {
+      end = *lte + '\0';
+    } else if (lt) {
+      end = *lt;
+    } else {
+      assert(false);
     }
 
-    status = database->db_->Write(options, &batch);
-    if (!status.ok()) {
-      break;
+    if (begin.compare(end) > 0) {
+      return ToError(env, rocksdb::Status::OK());
     }
 
-    batch.Clear();
+    rocksdb::WriteOptions options;
+    const auto status = database->db_->DeleteRange(options, database->db_->DefaultColumnFamily(), begin, end);
+    return ToError(env, status);
+  } else {
+    // TODO (perf): Use DeleteRange.
+
+    BaseIterator it(database, reverse, lt, lte, gt, gte, limit, false);
+
+    it.SeekToRange();
+
+    // TODO: add option
+    const uint32_t hwm = 16 * 1024;
+
+    rocksdb::WriteBatch batch;
+    rocksdb::WriteOptions options;
+    rocksdb::Status status;
+
+    while (true) {
+      size_t bytesRead = 0;
+
+      while (bytesRead <= hwm && it.Valid() && it.Increment()) {
+        const auto key = it.CurrentKey();
+        batch.Delete(key);
+        bytesRead += key.size();
+        it.Next();
+      }
+
+      status = it.Status();
+      if (!status.ok() || bytesRead == 0) {
+        break;
+      }
+
+      status = database->db_->Write(options, &batch);
+      if (!status.ok()) {
+        break;
+      }
+
+      batch.Clear();
+    }
+
+    it.Close();
+
+    return ToError(env, status);
   }
-
-  it.Close();
-
-  return ToError(env, status);
 }
 
 NAPI_METHOD(db_get_property) {
