@@ -20,8 +20,7 @@
       ],
       "include_dirs": [
         "rocksdb/", 
-        "rocksdb/include/",
-        "deps/zstd/zstd/lib"
+        "rocksdb/include/"
       ],
       "conditions": [
         [
@@ -109,6 +108,10 @@
                 # "/usr/lib/x86_64-linux-gnu/libjemalloc_pic.a",
               ],
             },
+            "include_dirs": [
+              "/usr/lib/x86_64-linux-gnu/include",
+              # "/opt/homebrew/Cellar/jemalloc/5.3.0/include"
+            ],
             "dependencies": [
               "../liburing/liburing.gyp:liburing"
             ],
@@ -136,6 +139,10 @@
                 # "/opt/homebrew/Cellar/jemalloc/5.3.0/lib/libjemalloc.dylib"
               ],
             },
+            "include_dirs": [
+              "/opt/homebrew/Cellar/zstd/1.5.2/include",
+              # "/opt/homebrew/Cellar/jemalloc/5.3.0/include"
+            ],
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
                 "-mmacosx-version-min=10.15",
@@ -149,10 +156,6 @@
               "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
               "MACOSX_DEPLOYMENT_TARGET": "10.15"
             },
-            "include_dirs": [
-              "/opt/homebrew/Cellar/zstd/1.5.2/include",
-              # "/opt/homebrew/Cellar/jemalloc/5.3.0/include"
-            ],
           }
         ]
       ],
