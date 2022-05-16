@@ -10,7 +10,7 @@
       },
       "defines": [
         "ZSTD=1",
-        # "ZSTD_STATIC_LINKING_ONLY=1",
+        "ZSTD_STATIC_LINKING_ONLY=1",
         # "ROCKSDB_JEMALLOC=1",
         # "JEMALLOC_NO_DEMANGLE=1",
         "ROCKSDB_BACKTRACE=1",
@@ -135,8 +135,8 @@
             "defines": ["OS_MACOSX=1"],
             "direct_dependent_settings": {
               "libraries": [
-                "/opt/homebrew/Cellar/zstd/1.5.2/lib/libzstd.dylib",
-                # "/opt/homebrew/Cellar/jemalloc/5.3.0/lib/libjemalloc.dylib"
+                "/opt/homebrew/Cellar/zstd/1.5.2/lib/libzstd.a",
+                # "/opt/homebrew/Cellar/jemalloc/5.3.0/lib/libjemalloc.a"
               ],
             },
             "include_dirs": [
@@ -145,7 +145,7 @@
             ],
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
-                "-mmacosx-version-min=10.15",
+                "-mmacosx-version-min=12.2.1",
                 "-std=c++20",
                 "-fno-omit-frame-pointer",
                 "-momit-leaf-frame-pointer",
@@ -154,7 +154,7 @@
               ],
               "GCC_ENABLE_CPP_RTTI": "YES",
               "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
-              "MACOSX_DEPLOYMENT_TARGET": "10.15"
+              "MACOSX_DEPLOYMENT_TARGET": "12.2.1"
             },
           }
         ]
@@ -389,12 +389,12 @@
         "rocksdb/util/xxhash.cc",
         "rocksdb/utilities/agg_merge/agg_merge.cc",
         "rocksdb/utilities/backup/backup_engine.cc",
-        # "rocksdb/utilities/blob_db/blob_compaction_filter.cc",
-        # "rocksdb/utilities/blob_db/blob_db.cc",
-        # "rocksdb/utilities/blob_db/blob_db_impl.cc",
-        # "rocksdb/utilities/blob_db/blob_db_impl_filesnapshot.cc",
-        # "rocksdb/utilities/blob_db/blob_dump_tool.cc",
-        # "rocksdb/utilities/blob_db/blob_file.cc",
+        "rocksdb/utilities/blob_db/blob_compaction_filter.cc",
+        "rocksdb/utilities/blob_db/blob_db.cc",
+        "rocksdb/utilities/blob_db/blob_db_impl.cc",
+        "rocksdb/utilities/blob_db/blob_db_impl_filesnapshot.cc",
+        "rocksdb/utilities/blob_db/blob_dump_tool.cc",
+        "rocksdb/utilities/blob_db/blob_file.cc",
         "rocksdb/utilities/cache_dump_load.cc",
         "rocksdb/utilities/cache_dump_load_impl.cc",
         "rocksdb/utilities/checkpoint/checkpoint_impl.cc",
@@ -402,11 +402,11 @@
         "rocksdb/utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc",
         "rocksdb/utilities/counted_fs.cc",
         "rocksdb/utilities/debug.cc",
-        # "rocksdb/utilities/env_mirror.cc",
-        # "rocksdb/utilities/env_timed.cc",
-        # "rocksdb/utilities/fault_injection_env.cc",
-        # "rocksdb/utilities/fault_injection_fs.cc",
-        # "rocksdb/utilities/fault_injection_secondary_cache.cc",
+        "rocksdb/utilities/env_mirror.cc",
+        "rocksdb/utilities/env_timed.cc",
+        "rocksdb/utilities/fault_injection_env.cc",
+        "rocksdb/utilities/fault_injection_fs.cc",
+        "rocksdb/utilities/fault_injection_secondary_cache.cc",
         "rocksdb/utilities/leveldb_options/leveldb_options.cc",
         "rocksdb/utilities/memory/memory_util.cc",
         "rocksdb/utilities/merge_operators.cc",
@@ -420,13 +420,13 @@
         "rocksdb/utilities/object_registry.cc",
         "rocksdb/utilities/option_change_migration/option_change_migration.cc",
         "rocksdb/utilities/options/options_util.cc",
-        # "rocksdb/utilities/persistent_cache/block_cache_tier.cc",
-        # "rocksdb/utilities/persistent_cache/block_cache_tier_file.cc",
-        # "rocksdb/utilities/persistent_cache/block_cache_tier_metadata.cc",
-        # "rocksdb/utilities/persistent_cache/persistent_cache_tier.cc",
-        # "rocksdb/utilities/persistent_cache/volatile_tier_impl.cc",
-        # "rocksdb/utilities/simulator_cache/cache_simulator.cc",
-        # "rocksdb/utilities/simulator_cache/sim_cache.cc",
+        "rocksdb/utilities/persistent_cache/block_cache_tier.cc",
+        "rocksdb/utilities/persistent_cache/block_cache_tier_file.cc",
+        "rocksdb/utilities/persistent_cache/block_cache_tier_metadata.cc",
+        "rocksdb/utilities/persistent_cache/persistent_cache_tier.cc",
+        "rocksdb/utilities/persistent_cache/volatile_tier_impl.cc",
+        "rocksdb/utilities/simulator_cache/cache_simulator.cc",
+        "rocksdb/utilities/simulator_cache/sim_cache.cc",
         "rocksdb/utilities/table_properties_collectors/compact_on_deletion_collector.cc",
         "rocksdb/utilities/trace/file_trace_reader_writer.cc",
         "rocksdb/utilities/trace/replayer_impl.cc",
