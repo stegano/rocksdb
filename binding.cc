@@ -200,16 +200,7 @@ static void Finalize(napi_env env, void* data, void* hint) {
   }
 }
 
-napi_status Convert(napi_env env, std::string s, bool asBuffer, napi_value& result) {
-  if (asBuffer) {
-    auto ptr = new std::string(std::move(s));
-    return napi_create_external_buffer(env, ptr->size(), ptr->data(), Finalize<std::string>, ptr, &result);
-  } else {
-    return napi_create_string_utf8(env, s.data(), s.size(), &result);
-  }
-}
-
-napi_status Convert(napi_env env, rocksdb::PinnableSlice s, bool asBuffer, napi_value& result) {
+napi_status Convert(napi_env env, rocksdb::PinnableSlice&& s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
     auto ptr = new rocksdb::PinnableSlice(std::move(s));
     return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
@@ -735,7 +726,7 @@ struct GetWorker final : public Worker {
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
 
-    auto status = database.db_->Get(options, key_, &value_);
+    auto status = database.db_->Get(options, database.db_->DefaultColumnFamily(), key_, &value_);
 
     key_.clear();
     snapshot_ = nullptr;
@@ -757,7 +748,7 @@ struct GetWorker final : public Worker {
 
  private:
   std::string key_;
-  std::string value_;
+  rocksdb::PinnableSlice value_;
   const bool asBuffer_;
   const bool fillCache_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
@@ -1080,18 +1071,24 @@ struct NextWorker final : public Worker {
       if (iterator_->keys_ && iterator_->values_) {
         auto k = iterator_->CurrentKey();
         auto v = iterator_->CurrentValue();
-        cache_.emplace_back(k.data(), k.size());
-        cache_.emplace_back(v.data(), v.size());
+        cache_.push_back({});
+        cache_.back().PinSelf(k);
+        cache_.push_back({});
+        cache_.back().PinSelf(v);
         bytesRead += k.size() + v.size();
       } else if (iterator_->keys_) {
         auto k = iterator_->CurrentKey();
-        cache_.emplace_back(k.data(), k.size());
         cache_.push_back({});
+        cache_.back().PinSelf(k);
+        cache_.push_back({});
+        // no value
         bytesRead += k.size();
       } else if (iterator_->values_) {
         auto v = iterator_->CurrentValue();
         cache_.push_back({});
-        cache_.emplace_back(v.data(), v.size());
+        // no key
+        cache_.push_back({});
+        cache_.back().PinSelf(v);
         bytesRead += v.size();
       }
 
@@ -1130,7 +1127,7 @@ struct NextWorker final : public Worker {
   }
 
  private:
-  std::vector<std::string> cache_;
+  std::vector<rocksdb::PinnableSlice> cache_;
   Iterator* iterator_ = nullptr;
   uint32_t size_ = 0;
   bool finished_ = false;
