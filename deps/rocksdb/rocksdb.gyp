@@ -14,9 +14,10 @@
         # "ROCKSDB_JEMALLOC=1",
         # "JEMALLOC_NO_DEMANGLE=1",
         "ROCKSDB_BACKTRACE=1",
-        "ROCKSDB_SUPPORT_THREAD_LOCAL=1",
         "NIOSTATS_CONTEXT=1",
-        "NPERF_CONTEXT=1"
+        "NPERF_CONTEXT=1",
+        # "USE_FOLLY=1",
+        # "FOLLY_NO_CONFIG=1"
       ],
       "include_dirs": [
         "rocksdb/", 
@@ -166,6 +167,7 @@
         "rocksdb/cache/cache_reservation_manager.cc",
         "rocksdb/cache/clock_cache.cc",
         "rocksdb/cache/compressed_secondary_cache.cc",
+        "rocksdb/cache/fast_lru_cache.cc",
         "rocksdb/cache/lru_cache.cc",
         "rocksdb/cache/sharded_cache.cc",
         "rocksdb/db/arena_wrapped_db_iter.cc",
@@ -366,6 +368,7 @@
         "rocksdb/trace_replay/trace_record_result.cc",
         "rocksdb/trace_replay/trace_record.cc",
         "rocksdb/trace_replay/trace_replay.cc",
+        "rocksdb/util/cleanable.cc",
         "rocksdb/util/coding.cc",
         "rocksdb/util/compaction_job_stats_impl.cc",
         "rocksdb/util/comparator.cc",
@@ -397,6 +400,9 @@
         "rocksdb/utilities/blob_db/blob_file.cc",
         "rocksdb/utilities/cache_dump_load.cc",
         "rocksdb/utilities/cache_dump_load_impl.cc",
+        # "rocksdb/utilities/cassandra/cassandra_compaction_filter.cc",
+        # "rocksdb/utilities/cassandra/format.cc",
+        # "rocksdb/utilities/cassandra/merge_operator.cc",
         "rocksdb/utilities/checkpoint/checkpoint_impl.cc",
         "rocksdb/utilities/compaction_filters.cc",
         "rocksdb/utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc",

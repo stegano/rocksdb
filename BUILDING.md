@@ -1,8 +1,8 @@
 # LINUX
 
 - Run `./configure` in `deps/liburing`.
-- Install and build zstd with `CFLAGS="-O3 -fPIC" make -C lib libzstd.a` and copy to `/usr/lib/x86_64-linux-gnu/libzstd_pic.a`.
-- Put headers at `/usr/lib/x86_64-linux-gnu/include`.
+- Clone and build zstd with `CFLAGS="-O3 -fPIC" make -C lib libzstd.a` and copy `libzstd.a` to `/usr/lib/x86_64-linux-gnu/libzstd_pic.a`.
+- Put zstd headers at `/usr/lib/x86_64-linux-gnu/include`.
 
 # OSX
 
