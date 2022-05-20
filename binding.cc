@@ -446,6 +446,7 @@ struct BaseIterator {
     }
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
+    options.async_io = true;
 
     iterator_.reset(database_->db_->NewIterator(options));
   }
@@ -790,6 +791,7 @@ struct GetManyWorker final : public Worker {
     rocksdb::ReadOptions options;
     options.fill_cache = fillCache_;
     options.snapshot = snapshot_.get();
+    options.async_io = true;
 
     const auto numKeys = keys_.size();
 
