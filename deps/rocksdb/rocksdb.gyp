@@ -368,6 +368,7 @@
         "rocksdb/trace_replay/trace_record_result.cc",
         "rocksdb/trace_replay/trace_record.cc",
         "rocksdb/trace_replay/trace_replay.cc",
+        "rocksdb/util/async_file_reader.cc",
         "rocksdb/util/cleanable.cc",
         "rocksdb/util/coding.cc",
         "rocksdb/util/compaction_job_stats_impl.cc",
