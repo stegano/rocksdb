@@ -139,14 +139,14 @@
             "direct_dependent_settings": {
               "libraries": [
                 "/opt/homebrew/Cellar/zstd/1.5.2/lib/libzstd.a",
-                "/opt/homebrew/Cellar/folly/2022.03.21.00_1/lib/libfolly.a"
+                "/opt/homebrew/Cellar/folly/2022.05.16.00/lib/libfolly.a"
                 # "/opt/homebrew/Cellar/jemalloc/5.3.0/lib/libjemalloc.a"
               ],
             },
             "include_dirs": [
               "/opt/homebrew/Cellar/zstd/1.5.2/include",
               "/opt/homebrew/Cellar/boost/1.78.0_1/include",
-              "/opt/homebrew/Cellar/folly/2022.03.21.00_1/include"
+              "/opt/homebrew/Cellar/folly/2022.05.16.00/include"
               # "/opt/homebrew/Cellar/jemalloc/5.3.0/include"
             ],
             "xcode_settings": {
