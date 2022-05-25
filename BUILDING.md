@@ -11,10 +11,8 @@
   - Copy headers to `/usr/lib/x86_64-linux-gnu/include`.
   - Copy boost headers from folly scratchpad to `/usr/lib/x86_64-linux-gnu/include`.
 - `npx prebuildify -t -t 17.8.0 --napi --strip --arch x64`
+
 # OSX
 
-- Run `./configure` in `deps/liburing`.
 - `brew install zstd`
-- `brew install boost`
-- `brew install folly`
 - `npx prebuildify -t -t 17.8.0 --napi --strip --arch x64`

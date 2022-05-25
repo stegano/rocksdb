@@ -5,22 +5,18 @@
       "target_name": "rocksdb",
       "type": "static_library",
       "standalone_static_library": 1,
-      "direct_dependent_settings": { 
-        "include_dirs": ["rocksdb/include/"] 
+      "direct_dependent_settings": {
+        "include_dirs": ["rocksdb/include/"]
       },
       "defines": [
         "ZSTD=1",
         "ZSTD_STATIC_LINKING_ONLY=1",
-        # "ROCKSDB_JEMALLOC=1",
-        # "JEMALLOC_NO_DEMANGLE=1",
         "ROCKSDB_BACKTRACE=1",
         "NIOSTATS_CONTEXT=1",
-        "NPERF_CONTEXT=1",
-        "USE_FOLLY=1",
-        "FOLLY_NO_CONFIG=1"
+        "NPERF_CONTEXT=1"
       ],
       "include_dirs": [
-        "rocksdb/", 
+        "rocksdb/",
         "rocksdb/include/"
       ],
       "conditions": [
@@ -92,6 +88,8 @@
               "ROCKSDB_RANGESYNC_PRESENT=1",
               "ROCKSDB_SCHED_GETCPU_PRESENT=1",
               "ROCKSDB_IOURING_PRESENT=1",
+              "USE_FOLLY=1",
+              "FOLLY_NO_CONFIG=1"
               "HAVE_SSE42=1",
               "HAVE_BMI=1",
               "HAVE_LZCNT=1",
@@ -102,18 +100,20 @@
               # "HAVE_FULLFSYNC=1",
               # "NUMA=1",
               # "TBB=1",
+              # "ROCKSDB_JEMALLOC=1",
+              # "JEMALLOC_NO_DEMANGLE=1",
             ],
             "direct_dependent_settings": {
               "libraries": [
                 "/usr/lib/x86_64-linux-gnu/libzstd.a",
                 "/usr/lib/x86_64-linux-gnu/libfolly.a",
-                # "/usr/lib/x86_64-linux-gnu/libjemalloc_pic.a",
+                # "/usr/lib/x86_64-linux-gnu/libjemalloc.a",
               ],
             },
             "include_dirs": [
               "/usr/lib/x86_64-linux-gnu/include",
               "/usr/lib/include",
-              # "/opt/homebrew/Cellar/jemalloc/5.3.0/include"
+              # "/usr/local/Cellar/jemalloc/5.3.0/include"
             ],
             "dependencies": [
               "../liburing/liburing.gyp:liburing"
@@ -138,16 +138,11 @@
             "defines": ["OS_MACOSX=1"],
             "direct_dependent_settings": {
               "libraries": [
-                "/opt/homebrew/Cellar/zstd/1.5.2/lib/libzstd.a",
-                "/opt/homebrew/Cellar/folly/2022.05.16.00/lib/libfolly.a"
-                # "/opt/homebrew/Cellar/jemalloc/5.3.0/lib/libjemalloc.a"
+                "/opt/homebrew/Cellar/zstd/1.5.2/lib/libzstd.a"
               ],
             },
             "include_dirs": [
-              "/opt/homebrew/Cellar/zstd/1.5.2/include",
-              "/opt/homebrew/Cellar/boost/1.78.0_1/include",
-              "/opt/homebrew/Cellar/folly/2022.05.16.00/include"
-              # "/opt/homebrew/Cellar/jemalloc/5.3.0/include"
+              "/opt/homebrew/Cellar/zstd/1.5.2/include"
             ],
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
