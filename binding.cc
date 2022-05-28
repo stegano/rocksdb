@@ -352,6 +352,41 @@ struct Database {
   uint32_t priorityWork_ = 0;
 };
 
+struct Snapshot {
+  Snapshot(Database* database) 
+    : snapshot_(database->db_->GetSnapshot(), [=](auto ptr) {
+      database->db_->ReleaseSnapshot(ptr);
+    })
+    , database_(database) {
+  }
+
+  void Close () {
+    snapshot_.reset();
+  }
+
+  void Attach(napi_env env, napi_value context) {
+    napi_create_reference(env, context, 1, &ref_);
+    database_->AttachSnapshot(env, this);
+  }
+
+  void Detach(napi_env env) {
+    database_->DetachSnapshot(env, this);
+    if (ref_) {
+      napi_delete_reference(env, ref_);
+    }
+  }
+  
+  int64_t GetSequenceNumber() const {
+    return snapshot_->GetSequenceNumber();
+  }
+
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
+
+private:
+  Database* database_;
+  napi_ref ref_ = nullptr;
+};
+
 struct BaseIterator {
   BaseIterator(Database* database,
                const bool reverse,
@@ -360,10 +395,10 @@ struct BaseIterator {
                const std::optional<std::string>& gt,
                const std::optional<std::string>& gte,
                const int limit,
-               const bool fillCache)
+               const bool fillCache,
+               std::shared_ptr<const rocksdb::Snapshot> snapshot)
       : database_(database),
-        snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }),
+        snapshot_(snapshot),
         reverse_(reverse),
         limit_(limit),
         fillCache_(fillCache) {
@@ -486,8 +521,9 @@ struct Iterator final : public BaseIterator {
            const bool fillCache,
            const bool keyAsBuffer,
            const bool valueAsBuffer,
-           const uint32_t highWaterMarkBytes)
-      : BaseIterator(database, reverse, lt, lte, gt, gte, limit, fillCache),
+           const uint32_t highWaterMarkBytes,
+           std::shared_ptr<const rocksdb::Snapshot> snapshot)
+      : BaseIterator(database, reverse, lt, lte, gt, gte, limit, fillCache, snapshot),
         keys_(keys),
         values_(values),
         keyAsBuffer_(keyAsBuffer),
@@ -514,40 +550,6 @@ struct Iterator final : public BaseIterator {
   bool first_ = true;
 
  private:
-  napi_ref ref_ = nullptr;
-};
-
-struct Snapshot {
-  Snapshot(Database* database) 
-    : database_(database)
-    , snapshot_(database->db_->GetSnapshot(), [=](auto ptr) {
-      database->db_->ReleaseSnapshot(ptr);
-    }) {
-  }
-
-  void Close () {
-    snapshot_.reset();
-  }
-
-  void Attach(napi_env env, napi_value context) {
-    napi_create_reference(env, context, 1, &ref_);
-    database_->AttachSnapshot(env, this);
-  }
-
-  void Detach(napi_env env) {
-    database_->DetachSnapshot(env, this);
-    if (ref_) {
-      napi_delete_reference(env, ref_);
-    }
-  }
-  
-  int64_t GetSequenceNumber() const {
-    return snapshot_->GetSequenceNumber();
-  }
-
-private:
-  Database* database_;
-  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   napi_ref ref_ = nullptr;
 };
 
@@ -988,7 +990,8 @@ NAPI_METHOD(db_clear) {
   } else {
     // TODO (perf): Use DeleteRange.
 
-    BaseIterator it(database, reverse, lt, lte, gt, gte, limit, false);
+    Snapshot snapshot(database);
+    BaseIterator it(database, reverse, lt, lte, gt, gte, limit, false, snapshot.snapshot_);
 
     it.SeekToRange();
 
@@ -1075,8 +1078,20 @@ NAPI_METHOD(iterator_init) {
   const auto gt = StringProperty(env, options, "gt");
   const auto gte = StringProperty(env, options, "gte");
 
+  std::shared_ptr<const rocksdb::Snapshot> snapshotRaw;
+  
+  if (HasProperty(env, options, "snapshot")) {
+    const auto property = GetProperty(env, options, "snapshot");
+    Snapshot* snapshot;
+    NAPI_STATUS_THROWS(napi_get_value_external(env, property, reinterpret_cast<void**>(&snapshot)));
+    snapshotRaw = snapshot->snapshot_;
+  } else {
+    Snapshot snapshot(database);
+    snapshotRaw = snapshot.snapshot_;
+  }
+
   auto iterator = std::make_unique<Iterator>(database, reverse, keys, values, limit, lt, lte, gt, gte, fillCache,
-                                             keyAsBuffer, valueAsBuffer, highWaterMarkBytes);
+                                             keyAsBuffer, valueAsBuffer, highWaterMarkBytes, std::move(snapshotRaw));
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
