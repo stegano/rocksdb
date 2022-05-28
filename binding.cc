@@ -134,6 +134,18 @@ static std::optional<int> Int32Property(napi_env env, napi_value obj, const std:
   return {};
 }
 
+static std::optional<int64_t> Int64Property(napi_env env, napi_value obj, const std::string_view& key) {
+  if (HasProperty(env, obj, key.data())) {
+    const auto value = GetProperty(env, obj, key.data());
+    int64_t result;
+    bool lossless;
+    napi_get_value_bigint_int64(env, value, &result, &lossless);
+    return result;
+  }
+
+  return {};
+}
+
 static std::string ToString(napi_env env, napi_value from, const std::string& defaultValue = "") {
   if (IsString(env, from)) {
     size_t length = 0;
@@ -208,6 +220,18 @@ napi_status Convert(napi_env env, rocksdb::PinnableSlice&& s, bool asBuffer, nap
                                        Finalize<rocksdb::PinnableSlice>, ptr, &result);
   } else {
     return napi_create_string_utf8(env, s.data(), s.size(), &result);
+  }
+}
+
+napi_status Convert(napi_env env, std::optional<std::string>&& s, bool asBuffer, napi_value& result) {
+  if (!s) {
+    return napi_get_null(env, &result);
+  } else if (asBuffer) {
+    auto ptr = new std::string(std::move(*s));
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
+                                       Finalize<std::string>, ptr, &result);
+  } else {
+    return napi_create_string_utf8(env, s->data(), s->size(), &result);
   }
 }
 
@@ -740,6 +764,113 @@ NAPI_METHOD(db_close) {
   } else {
     database->pendingCloseWorker_ = worker;
   }
+
+  return 0;
+}
+
+struct GetUpdatesWorker final : public rocksdb::WriteBatch::Handler, public Worker {
+  GetUpdatesWorker(napi_env env,
+            Database* database,
+            napi_value callback,
+            const bool keyAsBuffer,
+            const bool valueAsBuffer,
+            int64_t seqNumber)
+      : Worker(env, database, callback, "rocks_level.db.get"),
+        keyAsBuffer_(keyAsBuffer),
+        valueAsBuffer_(valueAsBuffer),
+        seqNumber_(seqNumber) {
+    database_->IncrementPriorityWork(env);
+  }
+
+  rocksdb::Status Execute(Database& database) override {
+    rocksdb::TransactionLogIterator::ReadOptions options;
+
+    {
+      const auto status = database_->db_->GetUpdatesSince(seqNumber_, &iterator_, options);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+
+    for (; iterator_->Valid() && cache_.size() < 2000; iterator_->Next()) {
+      auto res = iterator_->GetBatch();
+
+      const auto status = res.writeBatchPtr->Iterate(this);
+      if (!status.ok()) {
+        return status;
+      }
+
+      seqNumber_ = res.sequence;
+    }
+
+    return rocksdb::Status::OK();
+  }
+
+  napi_status OnOk(napi_env env, napi_value callback) override {
+    const auto size = cache_.size();
+    napi_value result;
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
+
+    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
+      napi_value key;
+      napi_value val;
+
+      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 0]), keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 1]), valueAsBuffer_, val));
+
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
+    }
+
+    cache_.clear();
+
+    napi_value argv[3];
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+    argv[1] = result;
+    NAPI_STATUS_RETURN(napi_create_bigint_int64(env, seqNumber_, &argv[2]));
+    return CallFunction(env, callback, 3, argv);
+  }
+
+  void Destroy(napi_env env) override {
+    database_->DecrementPriorityWork(env);
+    Worker::Destroy(env);
+  }
+
+  void Put(const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    cache_.emplace_back(key.ToString());
+    cache_.emplace_back(value.ToString());
+  }
+
+  void Delete(const rocksdb::Slice& key) override {
+    cache_.emplace_back(key.ToString());
+    cache_.emplace_back(std::nullopt);
+  }
+
+  bool Continue () override {
+    return true;
+  }
+
+ private:
+  const bool keyAsBuffer_;
+  const bool valueAsBuffer_;
+  int64_t seqNumber_;
+  std::vector<std::optional<std::string>> cache_;
+  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
+};
+
+NAPI_METHOD(db_get_updates_since) {
+  NAPI_ARGV(4);
+  NAPI_DB_CONTEXT();
+
+  const auto options = argv[1];
+  const auto callback = argv[2];
+
+  const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
+  const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
+  const auto seqNumber = Int64Property(env, options, "since").value_or(database->db_->GetLatestSequenceNumber());
+
+  auto worker = new GetUpdatesWorker(env, database, callback, seqNumber, keyAsBuffer, valueAsBuffer);
+  worker->Queue(env);
 
   return 0;
 }
