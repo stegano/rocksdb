@@ -30,7 +30,10 @@ class RocksLevel extends AbstractLevel {
       },
       seek: true,
       createIfMissing: true,
-      errorIfExists: true
+      errorIfExists: true,
+      additionalMethods: {
+        getLatestSequenceNumber: true
+      }
     }, options)
 
     this[kLocation] = location
@@ -101,6 +104,16 @@ class RocksLevel extends AbstractLevel {
 
   _iterator (options) {
     return new Iterator(this, this[kContext], options)
+  }
+
+  getLatestSequenceNumber () {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
+    return binding.db_get_latest_sequence_number(this[kContext])
   }
 }
 

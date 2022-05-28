@@ -994,6 +994,19 @@ NAPI_METHOD(db_get_property) {
   return result;
 }
 
+
+NAPI_METHOD(db_get_latest_sequence_number) {
+  NAPI_ARGV(1);
+  NAPI_DB_CONTEXT();
+
+  const auto seq = database->db_->GetLatestSequenceNumber();
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, seq, &result));
+
+  return result;
+}
+
 NAPI_METHOD(iterator_init) {
   NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
@@ -1247,6 +1260,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
   NAPI_EXPORT_FUNCTION(db_close);
+  NAPI_EXPORT_FUNCTION(db_get_latest_sequence_number);
   NAPI_EXPORT_FUNCTION(db_put);
   NAPI_EXPORT_FUNCTION(db_get);
   NAPI_EXPORT_FUNCTION(db_get_many);
