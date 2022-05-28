@@ -30,6 +30,7 @@ class NullLogger : public rocksdb::Logger {
 
 struct Database;
 struct Iterator;
+struct Snapshot;
 
 #define NAPI_STATUS_RETURN(call) \
   {                              \
@@ -318,6 +319,16 @@ struct Database {
     DecrementPriorityWork(env);
   }
 
+  void AttachSnapshot(napi_env env, Snapshot* snapshot) {
+    snapshots_.insert(snapshot);
+    IncrementPriorityWork(env);
+  }
+
+  void DetachSnapshot(napi_env env, Snapshot* snapshot) {
+    snapshots_.erase(snapshot);
+    DecrementPriorityWork(env);
+  }
+
   void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, priorityRef_, &priorityWork_); }
 
   void DecrementPriorityWork(napi_env env) {
@@ -334,6 +345,7 @@ struct Database {
   std::unique_ptr<rocksdb::DB> db_;
   Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
+  std::set<Snapshot*> snapshots_;
   napi_ref priorityRef_;
 
  private:
@@ -505,6 +517,40 @@ struct Iterator final : public BaseIterator {
   napi_ref ref_ = nullptr;
 };
 
+struct Snapshot {
+  Snapshot(Database* database) 
+    : database_(database)
+    , snapshot_(database->db_->GetSnapshot(), [=](auto ptr) {
+      database->db_->ReleaseSnapshot(ptr);
+    }) {
+  }
+
+  void Close () {
+    snapshot_.reset();
+  }
+
+  void Attach(napi_env env, napi_value context) {
+    napi_create_reference(env, context, 1, &ref_);
+    database_->AttachSnapshot(env, this);
+  }
+
+  void Detach(napi_env env) {
+    database_->DetachSnapshot(env, this);
+    if (ref_) {
+      napi_delete_reference(env, ref_);
+    }
+  }
+  
+  int64_t GetSequenceNumber() const {
+    return snapshot_->GetSequenceNumber();
+  }
+
+private:
+  Database* database_;
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
+  napi_ref ref_ = nullptr;
+};
+
 /**
  * Hook for when the environment exits. This hook will be called after
  * already-scheduled napi_async_work items have finished, which gives us
@@ -523,6 +569,10 @@ static void env_cleanup_hook(void* arg) {
   if (database && database->db_) {
     // TODO: does not do `napi_delete_reference(env, iterator->ref_)`. Problem?
     for (auto it : database->iterators_) {
+      it->Close();
+    }
+
+    for (auto it : database->snapshots_) {
       it->Close();
     }
 
@@ -783,7 +833,7 @@ struct GetManyWorker final : public Worker {
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
         snapshot_(database_->db_->GetSnapshot(),
-                  [this](const rocksdb::Snapshot* ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
+                  [=](const auto ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
     database_->IncrementPriorityWork(env);
   }
 
@@ -993,7 +1043,6 @@ NAPI_METHOD(db_get_property) {
 
   return result;
 }
-
 
 NAPI_METHOD(db_get_latest_sequence_number) {
   NAPI_ARGV(1);
@@ -1256,6 +1305,49 @@ NAPI_METHOD(batch_write) {
   return ToError(env, database->db_->Write(options, batch));
 }
 
+NAPI_METHOD(snapshot_init) {
+  NAPI_ARGV(1);
+  NAPI_DB_CONTEXT();
+
+  auto snapshot = std::make_unique<Snapshot>(database);
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_external(env, snapshot.get(), Finalize<Snapshot>, snapshot.get(), &result));
+
+  // Prevent GC of JS object before the iterator is closed (explicitly or on
+  // db close) and keep track of non-closed iterators to end them on db close.
+  snapshot.release()->Attach(env, result);
+
+  return result;
+}
+
+NAPI_METHOD(snapshot_get_sequence_number) {
+  NAPI_ARGV(3);
+  NAPI_DB_CONTEXT();
+  
+  Snapshot* snapshot;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&snapshot)));
+  
+  const auto seq = snapshot->GetSequenceNumber();
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, seq, &result));
+
+  return result;
+}
+
+NAPI_METHOD(snapshot_close) {
+  NAPI_ARGV(2);
+  NAPI_DB_CONTEXT();
+
+  Snapshot* snapshot;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&snapshot)));
+  
+  snapshot->Close();
+
+  return 0;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1279,4 +1371,8 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_del);
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);
+
+  NAPI_EXPORT_FUNCTION(snapshot_init);
+  NAPI_EXPORT_FUNCTION(snapshot_get_sequence_number);
+  NAPI_EXPORT_FUNCTION(snapshot_close);
 }

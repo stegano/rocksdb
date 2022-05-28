@@ -6,6 +6,7 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
+const { Snapshot } = require('./snapshot')
 
 const kContext = Symbol('context')
 const kLocation = Symbol('location')
@@ -114,6 +115,16 @@ class RocksLevel extends AbstractLevel {
     }
 
     return binding.db_get_latest_sequence_number(this[kContext])
+  }
+
+  getSnapshot () {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
+    return new Snapshot(this, this[kContext])
   }
 }
 
