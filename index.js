@@ -33,7 +33,9 @@ class RocksLevel extends AbstractLevel {
       createIfMissing: true,
       errorIfExists: true,
       additionalMethods: {
-        getLatestSequenceNumber: true
+        getLatestSequenceNumber: true,
+        getUpdateSince: true,
+        getSnapshot: true
       }
     }, options)
 
@@ -115,6 +117,16 @@ class RocksLevel extends AbstractLevel {
     }
 
     return binding.db_get_latest_sequence_number(this[kContext])
+  }
+
+  getUpdateSince (options, callback) {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
+    binding.db_get_updates_since(this[kContext], options, callback)
   }
 
   getSnapshot () {

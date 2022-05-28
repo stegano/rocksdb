@@ -1493,6 +1493,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_open);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence_number);
+  NAPI_EXPORT_FUNCTION(db_get_updates_since);  
   NAPI_EXPORT_FUNCTION(db_put);
   NAPI_EXPORT_FUNCTION(db_get);
   NAPI_EXPORT_FUNCTION(db_get_many);
