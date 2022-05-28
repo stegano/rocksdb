@@ -1281,25 +1281,19 @@ struct NextWorker final : public Worker {
       if (iterator_->keys_ && iterator_->values_) {
         auto k = iterator_->CurrentKey();
         auto v = iterator_->CurrentValue();
-        cache_.push_back({});
-        cache_.back().PinSelf(k);
-        cache_.push_back({});
-        cache_.back().PinSelf(v);
         bytesRead += k.size() + v.size();
+        cache_.push_back(k.ToString());
+        cache_.push_back(v.ToString());
       } else if (iterator_->keys_) {
         auto k = iterator_->CurrentKey();
-        cache_.push_back({});
-        cache_.back().PinSelf(k);
-        cache_.push_back({});
-        // no value
         bytesRead += k.size();
+        cache_.push_back(k.ToString());
+        cache_.push_back(std::nullopt);
       } else if (iterator_->values_) {
         auto v = iterator_->CurrentValue();
-        cache_.push_back({});
-        // no key
-        cache_.push_back({});
-        cache_.back().PinSelf(v);
         bytesRead += v.size();
+        cache_.push_back(std::nullopt);
+        cache_.push_back(v.ToString());
       }
 
       if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
@@ -1337,7 +1331,7 @@ struct NextWorker final : public Worker {
   }
 
  private:
-  std::vector<rocksdb::PinnableSlice> cache_;
+  std::vector<std::optional<std::string>> cache_;
   Iterator* iterator_ = nullptr;
   uint32_t size_ = 0;
   bool finished_ = false;
