@@ -702,6 +702,8 @@ NAPI_METHOD(db_open) {
   options.IncreaseParallelism(
       Uint32Property(env, argv[2], "parallelism").value_or(std::thread::hardware_concurrency() / 2));
 
+  options.avoid_unnecessary_blocking_io = true;
+
   const auto memtable_memory_budget = Uint32Property(env, argv[2], "memtableMemoryBudget").value_or(256 * 1024 * 1024);
 
   const auto compaction = StringProperty(env, argv[2], "compaction").value_or("level");
