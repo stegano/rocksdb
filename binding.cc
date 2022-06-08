@@ -1421,10 +1421,12 @@ struct NextWorker final : public Worker {
       }
 
       if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
-        finished_ = true;
+        finished_ = false;
         return rocksdb::Status::OK();
       }
     }
+
+    finished_ = true;
 
     return iterator_->Status();
   }
@@ -1450,7 +1452,7 @@ struct NextWorker final : public Worker {
     napi_value argv[3];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
     argv[1] = result;
-    NAPI_STATUS_RETURN(napi_get_boolean(env, !finished_, &argv[2]));
+    NAPI_STATUS_RETURN(napi_get_boolean(env, finished_, &argv[2]));
     return CallFunction(env, callback, 3, argv);
   }
 
@@ -1458,7 +1460,7 @@ struct NextWorker final : public Worker {
   std::vector<std::optional<std::string>> cache_;
   Iterator* iterator_ = nullptr;
   uint32_t size_ = 0;
-  bool finished_ = false;
+  bool finished_ = true;
 };
 
 NAPI_METHOD(iterator_nextv) {
