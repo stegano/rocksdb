@@ -35,7 +35,7 @@ class RocksLevel extends AbstractLevel {
       additionalMethods: {
         getLatestSequenceNumber: true,
         getSnapshot: true,
-        changes: true,
+        updates: true,
         query: true
       }
     }, options)
@@ -212,7 +212,7 @@ class RocksLevel extends AbstractLevel {
     }
   }
 
-  async * changes (options) {
+  async * updates (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'

@@ -10,13 +10,13 @@ test('setUp db', function (t) {
   db.open(t.end.bind(t))
 })
 
-test('test changes()', async function (t) {
+test('test updates()', async function (t) {
   await db.batch([{ type: 'put', key: 'should not exit', value: 'val' }])
   await db.batch([{ type: 'put', key: 'key', value: 'val' }])
   const seq = db.getLatestSequenceNumber()
 
   const val = []
-  for await (const { rows, sequence } of db.changes({ since: seq })) {
+  for await (const { rows, sequence } of db.updates({ since: seq })) {
     t.equal(sequence, 2n)
     val.push(...rows)
   }
@@ -27,9 +27,9 @@ test('test changes()', async function (t) {
   t.end()
 })
 
-test('test changes() bad seq', async function (t) {
+test('test updates() bad seq', async function (t) {
   try {
-    for await (const _ of db.changes({ since: 10n })) {
+    for await (const _ of db.updates({ since: 10n })) {
       console.log(_)
       t.fail()
     }
