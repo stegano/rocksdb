@@ -510,6 +510,7 @@ struct BaseIterator {
   rocksdb::Status Status() const { return iterator_->status(); }
 
   Database* database_;
+  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
 
  private:
   void Init() {
@@ -529,7 +530,6 @@ struct BaseIterator {
 
   std::optional<rocksdb::PinnableSlice> lower_bound_;
   std::optional<rocksdb::PinnableSlice> upper_bound_;
-  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
   const int limit_;
@@ -1368,6 +1368,19 @@ NAPI_METHOD(iterator_close) {
   return 0;
 }
 
+NAPI_METHOD(iterator_get_sequence) {
+  NAPI_ARGV(1);
+  NAPI_ITERATOR_CONTEXT();
+
+  const auto seq = iterator->snapshot_->GetSequenceNumber();
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, seq, &result));
+
+  return 0;
+}
+
+
 struct NextWorker final : public Worker {
   NextWorker(napi_env env, Iterator* iterator, uint32_t size, napi_value callback)
       : Worker(env, iterator->database_, callback, "leveldown.iterator.next"), iterator_(iterator), size_(size) {}
@@ -1615,6 +1628,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_seek);
   NAPI_EXPORT_FUNCTION(iterator_close);
   NAPI_EXPORT_FUNCTION(iterator_nextv);
+  NAPI_EXPORT_FUNCTION(iterator_get_sequence);
 
   NAPI_EXPORT_FUNCTION(updates_init);
   NAPI_EXPORT_FUNCTION(updates_close);

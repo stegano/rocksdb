@@ -142,6 +142,7 @@ class RocksLevel extends AbstractLevel {
         this.context = binding.iterator_init(db[kContext], options)
         this.closed = false
         this.promise = null
+        this.sequence = binding.iterator_get_sequence(this.context)
         this.db = db
         this.db.attachResource(this)
       }
@@ -156,7 +157,10 @@ class RocksLevel extends AbstractLevel {
           if (err) {
             resolve(Promise.reject(err))
           } else {
-            resolve(finished ? null : rows)
+            resolve({
+              rows: finished ? null : rows,
+              sequence: this.sequence
+            })
           }
         }))
 
@@ -226,12 +230,12 @@ class RocksLevel extends AbstractLevel {
           return {}
         }
 
-        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, updates, sequence) => {
+        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, rows, sequence) => {
           this.promise = null
           if (err) {
             resolve(Promise.reject(err))
           } else {
-            resolve({ updates, sequence })
+            resolve({ rows, sequence })
           }
         }))
 
@@ -269,11 +273,11 @@ class RocksLevel extends AbstractLevel {
     const updates = new Updates(this, options)
     try {
       while (true) {
-        const { updates, sequence } = await updates.next()
-        if (!updates) {
+        const { rows, sequence } = await updates.next()
+        if (!rows) {
           return
         }
-        yield { updates, sequence }
+        yield { rows, sequence }
       }
     } finally {
       await updates.close()

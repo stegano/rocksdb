@@ -16,9 +16,9 @@ test('test changes()', async function (t) {
   const seq = db.getLatestSequenceNumber()
 
   const val = []
-  for await (const { updates, sequence } of db.changes({ since: seq })) {
+  for await (const { rows, sequence } of db.changes({ since: seq })) {
     t.equal(sequence, 2n)
-    val.push(...updates)
+    val.push(...rows)
   }
 
   t.equal(seq, 2n)
