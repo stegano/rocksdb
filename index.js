@@ -158,7 +158,8 @@ class RocksLevel extends AbstractLevel {
             resolve(Promise.reject(err))
           } else {
             resolve({
-              rows: finished ? null : rows,
+              finished,
+              rows,
               sequence: this.sequence
             })
           }
@@ -198,11 +199,13 @@ class RocksLevel extends AbstractLevel {
     const query = new Query(this, options)
     try {
       while (true) {
-        const rows = await query.next()
-        if (!rows) {
+        const { finished, rows, sequence } = await query.next()
+
+        yield { rows, sequence }
+
+        if (finished) {
           return
         }
-        yield { rows }
       }
     } finally {
       await query.close()
