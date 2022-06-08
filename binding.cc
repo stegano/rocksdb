@@ -30,6 +30,7 @@ class NullLogger : public rocksdb::Logger {
 
 struct Database;
 struct Iterator;
+struct Updates;
 struct Snapshot;
 
 #define NAPI_STATUS_RETURN(call) \
@@ -47,6 +48,10 @@ struct Snapshot;
 #define NAPI_ITERATOR_CONTEXT() \
   Iterator* iterator = nullptr; \
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&iterator));
+
+#define NAPI_UPDATES_CONTEXT() \
+  Updates* updates = nullptr;  \
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&updates));
 
 #define NAPI_BATCH_CONTEXT()            \
   rocksdb::WriteBatch* batch = nullptr; \
@@ -228,8 +233,8 @@ napi_status Convert(napi_env env, std::optional<std::string>&& s, bool asBuffer,
     return napi_get_null(env, &result);
   } else if (asBuffer) {
     auto ptr = new std::string(std::move(*s));
-    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
-                                       Finalize<std::string>, ptr, &result);
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<std::string>, ptr,
+                                       &result);
   } else {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
   }
@@ -353,6 +358,16 @@ struct Database {
     DecrementPriorityWork(env);
   }
 
+  void AttachUpdates(napi_env env, Updates* updates) {
+    updates_.insert(updates);
+    IncrementPriorityWork(env);
+  }
+
+  void DetachUpdates(napi_env env, Updates* updates) {
+    updates_.erase(updates);
+    DecrementPriorityWork(env);
+  }
+
   void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, priorityRef_, &priorityWork_); }
 
   void DecrementPriorityWork(napi_env env) {
@@ -370,6 +385,7 @@ struct Database {
   Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
   std::set<Snapshot*> snapshots_;
+  std::set<Updates*> updates_;
   napi_ref priorityRef_;
 
  private:
@@ -377,16 +393,11 @@ struct Database {
 };
 
 struct Snapshot {
-  Snapshot(Database* database) 
-    : snapshot_(database->db_->GetSnapshot(), [=](auto ptr) {
-      database->db_->ReleaseSnapshot(ptr);
-    })
-    , database_(database) {
-  }
+  Snapshot(Database* database)
+      : snapshot_(database->db_->GetSnapshot(), [=](auto ptr) { database->db_->ReleaseSnapshot(ptr); }),
+        database_(database) {}
 
-  void Close () {
-    snapshot_.reset();
-  }
+  void Close() { snapshot_.reset(); }
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
@@ -399,14 +410,12 @@ struct Snapshot {
       napi_delete_reference(env, ref_);
     }
   }
-  
-  int64_t GetSequenceNumber() const {
-    return snapshot_->GetSequenceNumber();
-  }
+
+  int64_t GetSequenceNumber() const { return snapshot_->GetSequenceNumber(); }
 
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
 
-private:
+ private:
   Database* database_;
   napi_ref ref_ = nullptr;
 };
@@ -421,11 +430,7 @@ struct BaseIterator {
                const int limit,
                const bool fillCache,
                std::shared_ptr<const rocksdb::Snapshot> snapshot)
-      : database_(database),
-        snapshot_(snapshot),
-        reverse_(reverse),
-        limit_(limit),
-        fillCache_(fillCache) {
+      : database_(database), snapshot_(snapshot), reverse_(reverse), limit_(limit), fillCache_(fillCache) {
     if (lte) {
       upper_bound_ = rocksdb::PinnableSlice();
       *upper_bound_->GetSelf() = std::move(*lte) + '\0';
@@ -577,6 +582,34 @@ struct Iterator final : public BaseIterator {
   napi_ref ref_ = nullptr;
 };
 
+struct Updates {
+  Updates(Database* database, const bool keyAsBuffer, const bool valueAsBuffer, int64_t seqNumber)
+      : database_(database), keyAsBuffer_(keyAsBuffer), valueAsBuffer_(valueAsBuffer), seqNumber_(seqNumber) {}
+
+  void Close() { iterator_.reset(); }
+
+  void Attach(napi_env env, napi_value context) {
+    napi_create_reference(env, context, 1, &ref_);
+    database_->AttachUpdates(env, this);
+  }
+
+  void Detach(napi_env env) {
+    database_->DetachUpdates(env, this);
+    if (ref_) {
+      napi_delete_reference(env, ref_);
+    }
+  }
+
+  Database* database_;
+  const bool keyAsBuffer_;
+  const bool valueAsBuffer_;
+  int64_t seqNumber_;
+  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
+
+ private:
+  napi_ref ref_ = nullptr;
+};
+
 /**
  * Hook for when the environment exits. This hook will be called after
  * already-scheduled napi_async_work items have finished, which gives us
@@ -593,12 +626,18 @@ static void env_cleanup_hook(void* arg) {
   // following code must be a safe noop if called before db_open() or after
   // db_close().
   if (database && database->db_) {
-    // TODO: does not do `napi_delete_reference(env, iterator->ref_)`. Problem?
     for (auto it : database->iterators_) {
+      // TODO: does not do `napi_delete_reference`. Problem?
       it->Close();
     }
 
     for (auto it : database->snapshots_) {
+      // TODO: does not do `napi_delete_reference`. Problem?
+      it->Close();
+    }
+
+    for (auto it : database->updates_) {
+      // TODO: does not do `napi_delete_reference`. Problem?
       it->Close();
     }
 
@@ -666,8 +705,8 @@ NAPI_METHOD(db_open) {
   const auto location = ToString(env, argv[1]);
   options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
   options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
-  options.compression = BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kZSTD
-                                                                                      : rocksdb::kNoCompression;
+  options.compression =
+      BooleanProperty(env, argv[2], "compression").value_or((true)) ? rocksdb::kZSTD : rocksdb::kNoCompression;
   if (options.compression == rocksdb::kZSTD) {
     options.compression_opts.max_dict_bytes = 16 * 1024;
     options.compression_opts.zstd_max_train_bytes = 16 * 1024 * 100;
@@ -678,6 +717,9 @@ NAPI_METHOD(db_open) {
   options.enable_pipelined_write = BooleanProperty(env, argv[2], "enablePipelinedWrite").value_or(true);
   options.max_background_jobs =
       Uint32Property(env, argv[2], "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
+
+  options.WAL_ttl_seconds = Uint32Property(env, argv[2], "walTTL").value_or(0) / 1e3;
+  options.WAL_size_limit_MB = Uint32Property(env, argv[2], "walSizeLimit").value_or(0) / 1e6;
 
   // TODO: Consider direct IO (https://github.com/facebook/rocksdb/wiki/Direct-IO) once
   // secondary compressed cache is stable.
@@ -768,40 +810,36 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
-struct GetUpdatesWorker final : public rocksdb::WriteBatch::Handler, public Worker {
-  GetUpdatesWorker(napi_env env,
-            Database* database,
-            napi_value callback,
-            const bool keyAsBuffer,
-            const bool valueAsBuffer,
-            int64_t seqNumber)
-      : Worker(env, database, callback, "rocks_level.db.get"),
-        keyAsBuffer_(keyAsBuffer),
-        valueAsBuffer_(valueAsBuffer),
-        seqNumber_(seqNumber) {
+struct UpdateNextWorker final : public rocksdb::WriteBatch::Handler, public Worker {
+  UpdateNextWorker(napi_env env, Updates* updates, napi_value callback)
+      : Worker(env, updates->database_, callback, "rocks_level.db.get"), updates_(updates) {
     database_->IncrementPriorityWork(env);
   }
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::TransactionLogIterator::ReadOptions options;
 
-    {
-      const auto status = database_->db_->GetUpdatesSince(seqNumber_, &iterator_, options);
+    if (!updates_->iterator_) {
+      const auto status = database_->db_->GetUpdatesSince(updates_->seqNumber_, &updates_->iterator_, options);
       if (!status.ok()) {
         return status;
       }
     }
 
-    for (; iterator_->Valid() && cache_.size() < 2000; iterator_->Next()) {
-      auto res = iterator_->GetBatch();
-
-      const auto status = res.writeBatchPtr->Iterate(this);
-      if (!status.ok()) {
-        return status;
-      }
-
-      seqNumber_ = res.sequence;
+    if (!updates_->iterator_->Valid()) {
+      return rocksdb::Status::OK();
     }
+
+    auto batch = updates_->iterator_->GetBatch();
+
+    updates_->seqNumber_ = batch.sequence;
+
+    const auto status = batch.writeBatchPtr->Iterate(this);
+    if (!status.ok()) {
+      return status;
+    }
+    
+    updates_->iterator_->Next();
 
     return rocksdb::Status::OK();
   }
@@ -809,25 +847,30 @@ struct GetUpdatesWorker final : public rocksdb::WriteBatch::Handler, public Work
   napi_status OnOk(napi_env env, napi_value callback) override {
     const auto size = cache_.size();
     napi_value result;
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
 
-    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
-      napi_value key;
-      napi_value val;
+    if (cache_.size()) {
+      NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
 
-      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 0]), keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 1]), valueAsBuffer_, val));
+      for (size_t idx = 0; idx < cache_.size(); idx += 2) {
+        napi_value key;
+        napi_value val;
 
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
+        NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 0]), updates_->keyAsBuffer_, key));
+        NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 1]), updates_->valueAsBuffer_, val));
+
+        NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
+        NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
+      }
+
+      cache_.clear();
+    } else {
+      NAPI_STATUS_RETURN(napi_get_null(env, &result));
     }
-
-    cache_.clear();
 
     napi_value argv[3];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
     argv[1] = result;
-    NAPI_STATUS_RETURN(napi_create_bigint_int64(env, seqNumber_, &argv[2]));
+    NAPI_STATUS_RETURN(napi_create_bigint_int64(env, updates_->seqNumber_, &argv[2]));
     return CallFunction(env, callback, 3, argv);
   }
 
@@ -846,31 +889,53 @@ struct GetUpdatesWorker final : public rocksdb::WriteBatch::Handler, public Work
     cache_.emplace_back(std::nullopt);
   }
 
-  bool Continue () override {
-    return true;
-  }
+  bool Continue() override { return true; }
 
  private:
-  const bool keyAsBuffer_;
-  const bool valueAsBuffer_;
-  int64_t seqNumber_;
   std::vector<std::optional<std::string>> cache_;
-  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
+  Updates* updates_;
 };
 
-NAPI_METHOD(db_get_updates_since) {
-  NAPI_ARGV(4);
+NAPI_METHOD(updates_init) {
+  NAPI_ARGV(2);
   NAPI_DB_CONTEXT();
 
   const auto options = argv[1];
-  const auto callback = argv[2];
 
   const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto seqNumber = Int64Property(env, options, "since").value_or(database->db_->GetLatestSequenceNumber());
 
-  auto worker = new GetUpdatesWorker(env, database, callback, seqNumber, keyAsBuffer, valueAsBuffer);
+  auto updates = std::make_unique<Updates>(database, keyAsBuffer, valueAsBuffer, seqNumber);
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
+
+  // Prevent GC of JS object before the iterator is closed (explicitly or on
+  // db close) and keep track of non-closed iterators to end them on db close.
+  updates.release()->Attach(env, result);
+
+  return result;
+}
+
+NAPI_METHOD(updates_next) {
+  NAPI_ARGV(2);
+  NAPI_UPDATES_CONTEXT();
+
+  const auto callback = argv[1];
+
+  auto worker = new UpdateNextWorker(env, updates, callback);
   worker->Queue(env);
+
+  return 0;
+}
+
+NAPI_METHOD(updates_close) {
+  NAPI_ARGV(1);
+  NAPI_UPDATES_CONTEXT();
+
+  updates->Detach(env);
+  updates->Close();
 
   return 0;
 }
@@ -965,8 +1030,7 @@ struct GetManyWorker final : public Worker {
         keys_(std::move(keys)),
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
-        snapshot_(database_->db_->GetSnapshot(),
-                  [=](const auto ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
+        snapshot_(database_->db_->GetSnapshot(), [=](const auto ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
     database_->IncrementPriorityWork(env);
   }
 
@@ -1093,7 +1157,7 @@ NAPI_METHOD(db_clear) {
   const auto lte = StringProperty(env, argv[1], "lte");
   const auto gt = StringProperty(env, argv[1], "gt");
   const auto gte = StringProperty(env, argv[1], "gte");
-  
+
   if (!reverse && limit == -1 && (lte || lt)) {
     rocksdb::Slice begin;
     if (gte) {
@@ -1210,7 +1274,7 @@ NAPI_METHOD(iterator_init) {
   const auto gte = StringProperty(env, options, "gte");
 
   std::shared_ptr<const rocksdb::Snapshot> snapshotRaw;
-  
+
   if (HasProperty(env, options, "snapshot")) {
     const auto property = GetProperty(env, options, "snapshot");
     Snapshot* snapshot;
@@ -1464,10 +1528,10 @@ NAPI_METHOD(snapshot_init) {
 NAPI_METHOD(snapshot_get_sequence_number) {
   NAPI_ARGV(3);
   NAPI_DB_CONTEXT();
-  
+
   Snapshot* snapshot;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&snapshot)));
-  
+
   const auto seq = snapshot->GetSequenceNumber();
 
   napi_value result;
@@ -1482,7 +1546,7 @@ NAPI_METHOD(snapshot_close) {
 
   Snapshot* snapshot;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&snapshot)));
-  
+
   snapshot->Close();
 
   return 0;
@@ -1493,7 +1557,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_open);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence_number);
-  NAPI_EXPORT_FUNCTION(db_get_updates_since);  
   NAPI_EXPORT_FUNCTION(db_put);
   NAPI_EXPORT_FUNCTION(db_get);
   NAPI_EXPORT_FUNCTION(db_get_many);
@@ -1505,6 +1568,10 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_seek);
   NAPI_EXPORT_FUNCTION(iterator_close);
   NAPI_EXPORT_FUNCTION(iterator_nextv);
+
+  NAPI_EXPORT_FUNCTION(updates_init);
+  NAPI_EXPORT_FUNCTION(updates_close);
+  NAPI_EXPORT_FUNCTION(updates_next);
 
   NAPI_EXPORT_FUNCTION(batch_do);
   NAPI_EXPORT_FUNCTION(batch_init);

@@ -10,9 +10,10 @@ const { Snapshot } = require('./snapshot')
 
 const kContext = Symbol('context')
 const kLocation = Symbol('location')
+const kClosed = Symbol('closed')
 
 class RocksLevel extends AbstractLevel {
-  constructor (location, options, _) {
+  constructor(location, options, _) {
     // To help migrating to abstract-level
     if (typeof options === 'function' || typeof _ === 'function') {
       throw new ModuleError('The levelup-style callback argument has been removed', {
@@ -34,8 +35,8 @@ class RocksLevel extends AbstractLevel {
       errorIfExists: true,
       additionalMethods: {
         getLatestSequenceNumber: true,
-        getUpdateSince: true,
-        getSnapshot: true
+        getSnapshot: true,
+        changes: true
       }
     }, options)
 
@@ -43,11 +44,11 @@ class RocksLevel extends AbstractLevel {
     this[kContext] = binding.db_init()
   }
 
-  get location () {
+  get location() {
     return this[kLocation]
   }
 
-  _open (options, callback) {
+  _open(options, callback) {
     if (options.createIfMissing) {
       fs.mkdir(this[kLocation], { recursive: true }, (err) => {
         if (err) return callback(err)
@@ -58,39 +59,44 @@ class RocksLevel extends AbstractLevel {
     }
   }
 
-  _close (callback) {
+  _close(callback) {
+    console.error("CLOSE DB")
     binding.db_close(this[kContext], callback)
   }
 
-  _put (key, value, options, callback) {
+  _put(key, value, options, callback) {
     process.nextTick(callback, binding.db_put(this[kContext], key, value, options))
   }
 
-  _get (key, options, callback) {
+  _get(key, options, callback) {
     binding.db_get(this[kContext], key, options, callback)
   }
 
-  _getMany (keys, options, callback) {
+  _getMany(keys, options, callback) {
     binding.db_get_many(this[kContext], keys, options, callback)
   }
 
-  _del (key, options, callback) {
+  _del(key, options, callback) {
     process.nextTick(callback, binding.db_del(this[kContext], key, options))
   }
 
-  _clear (options, callback) {
+  _clear(options, callback) {
     process.nextTick(callback, binding.db_clear(this[kContext], options))
   }
 
-  _chainedBatch () {
+  _chainedBatch() {
     return new ChainedBatch(this, this[kContext])
   }
 
-  _batch (operations, options, callback) {
+  _batch(operations, options, callback) {
     process.nextTick(callback, binding.batch_do(this[kContext], operations, options))
   }
 
-  getProperty (property) {
+  _iterator(options) {
+    return new Iterator(this, this[kContext], options)
+  }
+
+  getProperty(property) {
     if (typeof property !== 'string') {
       throw new TypeError("The first argument 'property' must be a string")
     }
@@ -105,11 +111,7 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  _iterator (options) {
-    return new Iterator(this, this[kContext], options)
-  }
-
-  getLatestSequenceNumber () {
+  getLatestSequenceNumber() {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -119,17 +121,7 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_latest_sequence_number(this[kContext])
   }
 
-  getUpdateSince (options, callback) {
-    if (this.status !== 'open') {
-      throw new ModuleError('Database is not open', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      })
-    }
-
-    binding.db_get_updates_since(this[kContext], options, callback)
-  }
-
-  getSnapshot () {
+  getSnapshot() {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -137,6 +129,81 @@ class RocksLevel extends AbstractLevel {
     }
 
     return new Snapshot(this, this[kContext])
+  }
+
+  async * changes(options) {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
+    class Updates {
+      constructor (db, options) {
+        this.context = binding.updates_init(db[kContext], options)
+        this.closed = false
+        this.promise = null
+        this.db = db
+        this.db.attachResource(this)
+      }
+
+      async next () {
+        if (this.closed) {
+          return {}
+        }
+
+        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, updates, sequence) => {
+          this.promise = null
+          if (err) {
+            resolve(Promise.reject(err))
+          } else {
+            resolve({ updates, sequence })
+          }
+        }))
+
+        return this.promise
+      }
+
+      async close(callback) {    
+        try {
+          await this.promise
+        } catch {
+          // Do nothing...
+        }
+
+        try {
+          if (!this.closed) {
+            this.closed = true
+            binding.updates_close(this.context)
+          }
+
+          if (callback) {
+            process.nextTick(callback)
+          }
+        } catch (err) {
+          if (callback) {
+            process.nextTick(callback, err)
+          } else {
+            throw err
+          }
+        } finally {
+          this.db.detachResource(this)
+        }
+      }
+    }
+
+    const updates = new Updates(this, options)
+    try {
+      while (true) {
+        const entry = await updates.next()
+        if (!entry.updates) {
+          return
+        }
+        yield entry
+      }
+    } finally {
+      await updates.close()
+    }
   }
 }
 
