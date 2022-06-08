@@ -10,10 +10,9 @@ const { Snapshot } = require('./snapshot')
 
 const kContext = Symbol('context')
 const kLocation = Symbol('location')
-const kClosed = Symbol('closed')
 
 class RocksLevel extends AbstractLevel {
-  constructor(location, options, _) {
+  constructor (location, options, _) {
     // To help migrating to abstract-level
     if (typeof options === 'function' || typeof _ === 'function') {
       throw new ModuleError('The levelup-style callback argument has been removed', {
@@ -44,11 +43,11 @@ class RocksLevel extends AbstractLevel {
     this[kContext] = binding.db_init()
   }
 
-  get location() {
+  get location () {
     return this[kLocation]
   }
 
-  _open(options, callback) {
+  _open (options, callback) {
     if (options.createIfMissing) {
       fs.mkdir(this[kLocation], { recursive: true }, (err) => {
         if (err) return callback(err)
@@ -59,44 +58,43 @@ class RocksLevel extends AbstractLevel {
     }
   }
 
-  _close(callback) {
-    console.error("CLOSE DB")
+  _close (callback) {
     binding.db_close(this[kContext], callback)
   }
 
-  _put(key, value, options, callback) {
+  _put (key, value, options, callback) {
     process.nextTick(callback, binding.db_put(this[kContext], key, value, options))
   }
 
-  _get(key, options, callback) {
+  _get (key, options, callback) {
     binding.db_get(this[kContext], key, options, callback)
   }
 
-  _getMany(keys, options, callback) {
+  _getMany (keys, options, callback) {
     binding.db_get_many(this[kContext], keys, options, callback)
   }
 
-  _del(key, options, callback) {
+  _del (key, options, callback) {
     process.nextTick(callback, binding.db_del(this[kContext], key, options))
   }
 
-  _clear(options, callback) {
+  _clear (options, callback) {
     process.nextTick(callback, binding.db_clear(this[kContext], options))
   }
 
-  _chainedBatch() {
+  _chainedBatch () {
     return new ChainedBatch(this, this[kContext])
   }
 
-  _batch(operations, options, callback) {
+  _batch (operations, options, callback) {
     process.nextTick(callback, binding.batch_do(this[kContext], operations, options))
   }
 
-  _iterator(options) {
+  _iterator (options) {
     return new Iterator(this, this[kContext], options)
   }
 
-  getProperty(property) {
+  getProperty (property) {
     if (typeof property !== 'string') {
       throw new TypeError("The first argument 'property' must be a string")
     }
@@ -111,7 +109,7 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  getLatestSequenceNumber() {
+  getLatestSequenceNumber () {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -121,7 +119,7 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_latest_sequence_number(this[kContext])
   }
 
-  getSnapshot() {
+  getSnapshot () {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -131,7 +129,7 @@ class RocksLevel extends AbstractLevel {
     return new Snapshot(this, this[kContext])
   }
 
-  async * changes(options) {
+  async * changes (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -164,7 +162,7 @@ class RocksLevel extends AbstractLevel {
         return this.promise
       }
 
-      async close(callback) {    
+      async close (callback) {
         try {
           await this.promise
         } catch {

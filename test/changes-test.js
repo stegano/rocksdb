@@ -14,7 +14,7 @@ test('test changes()', async function (t) {
   await db.batch([{ type: 'put', key: 'should not exit', value: 'val' }])
   await db.batch([{ type: 'put', key: 'key', value: 'val' }])
   const seq = db.getLatestSequenceNumber()
-  
+
   const val = []
   for await (const { updates, sequence } of db.changes({ since: seq })) {
     t.equal(sequence, 2n)
@@ -27,9 +27,10 @@ test('test changes()', async function (t) {
   t.end()
 })
 
-test('test changes() bad seq', async function (t) {  
+test('test changes() bad seq', async function (t) {
   try {
-    for await (const { updates, sequence } of db.changes({ since: 10n })) {
+    for await (const _ of db.changes({ since: 10n })) {
+      console.log(_)
       t.fail()
     }
   } catch (err) {

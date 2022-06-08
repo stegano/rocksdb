@@ -702,6 +702,41 @@ NAPI_METHOD(db_open) {
   options.IncreaseParallelism(
       Uint32Property(env, argv[2], "parallelism").value_or(std::thread::hardware_concurrency() / 2));
 
+  const auto memtable_memory_budget = Uint32Property(env, argv[2], "memtableMemoryBudget").value_or(256 * 1024 * 1024);
+
+  const auto compaction = StringProperty(env, argv[2], "compaction").value_or("level");
+
+  if (compaction == "universal") {
+    options.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
+    // merge two memtables when flushing to L0
+    options.min_write_buffer_number_to_merge = 2;
+    // this means we'll use 50% extra memory in the worst case, but will reduce
+    // write stalls.
+    options.max_write_buffer_number = 6;
+    // universal style compaction
+    options.compaction_style = rocksdb::kCompactionStyleUniversal;
+    options.compaction_options_universal.compression_size_percent = 80;
+  } else {
+    // merge two memtables when flushing to L0
+    options.min_write_buffer_number_to_merge = 2;
+    // this means we'll use 50% extra memory in the worst case, but will reduce
+    // write stalls.
+    options.max_write_buffer_number = 6;
+    // start flushing L0->L1 as soon as possible. each file on level0 is
+    // (memtable_memory_budget / 2). This will flush level 0 when it's bigger than
+    // memtable_memory_budget.
+    options.level0_file_num_compaction_trigger = 2;
+    // doesn't really matter much, but we don't want to create too many files
+    options.target_file_size_base = memtable_memory_budget / 8;
+    // make Level1 size equal to Level0 size, so that L0->L1 compactions are fast
+    options.max_bytes_for_level_base = memtable_memory_budget;
+
+    // level style compaction
+    options.compaction_style = rocksdb::kCompactionStyleLevel;
+
+    // TODO (perf): only compress levels >= 2
+  }
+
   const auto location = ToString(env, argv[1]);
   options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
   options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
@@ -765,9 +800,21 @@ NAPI_METHOD(db_open) {
     tableOptions.cache_index_and_filter_blocks = false;
   }
 
+  const auto optimize = StringProperty(env, argv[2], "optimize").value_or("");
+
+  if (optimize == "point-lookup") {
+    tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
+    tableOptions.data_block_hash_table_util_ratio = 0.75;
+    tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+
+    options.memtable_prefix_bloom_size_ratio = 0.02;
+    options.memtable_whole_key_filtering = true;
+  } else {
+    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
+  }
+
   tableOptions.block_size = Uint32Property(env, argv[2], "blockSize").value_or(4096);
   tableOptions.block_restart_interval = Uint32Property(env, argv[2], "blockRestartInterval").value_or(16);
-  tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
   tableOptions.optimize_filters_for_memory = BooleanProperty(env, argv[2], "optimizeFiltersForMemory").value_or(true);
@@ -838,7 +885,7 @@ struct UpdateNextWorker final : public rocksdb::WriteBatch::Handler, public Work
     if (!status.ok()) {
       return status;
     }
-    
+
     updates_->iterator_->Next();
 
     return rocksdb::Status::OK();
