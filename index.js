@@ -35,7 +35,8 @@ class RocksLevel extends AbstractLevel {
       additionalMethods: {
         getLatestSequenceNumber: true,
         getSnapshot: true,
-        changes: true
+        changes: true,
+        query: true
       }
     }, options)
 
@@ -129,6 +130,81 @@ class RocksLevel extends AbstractLevel {
     return new Snapshot(this, this[kContext])
   }
 
+  async * query (options) {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
+    class Query {
+      constructor (db, options) {
+        this.context = binding.iterator_init(db[kContext], options)
+        this.closed = false
+        this.promise = null
+        this.db = db
+        this.db.attachResource(this)
+      }
+
+      async next () {
+        if (this.closed) {
+          return {}
+        }
+
+        this.promise = new Promise(resolve => binding.iterator_nextv(this.context, 1000, (err, rows, finished) => {
+          this.promise = null
+          if (err) {
+            resolve(Promise.reject(err))
+          } else {
+            resolve(finished ? null : rows)
+          }
+        }))
+
+        return this.promise
+      }
+
+      async close (callback) {
+        try {
+          await this.promise
+        } catch {
+          // Do nothing...
+        }
+
+        try {
+          if (!this.closed) {
+            this.closed = true
+            binding.iterator_close(this.context)
+          }
+
+          if (callback) {
+            process.nextTick(callback)
+          }
+        } catch (err) {
+          if (callback) {
+            process.nextTick(callback, err)
+          } else {
+            throw err
+          }
+        } finally {
+          this.db.detachResource(this)
+        }
+      }
+    }
+
+    const query = new Query(this, options)
+    try {
+      while (true) {
+        const rows = await query.next()
+        if (!rows) {
+          return
+        }
+        yield { rows }
+      }
+    } finally {
+      await query.close()
+    }
+  }
+
   async * changes (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
@@ -193,11 +269,11 @@ class RocksLevel extends AbstractLevel {
     const updates = new Updates(this, options)
     try {
       while (true) {
-        const entry = await updates.next()
-        if (!entry.updates) {
+        const { updates, sequence } = await updates.next()
+        if (!updates) {
           return
         }
-        yield entry
+        yield { updates, sequence }
       }
     } finally {
       await updates.close()
