@@ -807,7 +807,7 @@ NAPI_METHOD(db_open) {
   if (optimize == "point-lookup") {
     tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
     tableOptions.data_block_hash_table_util_ratio = 0.75;
-    tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
 
     options.memtable_prefix_bloom_size_ratio = 0.02;
     options.memtable_whole_key_filtering = true;
@@ -1381,7 +1381,6 @@ NAPI_METHOD(iterator_get_sequence) {
 
   return 0;
 }
-
 
 struct NextWorker final : public Worker {
   NextWorker(napi_env env, Iterator* iterator, uint32_t size, napi_value callback)
