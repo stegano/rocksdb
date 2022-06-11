@@ -807,10 +807,12 @@ NAPI_METHOD(db_open) {
   if (optimize == "point-lookup") {
     tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
     tableOptions.data_block_hash_table_util_ratio = 0.75;
-    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
+    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10, 1));
 
     options.memtable_prefix_bloom_size_ratio = 0.02;
     options.memtable_whole_key_filtering = true;
+  } else  if (optimize == "range-lookup") {
+    // TODO?
   } else {
     tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
   }
