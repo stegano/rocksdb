@@ -11,19 +11,19 @@ class ChainedBatch extends AbstractChainedBatch {
     super(db)
 
     this[kDbContext] = context
-    this[kBatchContext] = binding.batch_init(context)
+    this[kBatchContext] = binding.batch_init(this[kDbContext])
   }
 
-  _put (key, value) {
-    binding.batch_put(this[kBatchContext], key, value)
+  _put (key, value, options) {
+    binding.batch_put(this[kDbContext], this[kBatchContext], key, value, options)
   }
 
-  _del (key) {
-    binding.batch_del(this[kBatchContext], key)
+  _del (key, options) {
+    binding.batch_del(this[kDbContext], this[kBatchContext], key, options)
   }
 
   _clear () {
-    binding.batch_clear(this[kBatchContext])
+    binding.batch_clear(this[kDbContext], this[kBatchContext])
   }
 
   _write (options, callback) {

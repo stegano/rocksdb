@@ -6,10 +6,10 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
-const { Snapshot } = require('./snapshot')
 
 const kContext = Symbol('context')
 const kLocation = Symbol('location')
+const kColumns = Symbol('columns')
 
 class RocksLevel extends AbstractLevel {
   constructor (location, options, _) {
@@ -33,8 +33,8 @@ class RocksLevel extends AbstractLevel {
       createIfMissing: true,
       errorIfExists: true,
       additionalMethods: {
-        getLatestSequenceNumber: true,
-        getSnapshot: true,
+        createColumn: true,
+        closeColumn: true,
         updates: true,
         query: true
       }
@@ -42,6 +42,7 @@ class RocksLevel extends AbstractLevel {
 
     this[kLocation] = location
     this[kContext] = binding.db_init()
+    this[kColumns] = new Set()
   }
 
   get location () {
@@ -60,6 +61,10 @@ class RocksLevel extends AbstractLevel {
   }
 
   _close (callback) {
+    for (const column of this[kColumns]) {
+      binding.column_close(column)
+    }
+  
     binding.db_close(this[kContext], callback)
   }
 
@@ -110,24 +115,18 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  getLatestSequenceNumber () {
+  async createColumn (name, options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
       })
     }
 
-    return binding.db_get_latest_sequence_number(this[kContext])
-  }
-
-  getSnapshot () {
-    if (this.status !== 'open') {
-      throw new ModuleError('Database is not open', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      })
-    }
-
-    return new Snapshot(this, this[kContext])
+    const column = binding.column_init(this[kContext], name, options || {})
+    
+    this[kColumns].add(column)
+    
+    return column
   }
 
   async * query (options) {
