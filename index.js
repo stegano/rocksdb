@@ -129,7 +129,6 @@ class RocksLevel extends AbstractLevel {
     }
 
     const context = binding.iterator_init(this[kContext], options)
-    const sequence = binding.iterator_get_sequence(context)
     const resource = {
       callback: null,
       close (callback) {
@@ -143,6 +142,7 @@ class RocksLevel extends AbstractLevel {
         if (err) {
           reject(err)
         } else {
+          const sequence = binding.iterator_get_sequence(context)
           resolve({ rows, sequence, finished })
         }
       }))
