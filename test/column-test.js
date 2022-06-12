@@ -1,51 +1,55 @@
-// 'use strict'
+'use strict'
 
-// const test = require('tape')
-// const testCommon = require('./common')
+const test = require('tape')
+const testCommon = require('./common')
 
-// let db
+test('test chained-batch', async function (t) {
+  const db = testCommon.factory()
+  await db.open({
+    columns: { test: {}, default: {} }
+  })
+  const column = db.columns.test
 
-// test('setUp db', function (t) {
-//   db = testCommon.factory()
-//   db.open(t.end.bind(t))
-// })
+  t.ok(column)
 
-// test('test chained-batch', async function (t) {
-//   const column = await db.createColumn('test')
+  const batch = db.batch()
+  batch.put('foo', 'val1', { column })
+  batch.put('bar', 'val2', { column })
+  batch.put('foo', 'val3')
+  batch.put('bar', 'val4')
 
-//   const batch = db.batch()
-//   batch.put('foo', 'val1', { column })
-//   batch.put('bar', 'val2', { column })
-//   batch.put('foo', 'val3')
-//   batch.put('bar', 'val4')
+  await batch.write()
 
-//   await batch.write()
+  t.equal(await db.get('foo', { column }), 'val1')
+  t.equal(await db.get('bar', { column }), 'val2')
+  t.equal(await db.get('foo'), 'val3')
+  t.equal(await db.get('bar'), 'val4')
 
-//   t.equal(await db.get('foo', { column }), 'val1')
-//   t.equal(await db.get('bar', { column }), 'val2')
-//   t.equal(await db.get('foo'), 'val3')
-//   t.equal(await db.get('bar'), 'val4')
+  await db.close()
 
-//   t.end()
-// })
+  t.end()
+})
 
-// test('test batch', async function (t) {
-//   const column = await db.createColumn('test2')
+test('test batch', async function (t) {
+  const db = testCommon.factory()
+  await db.open({
+    columns: { test: {}, default: {} }
+  })
+  const column = db.columns.test
 
-//   await db.batch([{ type: 'put', key: 'foo', value: 'val1', column }])
-//   await db.batch([{ type: 'put', key: 'bar', value: 'val2', column }])
-//   await db.batch([{ type: 'put', key: 'foo', value: 'val3' }])
-//   await db.batch([{ type: 'put', key: 'bar', value: 'val4' }])
+  t.ok(column)
 
-//   t.equal(await db.get('foo', { column }), 'val1')
-//   t.equal(await db.get('bar', { column }), 'val2')
-//   t.equal(await db.get('foo'), 'val3')
-//   t.equal(await db.get('bar'), 'val4')
+  await db.batch([{ type: 'put', key: 'foo', value: 'val1', column }])
+  await db.batch([{ type: 'put', key: 'bar', value: 'val2', column }])
+  await db.batch([{ type: 'put', key: 'foo', value: 'val3' }])
+  await db.batch([{ type: 'put', key: 'bar', value: 'val4' }])
 
-//   t.end()
-// })
+  t.equal(await db.get('foo', { column }), 'val1')
+  t.equal(await db.get('bar', { column }), 'val2')
+  t.equal(await db.get('foo'), 'val3')
+  t.equal(await db.get('bar'), 'val4')
 
-// test('tearDown', async function (t) {
-//   await db.close()
-//   t.end()
-// })
+  await db.close()
+
+  t.end()
+})

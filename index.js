@@ -8,6 +8,7 @@ const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
 
 const kContext = Symbol('context')
+const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
 
 class RocksLevel extends AbstractLevel {
@@ -41,20 +42,33 @@ class RocksLevel extends AbstractLevel {
 
     this[kLocation] = location
     this[kContext] = binding.db_init()
+    this[kColumns] = {}
   }
 
   get location () {
     return this[kLocation]
   }
 
+  get columns () {
+    return this[kColumns]
+  }
+
   _open (options, callback) {
+    const onOpen = (err, columns) => {
+      if (err) {
+        callback(err)
+      } else {
+        this[kColumns] = columns
+        callback(null)
+      }
+    }
     if (options.createIfMissing) {
       fs.mkdir(this[kLocation], { recursive: true }, (err) => {
         if (err) return callback(err)
-        binding.db_open(this[kContext], this[kLocation], options, callback)
+        binding.db_open(this[kContext], this[kLocation], options, onOpen)
       })
     } else {
-      binding.db_open(this[kContext], this[kLocation], options, callback)
+      binding.db_open(this[kContext], this[kLocation], options, onOpen)
     }
   }
 

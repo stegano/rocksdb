@@ -31,7 +31,6 @@ class NullLogger : public rocksdb::Logger {
 struct Database;
 struct Iterator;
 struct Updates;
-struct Column;
 
 #define NAPI_STATUS_RETURN(call) \
   {                              \
@@ -365,16 +364,6 @@ struct Database {
     DecrementPriorityWork(env);
   }
 
-  void AttachColumn(napi_env env, Column* column) {
-    columns_.insert(column);
-    IncrementPriorityWork(env);
-  }
-
-  void DetachColumn(napi_env env, Column* column) {
-    columns_.erase(column);
-    DecrementPriorityWork(env);
-  }
-
   void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, priorityRef_, &priorityWork_); }
 
   void DecrementPriorityWork(napi_env env) {
@@ -392,7 +381,7 @@ struct Database {
   Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
   std::set<Updates*> updates_;
-  std::set<Column*> columns_;
+  std::vector<rocksdb::ColumnFamilyHandle*> columns_;
   napi_ref priorityRef_;
 
  private:
@@ -597,39 +586,9 @@ struct Updates {
   napi_ref ref_ = nullptr;
 };
 
-struct Column {
-  Column(Database* database, rocksdb::ColumnFamilyHandle* handle)
-      : database_(database), handle_(handle) {}
-
-  void Close() { 
-    if (handle_) {
-      database_->db_->DestroyColumnFamilyHandle(handle_); // TODO (fix): Handle error?
-      handle_ = nullptr;
-    }
-  }
-
-  void Attach(napi_env env, napi_value context) {
-    napi_create_reference(env, context, 1, &ref_);
-    database_->AttachColumn(env, this);
-  }
-
-  void Detach(napi_env env) {
-    database_->DetachColumn(env, this);
-    if (ref_) {
-      napi_delete_reference(env, ref_);
-    }
-  }
-
-  Database* database_;
-  rocksdb::ColumnFamilyHandle* handle_;
-
- private:
-  napi_ref ref_ = nullptr;
-};
-
 static rocksdb::ColumnFamilyHandle* GetColumnFamily(Database* database, napi_env env, napi_value options) {
-  auto column_opt = ExternalValueProperty<Column>(env, options, "column");
-  return column_opt ? (*column_opt)->handle_ : database->db_->DefaultColumnFamily();
+  auto column_opt = ExternalValueProperty<rocksdb::ColumnFamilyHandle>(env, options, "column");
+  return column_opt ? *column_opt : database->db_->DefaultColumnFamily();
 }
 
 /**
@@ -659,8 +618,7 @@ static void env_cleanup_hook(void* arg) {
     }
 
     for (auto it : database->columns_) {
-      // TODO: does not do `napi_delete_reference`. Problem?
-      it->Close();
+      database->db_->DestroyColumnFamilyHandle(it);
     }
 
     // Having closed the iterators (and released snapshots) we can safely close.
@@ -707,17 +665,27 @@ struct OpenWorker final : public Worker {
     const auto status = column_families_.empty()
       ? rocksdb::DB::Open(options_, location_, &db)
       : rocksdb::DB::Open(options_, location_, column_families_, &handles_, &db);
+    database.columns_ = handles_;
     database.db_.reset(db);
     return status;
   }
 
-  // XXX
-  // napi_status OnOk(napi_env env, napi_value callback) override {
-  //   napi_value argv[2];
-  //   NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-  //   argv[1] = result;
-  //   return CallFunction(env, callback, 3, argv);
-  // }
+  napi_status OnOk(napi_env env, napi_value callback) override {    
+    const auto size = handles_.size();
+    napi_value result;
+    NAPI_STATUS_RETURN(napi_create_object(env, &result));
+  
+    for (size_t n = 0; n < size; ++n) {
+      napi_value column;
+      NAPI_STATUS_RETURN(napi_create_external(env, handles_[n], nullptr, nullptr, &column));
+      NAPI_STATUS_RETURN(napi_set_named_property(env, result, column_families_[n].name.c_str(), column));
+    }
+
+    napi_value argv[2];
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+    argv[1] = result;
+    return CallFunction(env, callback, 2, argv);
+  }
 
   rocksdb::Options options_;
   const std::string location_;
@@ -868,7 +836,27 @@ NAPI_METHOD(db_open) {
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
   
   if (HasProperty(env, options, "columns")) {
-    // XXX
+    napi_value columns;
+    NAPI_STATUS_THROWS(napi_get_named_property(env, options, "columns", &columns));
+
+    napi_value keys;
+    NAPI_STATUS_THROWS(napi_get_property_names(env, columns, &keys));
+
+    uint32_t len;
+    NAPI_STATUS_THROWS(napi_get_array_length(env, keys, &len));
+
+    for (uint32_t n = 0; n < len; ++n) {
+      napi_value key;
+      NAPI_STATUS_THROWS(napi_get_element(env, keys, n, &key));
+      
+      napi_value column;
+      NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
+
+      rocksdb::ColumnFamilyOptions columnOptions;
+      NAPI_STATUS_THROWS(InitOptions(env, columnOptions, column));
+
+      column_families.emplace_back(ToString(env, key), columnOptions);
+    }
   }
 
   auto worker = new OpenWorker(env, database, callback, location, dbOptions, column_families);
@@ -1505,15 +1493,15 @@ struct NextWorker final : public Worker {
     napi_value result;
     NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
 
-    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
+    for (size_t n = 0; n < size; n += 2) {
       napi_value key;
       napi_value val;
 
-      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 0]), iterator_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 1]), iterator_->valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[n + 0]), iterator_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[n + 1]), iterator_->valueAsBuffer_, val));
 
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 0), key));
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 1), val));
     }
 
     cache_.clear();
