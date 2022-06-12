@@ -139,11 +139,11 @@ class RocksLevel extends AbstractLevel {
 
     try {
       this.attachResource(resource)
-      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit || 1000, (err, rows) => {
+      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit || 1000, (err, rows, finished) => {
         if (err) {
           reject(err)
         } else {
-          resolve({ rows, sequence })
+          resolve({ rows, sequence, finished })
         }
       }))
     } finally {
