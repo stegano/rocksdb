@@ -148,7 +148,7 @@ class RocksLevel extends AbstractLevel {
       }))
     } finally {
       this.detachResource(resource)
-      binding.iterator_close(this.context)
+      binding.iterator_close(context)
       if (resource.callback) {
         resource.callback()
       }
