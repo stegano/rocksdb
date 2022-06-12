@@ -664,20 +664,19 @@ struct OpenWorker final : public Worker {
     rocksdb::DB* db = nullptr;
     const auto status = column_families_.empty()
       ? rocksdb::DB::Open(options_, location_, &db)
-      : rocksdb::DB::Open(options_, location_, column_families_, &handles_, &db);
-    database.columns_ = handles_;
+      : rocksdb::DB::Open(options_, location_, column_families_, &database.columns_, &db);
     database.db_.reset(db);
     return status;
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {    
-    const auto size = handles_.size();
+    const auto size = database_->columns_.size();
     napi_value result;
     NAPI_STATUS_RETURN(napi_create_object(env, &result));
   
     for (size_t n = 0; n < size; ++n) {
       napi_value column;
-      NAPI_STATUS_RETURN(napi_create_external(env, handles_[n], nullptr, nullptr, &column));
+      NAPI_STATUS_RETURN(napi_create_external(env, database_->columns_[n], nullptr, nullptr, &column));
       NAPI_STATUS_RETURN(napi_set_named_property(env, result, column_families_[n].name.c_str(), column));
     }
 
@@ -690,7 +689,6 @@ struct OpenWorker final : public Worker {
   rocksdb::Options options_;
   const std::string location_;
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families_;
-  std::vector<rocksdb::ColumnFamilyHandle*> handles_;
 };
 
 napi_status InitOptions(napi_env env, auto& options, auto options2) {
@@ -800,9 +798,7 @@ NAPI_METHOD(db_open) {
       Uint32Property(env, options, "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
   dbOptions.WAL_size_limit_MB = Uint32Property(env, options, "walSizeLimit").value_or(0) / 1e6;
-
-  // TODO: Consider direct IO (https://github.com/facebook/rocksdb/wiki/Direct-IO) once
-  // secondary compressed cache is stable.
+  dbOptions.create_missing_column_families = true;
 
   const auto infoLogLevel = StringProperty(env, options, "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
@@ -869,7 +865,13 @@ struct CloseWorker final : public Worker {
   CloseWorker(napi_env env, Database* database, napi_value callback)
       : Worker(env, database, callback, "leveldown.db.close") {}
 
-  rocksdb::Status Execute(Database& database) override { return database.db_->Close(); }
+  rocksdb::Status Execute(Database& database) override { 
+    for (auto it : database.columns_) {
+      database.db_->DestroyColumnFamilyHandle(it);
+    }
+
+    return database.db_->Close(); 
+  }
 };
 
 napi_value noop_callback(napi_env env, napi_callback_info info) {

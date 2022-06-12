@@ -33,8 +33,6 @@ class RocksLevel extends AbstractLevel {
       createIfMissing: true,
       errorIfExists: true,
       additionalMethods: {
-        createColumn: true,
-        closeColumn: true,
         updates: true,
         query: true
       }
@@ -123,85 +121,37 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  async * query (options) {
+  async query (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
       })
     }
 
-    class Query {
-      constructor (db, options) {
-        this.context = binding.iterator_init(db[kContext], options)
-        this.closed = false
-        this.promise = null
-        this.sequence = binding.iterator_get_sequence(this.context)
-        this.db = db
-        this.db.attachResource(this)
-      }
-
-      async next () {
-        if (this.closed) {
-          return {}
-        }
-
-        this.promise = new Promise(resolve => binding.iterator_nextv(this.context, 1000, (err, rows, finished) => {
-          this.promise = null
-          if (err) {
-            resolve(Promise.reject(err))
-          } else {
-            resolve({
-              finished,
-              rows,
-              sequence: this.sequence
-            })
-          }
-        }))
-
-        return this.promise
-      }
-
-      async close (callback) {
-        try {
-          await this.promise
-        } catch {
-          // Do nothing...
-        }
-
-        try {
-          if (!this.closed) {
-            this.closed = true
-            binding.iterator_close(this.context)
-          }
-
-          if (callback) {
-            process.nextTick(callback)
-          }
-        } catch (err) {
-          if (callback) {
-            process.nextTick(callback, err)
-          } else {
-            throw err
-          }
-        } finally {
-          this.db.detachResource(this)
-        }
+    const context = binding.iterator_init(this[kContext], options)
+    const sequence = binding.iterator_get_sequence(context)
+    const resource = {
+      callback: null,
+      close (callback) {
+        this.callback = callback
       }
     }
 
-    const query = new Query(this, options)
     try {
-      while (true) {
-        const { finished, rows, sequence } = await query.next()
-
-        yield { rows, sequence }
-
-        if (finished) {
-          return
+      this.attachResource(resource)
+      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit || 1000, (err, rows) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve({ rows, sequence })
         }
-      }
+      }))
     } finally {
-      await query.close()
+      this.detachResource(resource)
+      binding.iterator_close(this.context)
+      if (resource.callback) {
+        resource.callback()
+      }
     }
   }
 
