@@ -13,7 +13,7 @@ test('setUp db', function (t) {
 test('test updates()', async function (t) {
   await db.batch([{ type: 'put', key: 'should not exit', value: 'val' }])
   await db.batch([{ type: 'put', key: 'key', value: 'val' }])
-  const seq = db.getLatestSequenceNumber()
+  const seq = 2n
 
   const val = []
   for await (const { rows, sequence } of db.updates({ since: seq })) {

@@ -695,24 +695,34 @@ struct OpenWorker final : public Worker {
              Database* database,
              napi_value callback,
              const std::string& location,
-             rocksdb::Options options,
-             const bool readOnly)
+             const rocksdb::Options& options,
+             std::vector<rocksdb::ColumnFamilyDescriptor> column_families)
       : Worker(env, database, callback, "leveldown.db.open"),
         options_(options),
-        readOnly_(readOnly),
-        location_(location) {}
+        location_(location),
+        column_families_(std::move(column_families)) {}
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::DB* db = nullptr;
-    const auto status = readOnly_ ? rocksdb::DB::OpenForReadOnly(options_, location_, &db)
-                                  : rocksdb::DB::Open(options_, location_, &db);
+    const auto status = column_families_.empty()
+      ? rocksdb::DB::Open(options_, location_, &db)
+      : rocksdb::DB::Open(options_, location_, column_families_, &handles_, &db);
     database.db_.reset(db);
     return status;
   }
 
+  // XXX
+  // napi_status OnOk(napi_env env, napi_value callback) override {
+  //   napi_value argv[2];
+  //   NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+  //   argv[1] = result;
+  //   return CallFunction(env, callback, 3, argv);
+  // }
+
   rocksdb::Options options_;
-  const bool readOnly_;
   const std::string location_;
+  std::vector<rocksdb::ColumnFamilyDescriptor> column_families_;
+  std::vector<rocksdb::ColumnFamilyHandle*> handles_;
 };
 
 napi_status InitOptions(napi_env env, auto& options, auto options2) {
@@ -805,26 +815,28 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
 
   const auto location = ToString(env, argv[1]);
+  const auto options = argv[2];
+  const auto callback = argv[3];
 
-  rocksdb::Options options;
+  rocksdb::Options dbOptions;
 
-  options.IncreaseParallelism(
-      Uint32Property(env, argv[2], "parallelism").value_or(std::thread::hardware_concurrency() / 2));
+  dbOptions.IncreaseParallelism(
+      Uint32Property(env, options, "parallelism").value_or(std::thread::hardware_concurrency() / 2));
 
-  options.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
-  options.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
-  options.avoid_unnecessary_blocking_io = true;
-  options.use_adaptive_mutex = BooleanProperty(env, argv[2], "useAdaptiveMutex").value_or(true);
-  options.enable_pipelined_write = BooleanProperty(env, argv[2], "enablePipelinedWrite").value_or(true);
-  options.max_background_jobs =
-      Uint32Property(env, argv[2], "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
-  options.WAL_ttl_seconds = Uint32Property(env, argv[2], "walTTL").value_or(0) / 1e3;
-  options.WAL_size_limit_MB = Uint32Property(env, argv[2], "walSizeLimit").value_or(0) / 1e6;
+  dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
+  dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
+  dbOptions.avoid_unnecessary_blocking_io = true;
+  dbOptions.use_adaptive_mutex = BooleanProperty(env, options, "useAdaptiveMutex").value_or(true);
+  dbOptions.enable_pipelined_write = BooleanProperty(env, options, "enablePipelinedWrite").value_or(true);
+  dbOptions.max_background_jobs =
+      Uint32Property(env, options, "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
+  dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
+  dbOptions.WAL_size_limit_MB = Uint32Property(env, options, "walSizeLimit").value_or(0) / 1e6;
 
   // TODO: Consider direct IO (https://github.com/facebook/rocksdb/wiki/Direct-IO) once
   // secondary compressed cache is stable.
 
-  const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
+  const auto infoLogLevel = StringProperty(env, options, "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
 
@@ -843,21 +855,23 @@ NAPI_METHOD(db_open) {
     else
       napi_throw_error(env, nullptr, "invalid log level");
 
-    options.info_log_level = lvl;
+    dbOptions.info_log_level = lvl;
   } else {
     // In some places RocksDB checks this option to see if it should prepare
     // debug information (ahead of logging), so set it to the highest level.
-    options.info_log_level = rocksdb::InfoLogLevel::HEADER_LEVEL;
-    options.info_log.reset(new NullLogger());
+    dbOptions.info_log_level = rocksdb::InfoLogLevel::HEADER_LEVEL;
+    dbOptions.info_log.reset(new NullLogger());
   }
 
-  const auto readOnly = BooleanProperty(env, argv[2], "readOnly").value_or(false);
+  NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
 
-  NAPI_STATUS_THROWS(InitOptions(env, options, argv[2]));
+  std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
+  
+  if (HasProperty(env, options, "columns")) {
+    // XXX
+  }
 
-  const auto callback = argv[3];
-
-  auto worker = new OpenWorker(env, database, callback, location, options, readOnly);
+  auto worker = new OpenWorker(env, database, callback, location, dbOptions, column_families);
   worker->Queue(env);
 
   return 0;
@@ -1655,45 +1669,6 @@ NAPI_METHOD(batch_write) {
   return ToError(env, database->db_->Write(writeOptions, batch));
 }
 
-NAPI_METHOD(column_init) {
-  NAPI_ARGV(3);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
-
-  NapiSlice name;
-  NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], name));
-
-  rocksdb::ColumnFamilyOptions options;
-  NAPI_STATUS_THROWS(InitOptions(env, options, argv[2]));
-
-  rocksdb::ColumnFamilyHandle* handle;
-  ROCKS_STATUS_THROWS(database->db_->CreateColumnFamily(options, name.ToString(), &handle));
-
-  auto column = std::make_unique<Column>(database, handle);
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, column.get(), Finalize<Column>, column.get(), &result));
-
-  // Prevent GC of JS object before the iterator is closed (explicitly or on
-  // db close) and keep track of non-closed iterators to end them on db close.
-  column.release()->Attach(env, result);
-
-  return result;
-}
-
-NAPI_METHOD(column_close) {
-  NAPI_ARGV(1);
-
-  Column* column;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&column));
-
-  column->Detach(env);
-  column->Close();
-
-  return 0;
-}
-
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1704,9 +1679,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_del);
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
-
-  NAPI_EXPORT_FUNCTION(column_init);
-  NAPI_EXPORT_FUNCTION(column_close);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
