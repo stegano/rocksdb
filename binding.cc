@@ -691,85 +691,85 @@ struct OpenWorker final : public Worker {
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families_;
 };
 
-napi_status InitOptions(napi_env env, auto& options, auto options2) {
-  const auto memtable_memory_budget = Uint32Property(env, options2, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
+napi_status InitOptions(napi_env env, auto& columnOptions, auto options) {
+  const auto memtable_memory_budget = Uint32Property(env, options, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
 
-  const auto compaction = StringProperty(env, options2, "compaction").value_or("level");
+  const auto compaction = StringProperty(env, options, "compaction").value_or("level");
 
   if (compaction == "universal") {
-    options.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
+    columnOptions.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
     // merge two memtables when flushing to L0
-    options.min_write_buffer_number_to_merge = 2;
+    columnOptions.min_write_buffer_number_to_merge = 2;
     // this means we'll use 50% extra memory in the worst case, but will reduce
     // write stalls.
-    options.max_write_buffer_number = 6;
+    columnOptions.max_write_buffer_number = 6;
     // universal style compaction
-    options.compaction_style = rocksdb::kCompactionStyleUniversal;
-    options.compaction_options_universal.compression_size_percent = 80;
+    columnOptions.compaction_style = rocksdb::kCompactionStyleUniversal;
+    columnOptions.compaction_options_universal.compression_size_percent = 80;
   } else {
     // merge two memtables when flushing to L0
-    options.min_write_buffer_number_to_merge = 2;
+    columnOptions.min_write_buffer_number_to_merge = 2;
     // this means we'll use 50% extra memory in the worst case, but will reduce
     // write stalls.
-    options.max_write_buffer_number = 6;
+    columnOptions.max_write_buffer_number = 6;
     // start flushing L0->L1 as soon as possible. each file on level0 is
     // (memtable_memory_budget / 2). This will flush level 0 when it's bigger than
     // memtable_memory_budget.
-    options.level0_file_num_compaction_trigger = 2;
+    columnOptions.level0_file_num_compaction_trigger = 2;
     // doesn't really matter much, but we don't want to create too many files
-    options.target_file_size_base = memtable_memory_budget / 8;
+    columnOptions.target_file_size_base = memtable_memory_budget / 8;
     // make Level1 size equal to Level0 size, so that L0->L1 compactions are fast
-    options.max_bytes_for_level_base = memtable_memory_budget;
+    columnOptions.max_bytes_for_level_base = memtable_memory_budget;
 
     // level style compaction
-    options.compaction_style = rocksdb::kCompactionStyleLevel;
+    columnOptions.compaction_style = rocksdb::kCompactionStyleLevel;
 
     // TODO (perf): only compress levels >= 2
   }
 
-  options.compression =
-      BooleanProperty(env, options2, "compression").value_or((true)) ? rocksdb::kZSTD : rocksdb::kNoCompression;
-  if (options.compression == rocksdb::kZSTD) {
-    options.compression_opts.max_dict_bytes = 16 * 1024;
-    options.compression_opts.zstd_max_train_bytes = 16 * 1024 * 100;
-    // options.compression_opts.parallel_threads
+  columnOptions.compression =
+      BooleanProperty(env, options, "compression").value_or((true)) ? rocksdb::kZSTD : rocksdb::kNoCompression;
+  if (columnOptions.compression == rocksdb::kZSTD) {
+    columnOptions.compression_opts.max_dict_bytes = 16 * 1024;
+    columnOptions.compression_opts.zstd_max_train_bytes = 16 * 1024 * 100;
+    // columnOptions.compression_opts.parallel_threads
   }
 
-  const auto cacheSize = Uint32Property(env, options2, "cacheSize").value_or(8 << 20);
+  const auto cacheSize = Uint32Property(env, options, "cacheSize").value_or(8 << 20);
 
   rocksdb::BlockBasedTableOptions tableOptions;
 
   if (cacheSize) {
     tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
     tableOptions.cache_index_and_filter_blocks =
-        BooleanProperty(env, options2, "cacheIndexAndFilterBlocks").value_or(true);
+        BooleanProperty(env, options, "cacheIndexAndFilterBlocks").value_or(true);
   } else {
     tableOptions.no_block_cache = true;
     tableOptions.cache_index_and_filter_blocks = false;
   }
 
-  const auto optimize = StringProperty(env, options2, "optimize").value_or("");
+  const auto optimize = StringProperty(env, options, "optimize").value_or("");
 
   if (optimize == "point-lookup") {
     tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
     tableOptions.data_block_hash_table_util_ratio = 0.75;
     tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10, 1));
 
-    options.memtable_prefix_bloom_size_ratio = 0.02;
-    options.memtable_whole_key_filtering = true;
+    columnOptions.memtable_prefix_bloom_size_ratio = 0.02;
+    columnOptions.memtable_whole_key_filtering = true;
   } else if (optimize == "range-lookup") {
     // TODO?
   } else {
     tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
   }
 
-  tableOptions.block_size = Uint32Property(env, options2, "blockSize").value_or(4096);
-  tableOptions.block_restart_interval = Uint32Property(env, options2, "blockRestartInterval").value_or(16);
+  tableOptions.block_size = Uint32Property(env, options, "blockSize").value_or(4096);
+  tableOptions.block_restart_interval = Uint32Property(env, options, "blockRestartInterval").value_or(16);
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
-  tableOptions.optimize_filters_for_memory = BooleanProperty(env, options2, "optimizeFiltersForMemory").value_or(true);
+  tableOptions.optimize_filters_for_memory = BooleanProperty(env, options, "optimizeFiltersForMemory").value_or(true);
 
-  options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
+  columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
   return napi_ok;
 }
@@ -791,7 +791,7 @@ NAPI_METHOD(db_open) {
 
   dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
-  dbOptions.avoid_unnecessary_blocking_io = true;
+  dbOptions.avoid_unnecessary_blocking_io = BooleanProperty(env, options, "avoidUnnecessaryBlockingIO").value_or(true);
   dbOptions.use_adaptive_mutex = BooleanProperty(env, options, "useAdaptiveMutex").value_or(true);
   dbOptions.enable_pipelined_write = BooleanProperty(env, options, "enablePipelinedWrite").value_or(true);
   dbOptions.max_background_jobs =
@@ -799,6 +799,7 @@ NAPI_METHOD(db_open) {
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
   dbOptions.WAL_size_limit_MB = Uint32Property(env, options, "walSizeLimit").value_or(0) / 1e6;
   dbOptions.create_missing_column_families = true;
+  dbOptions.unordered_write = BooleanProperty(env, options, "unorderedWrite").value_or(false);
 
   const auto infoLogLevel = StringProperty(env, options, "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
