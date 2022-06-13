@@ -1479,7 +1479,7 @@ struct NextWorker final : public Worker {
         cache_.push_back(v.ToString());
       }
 
-      if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
+      if ((iterator_->highWaterMarkBytes_ && bytesRead > iterator_->highWaterMarkBytes_) || cache_.size() / 2 >= size_) {
         finished_ = false;
         return rocksdb::Status::OK();
       }

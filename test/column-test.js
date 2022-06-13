@@ -12,18 +12,32 @@ test('test chained-batch', async function (t) {
 
   t.ok(column)
 
-  const batch = db.batch()
-  batch.put('foo', 'val1', { column })
-  batch.put('bar', 'val2', { column })
-  batch.put('foo', 'val3')
-  batch.put('bar', 'val4')
-
-  await batch.write()
+  {
+    const batch = db.batch()
+    batch.put('foo', 'val1', { column })
+    batch.put('bar', 'val2', { column })
+    batch.put('foo', 'val3')
+    batch.put('bar', 'val4')
+  
+    await batch.write()
+  }
 
   t.equal(await db.get('foo', { column }), 'val1')
   t.equal(await db.get('bar', { column }), 'val2')
   t.equal(await db.get('foo'), 'val3')
   t.equal(await db.get('bar'), 'val4')
+  
+  t.same(await db.getMany(['foo', 'bar'], { column }), ['val1', 'val2'])
+  t.same(await db.getMany(['foo', 'bar']), ['val3', 'val4'])
+
+  {
+    const batch = db.batch()
+    batch.del('foo', { column })
+    batch.del('bar', { column })
+    await batch.write()
+    t.same(await db.getMany(['foo', 'bar'], { column }), [undefined, undefined])
+    t.same(await db.getMany(['foo', 'bar']), ['val3', 'val4'])
+  }
 
   await db.close()
 
@@ -48,6 +62,15 @@ test('test batch', async function (t) {
   t.equal(await db.get('bar', { column }), 'val2')
   t.equal(await db.get('foo'), 'val3')
   t.equal(await db.get('bar'), 'val4')
+
+  t.same(await db.getMany(['foo', 'bar'], { column }), ['val1', 'val2'])
+  t.same(await db.getMany(['foo', 'bar']), ['val3', 'val4'])
+
+  await db.batch([{ type: 'del', key: 'foo', column }])
+  await db.batch([{ type: 'del', key: 'bar', column }])
+
+  t.same(await db.getMany(['foo', 'bar'], { column }), [undefined, undefined])
+  t.same(await db.getMany(['foo', 'bar']), ['val3', 'val4'])
 
   await db.close()
 
