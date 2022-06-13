@@ -526,7 +526,7 @@ struct Iterator final : public BaseIterator {
            const bool fillCache,
            const bool keyAsBuffer,
            const bool valueAsBuffer,
-           const uint32_t highWaterMarkBytes,
+           const int32_t highWaterMarkBytes,
            std::shared_ptr<const rocksdb::Snapshot> snapshot)
       : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot),
         keys_(keys),
@@ -551,7 +551,7 @@ struct Iterator final : public BaseIterator {
   const bool values_;
   const bool keyAsBuffer_;
   const bool valueAsBuffer_;
-  const uint32_t highWaterMarkBytes_;
+  const int32_t highWaterMarkBytes_;
   bool first_ = true;
 
  private:
@@ -691,7 +691,8 @@ struct OpenWorker final : public Worker {
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families_;
 };
 
-napi_status InitOptions(napi_env env, auto& columnOptions, auto options) {
+template <typename T>
+napi_status InitOptions(napi_env env, T& columnOptions, auto options) {
   const auto memtable_memory_budget = Uint32Property(env, options, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
 
   const auto compaction = StringProperty(env, options, "compaction").value_or("level");
@@ -1375,7 +1376,7 @@ NAPI_METHOD(iterator_init) {
   const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto limit = Int32Property(env, options, "limit").value_or(-1);
-  const auto highWaterMarkBytes = Uint32Property(env, options, "highWaterMarkBytes").value_or(16 * 1024);
+  const auto highWaterMarkBytes = Int32Property(env, options, "highWaterMarkBytes").value_or(16 * 1024);
 
   const auto lt = StringProperty(env, options, "lt");
   const auto lte = StringProperty(env, options, "lte");
@@ -1547,7 +1548,6 @@ NAPI_METHOD(batch_do) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
 
   const auto operations = argv[1];
-  const auto options = argv[2];
 
   rocksdb::WriteBatch batch;
 
