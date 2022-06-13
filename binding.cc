@@ -788,7 +788,7 @@ NAPI_METHOD(db_open) {
   rocksdb::Options dbOptions;
 
   dbOptions.IncreaseParallelism(
-      Uint32Property(env, options, "parallelism").value_or(std::thread::hardware_concurrency() / 2));
+      Uint32Property(env, options, "parallelism").value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2)));
 
   dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
@@ -796,7 +796,7 @@ NAPI_METHOD(db_open) {
   dbOptions.use_adaptive_mutex = true;
   dbOptions.enable_pipelined_write = false;
   dbOptions.max_background_jobs =
-      Uint32Property(env, options, "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
+      Uint32Property(env, options, "maxBackgroundJobs").value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
   dbOptions.WAL_size_limit_MB = Uint32Property(env, options, "walSizeLimit").value_or(0) / 1e6;
   dbOptions.create_missing_column_families = true;
