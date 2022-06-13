@@ -18,7 +18,7 @@ test('test chained-batch', async function (t) {
     batch.put('bar', 'val2', { column })
     batch.put('foo', 'val3')
     batch.put('bar', 'val4')
-  
+
     await batch.write()
   }
 
@@ -26,7 +26,7 @@ test('test chained-batch', async function (t) {
   t.equal(await db.get('bar', { column }), 'val2')
   t.equal(await db.get('foo'), 'val3')
   t.equal(await db.get('bar'), 'val4')
-  
+
   t.same(await db.getMany(['foo', 'bar'], { column }), ['val1', 'val2'])
   t.same(await db.getMany(['foo', 'bar']), ['val3', 'val4'])
 
