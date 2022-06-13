@@ -791,9 +791,9 @@ NAPI_METHOD(db_open) {
 
   dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
-  dbOptions.avoid_unnecessary_blocking_io = BooleanProperty(env, options, "avoidUnnecessaryBlockingIO").value_or(true);
-  dbOptions.use_adaptive_mutex = BooleanProperty(env, options, "useAdaptiveMutex").value_or(true);
-  dbOptions.enable_pipelined_write = BooleanProperty(env, options, "enablePipelinedWrite").value_or(true);
+  dbOptions.avoid_unnecessary_blocking_io = true;
+  dbOptions.use_adaptive_mutex = true;
+  dbOptions.enable_pipelined_write = false;
   dbOptions.max_background_jobs =
       Uint32Property(env, options, "maxBackgroundJobs").value_or(std::thread::hardware_concurrency() / 4);
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
