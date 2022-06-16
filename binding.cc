@@ -224,7 +224,7 @@ static void Finalize(napi_env env, void* data, void* hint) {
   }
 }
 
-napi_status Convert(napi_env env, rocksdb::PinnableSlice&& s, bool asBuffer, napi_value& result) {
+napi_status Convert(napi_env env, rocksdb::PinnableSlice& s, bool asBuffer, napi_value& result) {
   if (asBuffer) {
     auto ptr = new rocksdb::PinnableSlice(std::move(s));
     return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
@@ -234,7 +234,7 @@ napi_status Convert(napi_env env, rocksdb::PinnableSlice&& s, bool asBuffer, nap
   }
 }
 
-napi_status Convert(napi_env env, std::optional<std::string>&& s, bool asBuffer, napi_value& result) {
+napi_status Convert(napi_env env, std::optional<std::string>& s, bool asBuffer, napi_value& result) {
   if (!s) {
     return napi_get_null(env, &result);
   } else if (asBuffer) {
@@ -944,8 +944,8 @@ struct UpdateNextWorker final : public rocksdb::WriteBatch::Handler, public Work
         napi_value key;
         napi_value val;
 
-        NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 0]), updates_->keyAsBuffer_, key));
-        NAPI_STATUS_RETURN(Convert(env, std::move(cache_[idx + 1]), updates_->valueAsBuffer_, val));
+        NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
+        NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->valueAsBuffer_, val));
 
         NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
         NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
@@ -1085,7 +1085,7 @@ struct GetWorker final : public Worker {
   napi_status OnOk(napi_env env, napi_value callback) override {
     napi_value argv[2];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-    NAPI_STATUS_RETURN(Convert(env, std::move(value_), asBuffer_, argv[1]));
+    NAPI_STATUS_RETURN(Convert(env, value_, asBuffer_, argv[1]));
     return CallFunction(env, callback, 2, argv);
   }
 
@@ -1174,7 +1174,7 @@ struct GetManyWorker final : public Worker {
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
       if (statuses_[idx].ok()) {
-        NAPI_STATUS_RETURN(Convert(env, std::move(values_[idx]), valueAsBuffer_, element));
+        NAPI_STATUS_RETURN(Convert(env, values_[idx], valueAsBuffer_, element));
       } else {
         NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
       }
@@ -1494,8 +1494,8 @@ struct NextWorker final : public Worker {
       napi_value key;
       napi_value val;
 
-      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[n + 0]), iterator_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(Convert(env, std::move(cache_[n + 1]), iterator_->valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(Convert(env, cache_[n + 0], iterator_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, cache_[n + 1], iterator_->valueAsBuffer_, val));
 
       NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 0), key));
       NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 1), val));
