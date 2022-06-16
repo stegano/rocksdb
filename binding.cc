@@ -1145,21 +1145,16 @@ struct GetManyWorker final : public Worker {
     readOptions.snapshot = snapshot_.get();
     readOptions.async_io = true;
 
-    {
-      std::vector<rocksdb::Slice> keys;
-      keys.reserve(keys_.size());
-      for (const auto& key : keys_) {
-        keys.emplace_back(key);
-      }
-
-      statuses_.resize(keys.size());
-      values_.resize(keys.size());
-
-      database.db_->MultiGet(readOptions, column_, keys.size(), keys.data(), values_.data(), statuses_.data());
+    std::vector<rocksdb::Slice> keys;
+    keys.reserve(keys_.size());
+    for (const auto& key : keys_) {
+      keys.emplace_back(key);
     }
 
-    keys_.clear();
-    snapshot_ = nullptr;
+    statuses_.resize(keys.size());
+    values_.resize(keys.size());
+
+    database.db_->MultiGet(readOptions, column_, keys.size(), keys.data(), values_.data(), statuses_.data());
 
     for (auto status : statuses_) {
       if (!status.ok() && !status.IsNotFound()) {
@@ -1185,9 +1180,6 @@ struct GetManyWorker final : public Worker {
       }
       NAPI_STATUS_RETURN(napi_set_element(env, array, static_cast<uint32_t>(idx), element));
     }
-
-    values_.clear();
-    statuses_.clear();
 
     napi_value argv[2];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
