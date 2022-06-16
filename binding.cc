@@ -1146,18 +1146,16 @@ struct GetManyWorker final : public Worker {
     readOptions.async_io = true;
 
     {
-      const auto numKeys = keys_.size();
-
       std::vector<rocksdb::Slice> keys;
       keys.reserve(keys_.size());
       for (const auto& key : keys_) {
         keys.emplace_back(key);
       }
 
-      statuses_.resize(numKeys);
-      values_.resize(numKeys);
+      statuses_.resize(keys.size());
+      values_.resize(keys.size());
 
-      database.db_->MultiGet(readOptions, column_, numKeys, keys.data(), values_.data(), statuses_.data());
+      database.db_->MultiGet(readOptions, column_, keys.size(), keys.data(), values_.data(), statuses_.data());
     }
 
     keys_.clear();
