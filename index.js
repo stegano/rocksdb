@@ -128,9 +128,9 @@ class RocksLevel extends AbstractLevel {
       })
     }
 
-    const context = binding.iterator_init(this[kContext], { 
+    const context = binding.iterator_init(this[kContext], {
       highWaterMarkBytes: 1024 * 1024 * 1024, // TODO (fix): Replace with -1.
-      ...options 
+      ...options
     })
     const resource = {
       callback: null,
