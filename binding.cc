@@ -691,8 +691,8 @@ struct OpenWorker final : public Worker {
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families_;
 };
 
-template <typename T>
-napi_status InitOptions(napi_env env, T& columnOptions, auto options) {
+template <typename T, typename U>
+napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   const auto memtable_memory_budget = Uint32Property(env, options, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
 
   const auto compaction = StringProperty(env, options, "compaction").value_or("level");
