@@ -40,13 +40,13 @@ struct Updates;
     }                            \
   }
 
-#define ROCKS_STATUS_THROWS(call) \
-  {                              \
-    const auto status = (call);  \
-    if (!status.ok()) {     \
+#define ROCKS_STATUS_THROWS(call)            \
+  {                                          \
+    const auto status = (call);              \
+    if (!status.ok()) {                      \
       napi_throw(env, ToError(env, status)); \
-      return NULL; \
-    }                            \
+      return NULL;                           \
+    }                                        \
   }
 
 static bool IsString(napi_env env, napi_value value) {
@@ -663,17 +663,17 @@ struct OpenWorker final : public Worker {
   rocksdb::Status Execute(Database& database) override {
     rocksdb::DB* db = nullptr;
     const auto status = column_families_.empty()
-      ? rocksdb::DB::Open(options_, location_, &db)
-      : rocksdb::DB::Open(options_, location_, column_families_, &database.columns_, &db);
+                            ? rocksdb::DB::Open(options_, location_, &db)
+                            : rocksdb::DB::Open(options_, location_, column_families_, &database.columns_, &db);
     database.db_.reset(db);
     return status;
   }
 
-  napi_status OnOk(napi_env env, napi_value callback) override {    
+  napi_status OnOk(napi_env env, napi_value callback) override {
     const auto size = database_->columns_.size();
     napi_value result;
     NAPI_STATUS_RETURN(napi_create_object(env, &result));
-  
+
     for (size_t n = 0; n < size; ++n) {
       napi_value column;
       NAPI_STATUS_RETURN(napi_create_external(env, database_->columns_[n], nullptr, nullptr, &column));
@@ -787,16 +787,16 @@ NAPI_METHOD(db_open) {
 
   rocksdb::Options dbOptions;
 
-  dbOptions.IncreaseParallelism(
-      Uint32Property(env, options, "parallelism").value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2)));
+  dbOptions.IncreaseParallelism(Uint32Property(env, options, "parallelism")
+                                    .value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2)));
 
   dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
   dbOptions.avoid_unnecessary_blocking_io = true;
   dbOptions.use_adaptive_mutex = true;
   dbOptions.enable_pipelined_write = false;
-  dbOptions.max_background_jobs =
-      Uint32Property(env, options, "maxBackgroundJobs").value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
+  dbOptions.max_background_jobs = Uint32Property(env, options, "maxBackgroundJobs")
+                                      .value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
   dbOptions.WAL_size_limit_MB = Uint32Property(env, options, "walSizeLimit").value_or(0) / 1e6;
   dbOptions.create_missing_column_families = true;
@@ -832,7 +832,7 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
 
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
-  
+
   if (HasProperty(env, options, "columns")) {
     napi_value columns;
     NAPI_STATUS_THROWS(napi_get_named_property(env, options, "columns", &columns));
@@ -846,7 +846,7 @@ NAPI_METHOD(db_open) {
     for (uint32_t n = 0; n < len; ++n) {
       napi_value key;
       NAPI_STATUS_THROWS(napi_get_element(env, keys, n, &key));
-      
+
       napi_value column;
       NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
@@ -867,12 +867,12 @@ struct CloseWorker final : public Worker {
   CloseWorker(napi_env env, Database* database, napi_value callback)
       : Worker(env, database, callback, "leveldown.db.close") {}
 
-  rocksdb::Status Execute(Database& database) override { 
+  rocksdb::Status Execute(Database& database) override {
     for (auto it : database.columns_) {
       database.db_->DestroyColumnFamilyHandle(it);
     }
 
-    return database.db_->Close(); 
+    return database.db_->Close();
   }
 };
 
@@ -1147,7 +1147,7 @@ struct GetManyWorker final : public Worker {
 
     {
       const auto numKeys = keys_.size();
-  
+
       std::vector<rocksdb::Slice> keys;
       keys.reserve(keys_.size());
       for (const auto& key : keys_) {
@@ -1483,7 +1483,8 @@ struct NextWorker final : public Worker {
         cache_.push_back(v.ToString());
       }
 
-      if ((iterator_->highWaterMarkBytes_ != -1 && bytesRead > static_cast<size_t>(iterator_->highWaterMarkBytes_)) || cache_.size() / 2 >= size_) {
+      if ((iterator_->highWaterMarkBytes_ != -1 && bytesRead > static_cast<size_t>(iterator_->highWaterMarkBytes_)) ||
+          cache_.size() / 2 >= size_) {
         finished_ = false;
         return rocksdb::Status::OK();
       }
