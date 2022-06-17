@@ -1161,7 +1161,7 @@ struct GetManyWorker final : public Worker {
       statuses_[n] = database.db_->Get(readOptions, column_, keys_[n], &values_[n]);
     }
 
-    for (auto status : statuses_) {
+    for (const auto& status : statuses_) {
       if (!status.ok() && !status.IsNotFound()) {
         return status;
       }
