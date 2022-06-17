@@ -1157,8 +1157,8 @@ struct GetManyWorker final : public Worker {
     // database.db_->MultiGet(readOptions, column_, keys.size(), keys.data(), values_.data(), statuses_.data());
 
     // TODO (fix): Use MultiGet once https://github.com/facebook/rocksdb/issues/10186 is resolved.
-    for (auto n = 0; n < keys_.size(); ++n) {
-      statuses_[n] = database.db_->Get(readOptions, column_, keys_[n], &values_[n]);
+    for (auto n = 0; n < keys.size(); ++n) {
+      statuses_[n] = database.db_->Get(readOptions, column_, keys[n], &values_[n]);
     }
 
     for (const auto& status : statuses_) {
