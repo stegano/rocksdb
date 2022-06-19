@@ -15,17 +15,11 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _put (key, value, options) {
-    const err = binding.batch_put(this[kDbContext], this[kBatchContext], key, value, options)
-    if (err) {
-      throw err
-    }
+    binding.batch_put(this[kDbContext], this[kBatchContext], key, value, options)
   }
 
   _del (key, options) {
-    const err = binding.batch_del(this[kDbContext], this[kBatchContext], key, options)
-    if (err) {
-      throw err
-    }
+    binding.batch_del(this[kDbContext], this[kBatchContext], key, options)
   }
 
   _clear () {

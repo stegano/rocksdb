@@ -1624,7 +1624,9 @@ NAPI_METHOD(batch_put) {
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
-  return ToError(env, batch->Put(column, key, val));
+  ROCKS_STATUS_THROWS(batch->Put(column, key, val));
+
+  return 0;
 }
 
 NAPI_METHOD(batch_del) {
@@ -1644,7 +1646,9 @@ NAPI_METHOD(batch_del) {
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
-  return ToError(env, batch->Delete(column, key));
+  ROCKS_STATUS_THROWS(batch->Delete(column, key));
+
+  return 0;
 }
 
 NAPI_METHOD(batch_clear) {
