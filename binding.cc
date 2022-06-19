@@ -733,7 +733,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   if (columnOptions.compression == rocksdb::kZSTD) {
     columnOptions.compression_opts.max_dict_bytes = 16 * 1024;
     columnOptions.compression_opts.zstd_max_train_bytes = 16 * 1024 * 100;
-    // columnOptions.compression_opts.parallel_threads
+    // TODO (perf): compression_opts.parallel_threads
   }
 
   const auto cacheSize = Uint32Property(env, options, "cacheSize").value_or(8 << 20);
@@ -793,8 +793,8 @@ NAPI_METHOD(db_open) {
   dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
   dbOptions.avoid_unnecessary_blocking_io = true;
-  dbOptions.use_adaptive_mutex = true;
-  dbOptions.enable_pipelined_write = false;
+  dbOptions.use_adaptive_mutex = true; // We don't have soo many threads in the libuv thread pool...
+  dbOptions.enable_pipelined_write = false; // We only write in the main thread...
   dbOptions.max_background_jobs = Uint32Property(env, options, "maxBackgroundJobs")
                                       .value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
