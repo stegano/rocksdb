@@ -49,6 +49,14 @@ struct Updates;
     }                                        \
   }
 
+#define ROCKS_STATUS_RETURN(call)            \
+  {                                          \
+    const auto status = (call);              \
+    if (!status.ok()) {                      \
+      return ToError(env, status);          \
+    }                                        \
+  }
+
 static bool IsString(napi_env env, napi_value value) {
   napi_valuetype type;
   napi_typeof(env, value, &type);
@@ -110,7 +118,7 @@ static bool EncodingIsBuffer(napi_env env, napi_value obj, const std::string_vie
 }
 
 template <typename T>
-static std::optional<T*> ExternalValueProperty(napi_env env, napi_value obj, const std::string_view& key) {
+static T* ExternalValueProperty(napi_env env, napi_value obj, const std::string_view& key) {
   if (HasProperty(env, obj, key.data())) {
     const auto value = GetProperty(env, obj, key.data());
 
@@ -120,7 +128,7 @@ static std::optional<T*> ExternalValueProperty(napi_env env, napi_value obj, con
     }
   }
 
-  return {};
+  return nullptr;
 }
 
 static std::optional<uint32_t> Uint32Property(napi_env env, napi_value obj, const std::string_view& key) {
@@ -580,7 +588,7 @@ struct Updates {
 
 static rocksdb::ColumnFamilyHandle* GetColumnFamily(Database* database, napi_env env, napi_value options) {
   auto column_opt = ExternalValueProperty<rocksdb::ColumnFamilyHandle>(env, options, "column");
-  return column_opt ? *column_opt : database->db_->DefaultColumnFamily();
+  return column_opt ? column_opt : database->db_->DefaultColumnFamily();
 }
 
 /**
@@ -1216,7 +1224,7 @@ NAPI_METHOD(db_get_many) {
       napi_value element;
 
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-      keys.push_back(ToString(env, element));
+      keys.push_back(ToString(env, element)); // TODO: Error?
     }
   }
 
@@ -1286,10 +1294,10 @@ NAPI_METHOD(db_clear) {
     }
 
     rocksdb::WriteOptions writeOptions;
-    const auto status = database->db_->DeleteRange(writeOptions, column, begin, end);
-    return ToError(env, status);
+    return ToError(env, database->db_->DeleteRange(writeOptions, column, begin, end));
   } else {
     // TODO (perf): Use DeleteRange.
+    // TODO (fix): Error handling.
 
     std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
                                                       [=](const auto ptr) { database->db_->ReleaseSnapshot(ptr); });
@@ -1343,7 +1351,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], property));
 
   std::string value;
-  database->db_->GetProperty(property, &value);
+  database->db_->GetProperty(property, &value); // TODO: What if return false?
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
@@ -1498,8 +1506,6 @@ struct NextWorker final : public Worker {
       NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 1), val));
     }
 
-    cache_.clear();
-
     napi_value argv[3];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
     argv[1] = result;
@@ -1556,13 +1562,13 @@ NAPI_METHOD(batch_do) {
     if (type == "del") {
       NapiSlice key;
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
-      batch.Delete(column, key);
+      ROCKS_STATUS_RETURN(batch.Delete(column, key));
     } else if (type == "put") {
       NapiSlice key;
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
       NapiSlice value;
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "value"), value));
-      batch.Put(column, key, value);
+      ROCKS_STATUS_RETURN(batch.Put(column, key, value));
     }
   }
 
@@ -1601,9 +1607,7 @@ NAPI_METHOD(batch_put) {
   const auto options = argv[4];
   const auto column = GetColumnFamily(database, env, options);
 
-  batch->Put(column, key, val);
-
-  return 0;
+  return ToError(env, batch->Put(column, key, val));
 }
 
 NAPI_METHOD(batch_del) {
@@ -1621,9 +1625,7 @@ NAPI_METHOD(batch_del) {
   const auto options = argv[3];
   const auto column = GetColumnFamily(database, env, options);
 
-  batch->Delete(column, key);
-
-  return 0;
+  return ToError(env, batch->Delete(column, key));
 }
 
 NAPI_METHOD(batch_clear) {
