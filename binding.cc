@@ -1270,28 +1270,30 @@ NAPI_METHOD(db_clear) {
   const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
   const auto limit = Int32Property(env, options, "limit").value_or(-1);
 
-  const auto lt = StringProperty(env, options, "lt");
-  const auto lte = StringProperty(env, options, "lte");
-  const auto gt = StringProperty(env, options, "gt");
-  const auto gte = StringProperty(env, options, "gte");
+  auto lt = StringProperty(env, options, "lt");
+  auto lte = StringProperty(env, options, "lte");
+  auto gt = StringProperty(env, options, "gt");
+  auto gte = StringProperty(env, options, "gte");
   const auto column = GetColumnFamily(database, env, options);
 
-  if (!reverse && limit == -1 && (lte || lt)) {
-    rocksdb::Slice begin;
+  if (!reverse && limit == -1 && (lt || lte)) {
+    rocksdb::PinnableSlice begin;
     if (gte) {
-      begin = *gte;
+      *begin.GetSelf() = std::move(*gte);
     } else if (gt) {
-      begin = *gt + '\0';
+      *begin.GetSelf() = std::move(*gt) + '\0';
     }
+    begin.PinSelf();
 
-    rocksdb::Slice end;
+    rocksdb::PinnableSlice end;
     if (lte) {
-      end = *lte + '\0';
+      *end.GetSelf() = std::move(*lte) + '\0';
     } else if (lt) {
-      end = *lt;
+      *end.GetSelf() = std::move(*lt);
     } else {
       assert(false);
     }
+    end.PinSelf();
 
     if (begin.compare(end) > 0) {
       return ToError(env, rocksdb::Status::OK());
