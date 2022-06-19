@@ -897,8 +897,8 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
-struct UpdateNextWorker final : public rocksdb::WriteBatch::Handler, public Worker {
-  UpdateNextWorker(napi_env env, Updates* updates, napi_value callback)
+struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Worker {
+  UpdatesNextWorker(napi_env env, Updates* updates, napi_value callback)
       : Worker(env, updates->database_, callback, "rocks_level.db.get"), updates_(updates) {
     database_->IncrementPriorityWork(env);
   }
@@ -1015,7 +1015,7 @@ NAPI_METHOD(updates_next) {
 
   const auto callback = argv[1];
 
-  auto worker = new UpdateNextWorker(env, updates, callback);
+  auto worker = new UpdatesNextWorker(env, updates, callback);
   worker->Queue(env);
 
   return 0;
