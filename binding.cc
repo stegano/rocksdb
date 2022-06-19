@@ -239,6 +239,9 @@ struct NapiSlice : public rocksdb::Slice {
 };
 
 napi_status ToNapiSlice(napi_env env, napi_value from, NapiSlice& slice) {
+  slice.data_ = nullptr;
+  slice.size_ = 0;
+
   if (IsString(env, from)) {
     NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &slice.size_));
     char* data;
