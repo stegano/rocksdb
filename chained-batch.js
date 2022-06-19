@@ -15,10 +15,12 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _put (key, value, options) {
+    // TODO: Error?
     binding.batch_put(this[kDbContext], this[kBatchContext], key, value, options)
   }
 
   _del (key, options) {
+    // TODO: Error?
     binding.batch_del(this[kDbContext], this[kBatchContext], key, options)
   }
 
