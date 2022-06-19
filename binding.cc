@@ -783,7 +783,7 @@ NAPI_METHOD(db_open) {
   NAPI_ARGV(4);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto location = ToString(env, argv[1]);
   const auto options = argv[2];
@@ -888,7 +888,7 @@ NAPI_METHOD(db_close) {
   NAPI_ARGV(2);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto callback = argv[1];
 
@@ -993,7 +993,7 @@ NAPI_METHOD(updates_init) {
   NAPI_ARGV(2);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto options = argv[1];
 
@@ -1043,7 +1043,7 @@ NAPI_METHOD(db_put) {
   NAPI_ARGV(4);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   NapiSlice key;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
@@ -1111,7 +1111,7 @@ NAPI_METHOD(db_get) {
   NAPI_ARGV(4);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto key = ToString(env, argv[1]);
   const auto options = argv[2];
@@ -1215,7 +1215,7 @@ NAPI_METHOD(db_get_many) {
   NAPI_ARGV(4);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   std::vector<std::string> keys;
   {
@@ -1248,7 +1248,7 @@ NAPI_METHOD(db_del) {
   NAPI_ARGV(3);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   NapiSlice key;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
@@ -1264,7 +1264,7 @@ NAPI_METHOD(db_clear) {
   NAPI_ARGV(2);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto options = argv[1];
   const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
@@ -1352,7 +1352,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   NapiSlice property;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], property));
@@ -1370,7 +1370,7 @@ NAPI_METHOD(iterator_init) {
   NAPI_ARGV(2);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto options = argv[1];
   const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
@@ -1548,7 +1548,7 @@ NAPI_METHOD(batch_do) {
   NAPI_ARGV(3);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto operations = argv[1];
 
@@ -1587,7 +1587,7 @@ NAPI_METHOD(batch_init) {
   NAPI_ARGV(1);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   auto batch = new rocksdb::WriteBatch();
 
@@ -1600,7 +1600,7 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(5);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], (void**)(&batch)));
@@ -1621,7 +1621,7 @@ NAPI_METHOD(batch_del) {
   NAPI_ARGV(4);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
@@ -1650,7 +1650,7 @@ NAPI_METHOD(batch_write) {
   NAPI_ARGV(3);
 
   Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&database));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
