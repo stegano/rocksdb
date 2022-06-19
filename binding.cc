@@ -33,28 +33,28 @@ struct Iterator;
 struct Updates;
 
 #define NAPI_STATUS_RETURN(call) \
-  {                              \
-    const auto status = (call);  \
+  {                          \
+    auto status = (call);        \
     if (status != napi_ok) {     \
       return status;             \
     }                            \
   }
 
 #define ROCKS_STATUS_THROWS(call)            \
-  {                                          \
-    const auto status = (call);              \
+  {                                      \
+    auto status = (call);                    \
     if (!status.ok()) {                      \
       napi_throw(env, ToError(env, status)); \
       return NULL;                           \
     }                                        \
   }
 
-#define ROCKS_STATUS_RETURN(call)            \
-  {                                          \
-    const auto status = (call);              \
-    if (!status.ok()) {                      \
-      return ToError(env, status);          \
-    }                                        \
+#define ROCKS_STATUS_RETURN(call)  \
+  {                            \
+    auto status = (call);          \
+    if (!status.ok()) {            \
+      return ToError(env, status); \
+    }                              \
   }
 
 static bool IsString(napi_env env, napi_value value) {
@@ -115,20 +115,6 @@ static bool EncodingIsBuffer(napi_env env, napi_value obj, const std::string_vie
   }
 
   return false;
-}
-
-template <typename T>
-static T* ExternalValueProperty(napi_env env, napi_value obj, const std::string_view& key) {
-  if (HasProperty(env, obj, key.data())) {
-    const auto value = GetProperty(env, obj, key.data());
-
-    T* result;
-    if (napi_get_value_external(env, value, reinterpret_cast<void**>(&result)) == napi_ok) {
-      return result;
-    }
-  }
-
-  return nullptr;
 }
 
 static std::optional<uint32_t> Uint32Property(napi_env env, napi_value obj, const std::string_view& key) {
@@ -590,9 +576,17 @@ struct Updates {
   napi_ref ref_ = nullptr;
 };
 
-static rocksdb::ColumnFamilyHandle* GetColumnFamily(Database* database, napi_env env, napi_value options) {
-  auto column_opt = ExternalValueProperty<rocksdb::ColumnFamilyHandle>(env, options, "column");
-  return column_opt ? column_opt : database->db_->DefaultColumnFamily();
+static napi_status GetColumnFamily(Database* database,
+                                   napi_env env,
+                                   napi_value options,
+                                   rocksdb::ColumnFamilyHandle*& column) {
+  if (HasProperty(env, options, "column")) {
+    const auto value = GetProperty(env, options, "column");
+    return napi_get_value_external(env, value, reinterpret_cast<void**>(&column));
+  } else {
+    column = database->db_->DefaultColumnFamily();
+    return napi_ok;
+  }
 }
 
 /**
@@ -797,8 +791,8 @@ NAPI_METHOD(db_open) {
   dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
   dbOptions.avoid_unnecessary_blocking_io = true;
-  dbOptions.use_adaptive_mutex = true; // We don't have soo many threads in the libuv thread pool...
-  dbOptions.enable_pipelined_write = false; // We only write in the main thread...
+  dbOptions.use_adaptive_mutex = true;       // We don't have soo many threads in the libuv thread pool...
+  dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
   dbOptions.max_background_jobs = Uint32Property(env, options, "maxBackgroundJobs")
                                       .value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
   dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
@@ -1117,7 +1111,10 @@ NAPI_METHOD(db_get) {
   const auto options = argv[2];
   const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
-  const auto column = GetColumnFamily(database, env, options);
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+
   const auto callback = argv[3];
 
   auto worker = new GetWorker(env, database, column, callback, key, asBuffer, fillCache);
@@ -1228,14 +1225,17 @@ NAPI_METHOD(db_get_many) {
       napi_value element;
 
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-      keys.push_back(ToString(env, element)); // TODO: Error?
+      keys.push_back(ToString(env, element));  // TODO: Error?
     }
   }
 
   const auto options = argv[2];
   const bool asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const bool fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
-  const auto column = GetColumnFamily(database, env, options);
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+
   const auto callback = argv[3];
 
   auto worker = new GetManyWorker(env, database, column, std::move(keys), callback, asBuffer, fillCache);
@@ -1254,7 +1254,9 @@ NAPI_METHOD(db_del) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
 
   const auto options = argv[2];
-  const auto column = GetColumnFamily(database, env, options);
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
   rocksdb::WriteOptions writeOptions;
   return ToError(env, database->db_->Delete(writeOptions, column, key));
@@ -1269,7 +1271,9 @@ NAPI_METHOD(db_clear) {
   const auto options = argv[1];
   const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
   const auto limit = Int32Property(env, options, "limit").value_or(-1);
-  const auto column = GetColumnFamily(database, env, options);
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
   auto lt = StringProperty(env, options, "lt");
   auto lte = StringProperty(env, options, "lte");
@@ -1358,7 +1362,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], property));
 
   std::string value;
-  database->db_->GetProperty(property, &value); // TODO: What if return false?
+  database->db_->GetProperty(property, &value);  // TODO: What if return false?
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
@@ -1387,7 +1391,8 @@ NAPI_METHOD(iterator_init) {
   const auto gt = StringProperty(env, options, "gt");
   const auto gte = StringProperty(env, options, "gte");
 
-  const auto column = GetColumnFamily(database, env, options);
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
                                                     [=](const auto ptr) { database->db_->ReleaseSnapshot(ptr); });
@@ -1554,6 +1559,10 @@ NAPI_METHOD(batch_do) {
 
   rocksdb::WriteBatch batch;
 
+  NapiSlice type;
+  NapiSlice key;
+  NapiSlice value;
+
   uint32_t length;
   NAPI_STATUS_THROWS(napi_get_array_length(env, operations, &length));
 
@@ -1561,21 +1570,20 @@ NAPI_METHOD(batch_do) {
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, operations, i, &element));
 
-    NapiSlice type;
     NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "type"), type));
 
-    const auto column = GetColumnFamily(database, env, element);
+    rocksdb::ColumnFamilyHandle* column;
+    NAPI_STATUS_THROWS(GetColumnFamily(database, env, element, column));
 
     if (type == "del") {
-      NapiSlice key;
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
       ROCKS_STATUS_RETURN(batch.Delete(column, key));
     } else if (type == "put") {
-      NapiSlice key;
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
-      NapiSlice value;
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "value"), value));
       ROCKS_STATUS_RETURN(batch.Put(column, key, value));
+    } else {
+      // TODO: Error?
     }
   }
 
@@ -1612,7 +1620,9 @@ NAPI_METHOD(batch_put) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[3], val));
 
   const auto options = argv[4];
-  const auto column = GetColumnFamily(database, env, options);
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
   return ToError(env, batch->Put(column, key, val));
 }
@@ -1630,7 +1640,9 @@ NAPI_METHOD(batch_del) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[2], key));
 
   const auto options = argv[3];
-  const auto column = GetColumnFamily(database, env, options);
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
   return ToError(env, batch->Delete(column, key));
 }
