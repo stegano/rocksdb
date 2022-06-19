@@ -1269,14 +1269,14 @@ NAPI_METHOD(db_clear) {
   const auto options = argv[1];
   const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
   const auto limit = Int32Property(env, options, "limit").value_or(-1);
+  const auto column = GetColumnFamily(database, env, options);
 
   auto lt = StringProperty(env, options, "lt");
   auto lte = StringProperty(env, options, "lte");
   auto gt = StringProperty(env, options, "gt");
   auto gte = StringProperty(env, options, "gte");
-  const auto column = GetColumnFamily(database, env, options);
 
-  if (!reverse && limit == -1 && (lt || lte)) {
+  if (limit == -1) {
     rocksdb::PinnableSlice begin;
     if (gte) {
       *begin.GetSelf() = std::move(*gte);
@@ -1291,7 +1291,9 @@ NAPI_METHOD(db_clear) {
     } else if (lt) {
       *end.GetSelf() = std::move(*lt);
     } else {
-      assert(false);
+      // HACK: Assume no key is larger than 8MiB.
+      end.GetSelf()->resize(8e6);
+      memset(end.GetSelf()->data(), 255, end.GetSelf()->size());
     }
     end.PinSelf();
 
@@ -1302,7 +1304,6 @@ NAPI_METHOD(db_clear) {
     rocksdb::WriteOptions writeOptions;
     return ToError(env, database->db_->DeleteRange(writeOptions, column, begin, end));
   } else {
-    // TODO (perf): Use DeleteRange.
     // TODO (fix): Error handling.
 
     std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
