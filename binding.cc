@@ -247,6 +247,7 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
 }
 
 struct NapiSlice : public rocksdb::Slice {
+  std::size_t heap_size_ = 0;
   std::unique_ptr<char[]> heap_;
   std::array<char, 128> stack_;
 };
@@ -258,7 +259,10 @@ napi_status ToNapiSlice(napi_env env, napi_value from, NapiSlice& slice) {
     if (slice.size_ + 1 < slice.stack_.size()) {
       data = slice.stack_.data();
     } else {
-      slice.heap_.reset(new char[slice.size_ + 1]);
+      if (slice.heap_size_ < slice.size_ + 1) {
+        slice.heap_.reset(new char[slice.size_ + 1]);
+        slice.heap_size_ = slice.size_ + 1;
+      }
       data = slice.heap_.get();
     }
     data[slice.size_] = 0;
