@@ -811,27 +811,25 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto location = ToString(env, argv[1]);
-  const auto options = argv[2];
-  const auto callback = argv[3];
 
   rocksdb::Options dbOptions;
 
-  dbOptions.IncreaseParallelism(Uint32Property(env, options, "parallelism")
+  dbOptions.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism")
                                     .value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2)));
 
-  dbOptions.create_if_missing = BooleanProperty(env, options, "createIfMissing").value_or(true);
-  dbOptions.error_if_exists = BooleanProperty(env, options, "errorIfExists").value_or(false);
+  dbOptions.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
+  dbOptions.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
   dbOptions.avoid_unnecessary_blocking_io = true;
   dbOptions.use_adaptive_mutex = true;       // We don't have soo many threads in the libuv thread pool...
   dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
-  dbOptions.max_background_jobs = Uint32Property(env, options, "maxBackgroundJobs")
+  dbOptions.max_background_jobs = Uint32Property(env, argv[2], "maxBackgroundJobs")
                                       .value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
-  dbOptions.WAL_ttl_seconds = Uint32Property(env, options, "walTTL").value_or(0) / 1e3;
-  dbOptions.WAL_size_limit_MB = Uint32Property(env, options, "walSizeLimit").value_or(0) / 1e6;
+  dbOptions.WAL_ttl_seconds = Uint32Property(env, argv[2], "walTTL").value_or(0) / 1e3;
+  dbOptions.WAL_size_limit_MB = Uint32Property(env, argv[2], "walSizeLimit").value_or(0) / 1e6;
   dbOptions.create_missing_column_families = true;
-  dbOptions.unordered_write = BooleanProperty(env, options, "unorderedWrite").value_or(false);
+  dbOptions.unordered_write = BooleanProperty(env, argv[2], "unorderedWrite").value_or(false);
 
-  const auto infoLogLevel = StringProperty(env, options, "infoLogLevel").value_or("");
+  const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
 
@@ -858,15 +856,15 @@ NAPI_METHOD(db_open) {
     dbOptions.info_log.reset(new NullLogger());
   }
 
-  NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
+  NAPI_STATUS_THROWS(InitOptions(env, dbOptions, argv[2]));
 
   std::vector<rocksdb::ColumnFamilyDescriptor> columnsFamilies;
 
   bool hasColumns;
-  NAPI_STATUS_THROWS(napi_has_named_property(env, options, "columns", &hasColumns));
+  NAPI_STATUS_THROWS(napi_has_named_property(env, argv[2], "columns", &hasColumns));
   if (hasColumns) {
     napi_value columns;
-    NAPI_STATUS_THROWS(napi_get_named_property(env, options, "columns", &columns));
+    NAPI_STATUS_THROWS(napi_get_named_property(env, argv[2], "columns", &columns));
 
     napi_value keys;
     NAPI_STATUS_THROWS(napi_get_property_names(env, columns, &keys));
@@ -884,11 +882,13 @@ NAPI_METHOD(db_open) {
       rocksdb::ColumnFamilyOptions columnOptions;
       NAPI_STATUS_THROWS(InitOptions(env, columnOptions, column));
 
-      columnsFamilies.emplace_back(ToString(env, key), columnOptions);
+      const auto name = ToString(env, key); // TODO: Error?
+
+      columnsFamilies.emplace_back(std::move(name), std::move(columnOptions));
     }
   }
 
-  auto worker = new OpenWorker(env, database, callback, location, dbOptions, columnsFamilies);
+  auto worker = new OpenWorker(env, database, argv[3], location, dbOptions, columnsFamilies);
   worker->Queue(env);
 
   return 0;
@@ -1139,16 +1139,13 @@ NAPI_METHOD(db_get) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   const auto key = ToString(env, argv[1]);
-  const auto options = argv[2];
-  const auto asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const auto fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
+  const auto asBuffer = EncodingIsBuffer(env, argv[2], "valueEncoding");
+  const auto fillCache = BooleanProperty(env, argv[2], "fillCache").value_or(true);
 
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], column));
 
-  const auto callback = argv[3];
-
-  auto worker = new GetWorker(env, database, column, callback, key, asBuffer, fillCache);
+  auto worker = new GetWorker(env, database, column, argv[3], key, asBuffer, fillCache);
   worker->Queue(env);
 
   return 0;
@@ -1257,16 +1254,18 @@ NAPI_METHOD(db_get_many) {
       napi_value element;
 
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-      keys.push_back(ToString(env, element));  // TODO: Error?
+
+      const auto key = ToString(env, element);  // TODO: Error?
+
+      keys.push_back(std::move(key));
     }
   }
 
-  const auto options = argv[2];
-  const bool asBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const bool fillCache = BooleanProperty(env, options, "fillCache").value_or(true);
+  const bool asBuffer = EncodingIsBuffer(env, argv[2], "valueEncoding");
+  const bool fillCache = BooleanProperty(env, argv[2], "fillCache").value_or(true);
 
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], column));
 
   auto worker = new GetManyWorker(env, database, column, std::move(keys), argv[3], asBuffer, fillCache);
   worker->Queue(env);
@@ -1439,13 +1438,13 @@ NAPI_METHOD(iterator_seek) {
   NAPI_ARGV(2);
 
   Iterator* iterator;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&iterator));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   NapiSlice target;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], target));
 
   iterator->first_ = true;
-  iterator->Seek(target);
+  iterator->Seek(target); // TODO: Does seek causing blocking IO?
 
   return 0;
 }
@@ -1454,7 +1453,7 @@ NAPI_METHOD(iterator_close) {
   NAPI_ARGV(1);
 
   Iterator* iterator;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&iterator));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   iterator->Detach(env);
   iterator->Close();
@@ -1466,7 +1465,7 @@ NAPI_METHOD(iterator_get_sequence) {
   NAPI_ARGV(1);
 
   Iterator* iterator;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&iterator));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   const auto seq = iterator->snapshot_->GetSequenceNumber();
 
@@ -1559,7 +1558,7 @@ NAPI_METHOD(iterator_nextv) {
   NAPI_ARGV(3);
 
   Iterator* iterator;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&iterator));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &size));
