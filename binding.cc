@@ -574,8 +574,8 @@ struct Iterator final : public BaseIterator {
 };
 
 struct Updates {
-  Updates(Database* database, const bool keyAsBuffer, const bool valueAsBuffer, int64_t seqNumber)
-      : database_(database), keyAsBuffer_(keyAsBuffer), valueAsBuffer_(valueAsBuffer), seqNumber_(seqNumber) {}
+  Updates(Database* database, bool values, bool keyAsBuffer, bool valueAsBuffer, int64_t seqNumber)
+      : database_(database), values_(values), keyAsBuffer_(keyAsBuffer), valueAsBuffer_(valueAsBuffer), seqNumber_(seqNumber) {}
 
   void Close() { iterator_.reset(); }
 
@@ -592,6 +592,7 @@ struct Updates {
   }
 
   Database* database_;
+  const bool values_;
   const bool keyAsBuffer_;
   const bool valueAsBuffer_;
   int64_t seqNumber_;
@@ -993,7 +994,11 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
   void Put(const rocksdb::Slice& key, const rocksdb::Slice& value) override {
     cache_.emplace_back(key.ToString());
-    cache_.emplace_back(value.ToString());
+    if (updates_->values_) {
+      cache_.emplace_back(value.ToString());
+    } else {
+      cache_.emplace_back(std::nullopt);
+    }
   }
 
   void Delete(const rocksdb::Slice& key) override {
@@ -1014,11 +1019,12 @@ NAPI_METHOD(updates_init) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
+  const auto values = BooleanProperty(env, argv[1], "values").value_or(true);
   const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
   const auto seqNumber = Int64Property(env, argv[1], "since").value_or(database->db_->GetLatestSequenceNumber());
 
-  auto updates = std::make_unique<Updates>(database, keyAsBuffer, valueAsBuffer, seqNumber);
+  auto updates = std::make_unique<Updates>(database, values, keyAsBuffer, valueAsBuffer, seqNumber);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
