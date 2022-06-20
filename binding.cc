@@ -947,6 +947,8 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
     updates_->seqNumber_ = batch.sequence;
 
+    cache_.reserve(batch.writeBatchPtr->Count() * 2);
+
     const auto status = batch.writeBatchPtr->Iterate(this);
     if (!status.ok()) {
       return status;
