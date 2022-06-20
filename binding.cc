@@ -1602,7 +1602,7 @@ NAPI_METHOD(batch_do) {
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "value"), value));
       ROCKS_STATUS_RETURN(batch.Put(column, key, value));
     } else {
-      // TODO: Error?
+      return ToError(env, rocksdb::Status::InvalidArgument());
     }
   }
 
