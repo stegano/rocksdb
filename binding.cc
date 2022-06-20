@@ -504,18 +504,19 @@ struct BaseIterator {
 
  private:
   void Init() {
-    rocksdb::ReadOptions options;
+    rocksdb::ReadOptions readOptions;
     if (upper_bound_) {
-      options.iterate_upper_bound = &*upper_bound_;
+      readOptions.iterate_upper_bound = &*upper_bound_;
     }
     if (lower_bound_) {
-      options.iterate_lower_bound = &*lower_bound_;
+      readOptions.iterate_lower_bound = &*lower_bound_;
     }
-    options.fill_cache = fillCache_;
-    options.snapshot = snapshot_.get();
-    options.async_io = true;
+    readOptions.fill_cache = fillCache_;
+    readOptions.snapshot = snapshot_.get();
+    readOptions.async_io = true;
+    readOptions.adaptive_readahead = true;
 
-    iterator_.reset(database_->db_->NewIterator(options, column_));
+    iterator_.reset(database_->db_->NewIterator(readOptions, column_));
   }
 
   std::optional<rocksdb::PinnableSlice> lower_bound_;
@@ -1174,6 +1175,7 @@ struct GetManyWorker final : public Worker {
     readOptions.fill_cache = fillCache_;
     readOptions.snapshot = snapshot_.get();
     readOptions.async_io = true;
+    readOptions.adaptive_readahead = true;
 
     std::vector<rocksdb::Slice> keys;
     keys.reserve(keys_.size());
@@ -1265,9 +1267,7 @@ NAPI_METHOD(db_get_many) {
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
 
-  const auto callback = argv[3];
-
-  auto worker = new GetManyWorker(env, database, column, std::move(keys), callback, asBuffer, fillCache);
+  auto worker = new GetManyWorker(env, database, column, std::move(keys), argv[3], asBuffer, fillCache);
   worker->Queue(env);
 
   return 0;
@@ -1343,9 +1343,6 @@ NAPI_METHOD(db_clear) {
 
     it.SeekToRange();
 
-    // TODO: add option
-    const uint32_t hwm = 16 * 1024;
-
     rocksdb::WriteBatch batch;
     rocksdb::WriteOptions writeOptions;
     rocksdb::Status status;
@@ -1353,7 +1350,7 @@ NAPI_METHOD(db_clear) {
     while (true) {
       size_t bytesRead = 0;
 
-      while (bytesRead <= hwm && it.Valid() && it.Increment()) {
+      while (bytesRead <= 16 * 1024 && it.Valid() && it.Increment()) {
         const auto key = it.CurrentKey();
         batch.Delete(column, key);
         bytesRead += key.size();
