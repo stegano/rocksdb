@@ -33,7 +33,7 @@ struct Iterator;
 struct Updates;
 
 #define NAPI_STATUS_RETURN(call) \
-  {                          \
+  {                              \
     auto status = (call);        \
     if (status != napi_ok) {     \
       return status;             \
@@ -41,7 +41,7 @@ struct Updates;
   }
 
 #define ROCKS_STATUS_THROWS(call)            \
-  {                                      \
+  {                                          \
     auto status = (call);                    \
     if (!status.ok()) {                      \
       napi_throw(env, ToError(env, status)); \
@@ -50,7 +50,7 @@ struct Updates;
   }
 
 #define ROCKS_STATUS_RETURN(call)  \
-  {                            \
+  {                                \
     auto status = (call);          \
     if (!status.ok()) {            \
       return ToError(env, status); \
@@ -464,22 +464,39 @@ struct BaseIterator {
     iterator_.reset();
   }
 
-  bool Valid() const { return iterator_->Valid(); }
+  bool Valid() const {
+    assert(iterator_);
+    return iterator_->Valid();
+  }
 
-  bool Increment() { return limit_ < 0 || ++count_ <= limit_; }
+  bool Increment() {
+    assert(iterator_);
+    return limit_ < 0 || ++count_ <= limit_;
+  }
 
   void Next() {
+    assert(iterator_);
+
     if (reverse_)
       iterator_->Prev();
     else
       iterator_->Next();
   }
 
-  rocksdb::Slice CurrentKey() const { return iterator_->key(); }
+  rocksdb::Slice CurrentKey() const {
+    assert(iterator_);
+    return iterator_->key();
+  }
 
-  rocksdb::Slice CurrentValue() const { return iterator_->value(); }
+  rocksdb::Slice CurrentValue() const {
+    assert(iterator_);
+    return iterator_->value();
+  }
 
-  rocksdb::Status Status() const { return iterator_->status(); }
+  rocksdb::Status Status() const {
+    assert(iterator_);
+    return iterator_->status();
+  }
 
   Database* database_;
   rocksdb::ColumnFamilyHandle* column_;
@@ -837,9 +854,11 @@ NAPI_METHOD(db_open) {
 
   NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
 
-  std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
+  std::vector<rocksdb::ColumnFamilyDescriptor> columnsFamilies;
 
-  if (HasProperty(env, options, "columns")) {
+  bool hasColumns;
+  NAPI_STATUS_THROWS(napi_has_named_property(env, options, "columns", &hasColumns));
+  if (hasColumns) {
     napi_value columns;
     NAPI_STATUS_THROWS(napi_get_named_property(env, options, "columns", &columns));
 
@@ -859,11 +878,11 @@ NAPI_METHOD(db_open) {
       rocksdb::ColumnFamilyOptions columnOptions;
       NAPI_STATUS_THROWS(InitOptions(env, columnOptions, column));
 
-      column_families.emplace_back(ToString(env, key), columnOptions);
+      columnsFamilies.emplace_back(ToString(env, key), columnOptions);
     }
   }
 
-  auto worker = new OpenWorker(env, database, callback, location, dbOptions, column_families);
+  auto worker = new OpenWorker(env, database, callback, location, dbOptions, columnsFamilies);
   worker->Queue(env);
 
   return 0;
@@ -892,9 +911,7 @@ NAPI_METHOD(db_close) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto callback = argv[1];
-
-  auto worker = new CloseWorker(env, database, callback);
+  auto worker = new CloseWorker(env, database, argv[1]);
 
   if (!database->HasPriorityWork()) {
     worker->Queue(env);
@@ -997,11 +1014,9 @@ NAPI_METHOD(updates_init) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto options = argv[1];
-
-  const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
-  const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const auto seqNumber = Int64Property(env, options, "since").value_or(database->db_->GetLatestSequenceNumber());
+  const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
+  const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
+  const auto seqNumber = Int64Property(env, argv[1], "since").value_or(database->db_->GetLatestSequenceNumber());
 
   auto updates = std::make_unique<Updates>(database, keyAsBuffer, valueAsBuffer, seqNumber);
 
@@ -1021,9 +1036,7 @@ NAPI_METHOD(updates_next) {
   Updates* updates;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&updates));
 
-  const auto callback = argv[1];
-
-  auto worker = new UpdatesNextWorker(env, updates, callback);
+  auto worker = new UpdatesNextWorker(env, updates, argv[1]);
   worker->Queue(env);
 
   return 0;
@@ -1261,10 +1274,8 @@ NAPI_METHOD(db_del) {
   NapiSlice key;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], key));
 
-  const auto options = argv[2];
-
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], column));
 
   rocksdb::WriteOptions writeOptions;
   return ToError(env, database->db_->Delete(writeOptions, column, key));
@@ -1276,17 +1287,16 @@ NAPI_METHOD(db_clear) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto options = argv[1];
-  const auto reverse = BooleanProperty(env, options, "reverse").value_or(false);
-  const auto limit = Int32Property(env, options, "limit").value_or(-1);
+  const auto reverse = BooleanProperty(env, argv[1], "reverse").value_or(false);
+  const auto limit = Int32Property(env, argv[1], "limit").value_or(-1);
 
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], column));
 
-  auto lt = StringProperty(env, options, "lt");
-  auto lte = StringProperty(env, options, "lte");
-  auto gt = StringProperty(env, options, "gt");
-  auto gte = StringProperty(env, options, "gte");
+  auto lt = StringProperty(env, argv[1], "lt");
+  auto lte = StringProperty(env, argv[1], "lte");
+  auto gt = StringProperty(env, argv[1], "gt");
+  auto gte = StringProperty(env, argv[1], "gte");
 
   if (limit == -1) {
     rocksdb::PinnableSlice begin;
@@ -1317,6 +1327,7 @@ NAPI_METHOD(db_clear) {
     return ToError(env, database->db_->DeleteRange(writeOptions, column, begin, end));
   } else {
     // TODO (fix): Error handling.
+    // TODO (fix): This should be async...
 
     std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
                                                       [=](const auto ptr) { database->db_->ReleaseSnapshot(ptr); });
@@ -1370,7 +1381,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], property));
 
   std::string value;
-  database->db_->GetProperty(property, &value);  // TODO: What if return false?
+  database->db_->GetProperty(property, &value);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
@@ -1549,9 +1560,7 @@ NAPI_METHOD(iterator_nextv) {
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &size));
 
-  const auto callback = argv[2];
-
-  auto worker = new NextWorker(env, iterator, size, callback);
+  auto worker = new NextWorker(env, iterator, size, argv[2]);
   worker->Queue(env);
 
   return 0;
@@ -1627,10 +1636,8 @@ NAPI_METHOD(batch_put) {
   NapiSlice val;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[3], val));
 
-  const auto options = argv[4];
-
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[4], column));
 
   ROCKS_STATUS_THROWS(batch->Put(column, key, val));
 
@@ -1649,10 +1656,8 @@ NAPI_METHOD(batch_del) {
   NapiSlice key;
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[2], key));
 
-  const auto options = argv[3];
-
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[3], column));
 
   ROCKS_STATUS_THROWS(batch->Delete(column, key));
 
