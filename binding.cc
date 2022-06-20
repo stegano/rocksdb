@@ -576,7 +576,11 @@ struct Iterator final : public BaseIterator {
 
 struct Updates {
   Updates(Database* database, bool values, bool keyAsBuffer, bool valueAsBuffer, int64_t seqNumber)
-      : database_(database), values_(values), keyAsBuffer_(keyAsBuffer), valueAsBuffer_(valueAsBuffer), seqNumber_(seqNumber) {}
+      : database_(database),
+        values_(values),
+        keyAsBuffer_(keyAsBuffer),
+        valueAsBuffer_(valueAsBuffer),
+        seqNumber_(seqNumber) {}
 
   void Close() { iterator_.reset(); }
 
@@ -938,6 +942,8 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       if (!status.ok()) {
         return status;
       }
+    } else {
+      updates_->iterator_->Next();
     }
 
     if (!updates_->iterator_->Valid()) {
@@ -950,42 +956,37 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
     cache_.reserve(batch.writeBatchPtr->Count() * 2);
 
-    const auto status = batch.writeBatchPtr->Iterate(this);
-    if (!status.ok()) {
-      return status;
-    }
-
-    updates_->iterator_->Next();
-
-    return rocksdb::Status::OK();
+    return batch.writeBatchPtr->Iterate(this);
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
     const auto size = cache_.size();
     napi_value result;
 
-    if (cache_.size()) {
-      NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
 
-      for (size_t idx = 0; idx < cache_.size(); idx += 2) {
-        napi_value key;
-        napi_value val;
+    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
+      napi_value key;
+      napi_value val;
 
-        NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
-        NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->valueAsBuffer_, val));
 
-        NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
-        NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
-      }
-
-      cache_.clear();
-    } else {
-      NAPI_STATUS_RETURN(napi_get_null(env, &result));
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
+      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
     }
+
+    cache_.clear();
 
     napi_value argv[3];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-    argv[1] = result;
+
+    if (updates_->iterator_->Valid()) {
+      argv[1] = result;
+    } else {
+      NAPI_STATUS_RETURN(napi_get_null(env, &argv[1]));
+    }
+
     NAPI_STATUS_RETURN(napi_create_bigint_int64(env, updates_->seqNumber_, &argv[2]));
     return CallFunction(env, callback, 3, argv);
   }
