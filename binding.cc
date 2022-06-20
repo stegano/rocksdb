@@ -233,34 +233,39 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
 }
 
 struct NapiSlice : public rocksdb::Slice {
+  ~NapiSlice() {
+    if (heap_) {
+      free(heap_);
+    }
+  }
   std::size_t heap_size_ = 0;
-  std::unique_ptr<char[]> heap_;
+  char* heap_ = nullptr;
   std::array<char, 128> stack_;
 };
 
-napi_status ToNapiSlice(napi_env env, napi_value from, NapiSlice& slice) {
-  slice.data_ = nullptr;
-  slice.size_ = 0;
+napi_status ToNapiSlice(napi_env env, napi_value from, NapiSlice& to) {
+  to.data_ = nullptr;
+  to.size_ = 0;
 
   if (IsString(env, from)) {
-    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &slice.size_));
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &to.size_));
     char* data;
-    if (slice.size_ + 1 < slice.stack_.size()) {
-      data = slice.stack_.data();
+    if (to.size_ + 1 < to.stack_.size()) {
+      data = to.stack_.data();
     } else {
-      if (slice.heap_size_ < slice.size_ + 1) {
-        slice.heap_.reset(new char[slice.size_ + 1]);
-        slice.heap_size_ = slice.size_ + 1;
+      if (to.heap_size_ < to.size_ + 1) {
+        to.heap_ = reinterpret_cast<char*>(realloc(to.heap_, to.size_ + 1));
+        to.heap_size_ = to.size_ + 1;
       }
-      data = slice.heap_.get();
+      data = to.heap_;
     }
-    data[slice.size_] = 0;
-    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, data, slice.size_ + 1, &slice.size_));
-    slice.data_ = data;
+    data[to.size_] = 0;
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, data, to.size_ + 1, &to.size_));
+    to.data_ = data;
   } else if (IsBuffer(env, from)) {
     void* data;
-    NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, &data, &slice.size_));
-    slice.data_ = static_cast<char*>(data);
+    NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, &data, &to.size_));
+    to.data_ = static_cast<char*>(data);
   }
   return napi_ok;
 }
