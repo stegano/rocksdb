@@ -1322,8 +1322,8 @@ NAPI_METHOD(db_clear) {
     } else if (lt) {
       *end.GetSelf() = std::move(*lt);
     } else {
-      // HACK: Assume no key is larger than 8MiB.
-      end.GetSelf()->resize(8e6);
+      // HACK: Assume no key that starts with 0xFF is larger than 1MiB.
+      end.GetSelf()->resize(1e6);
       memset(end.GetSelf()->data(), 255, end.GetSelf()->size());
     }
     end.PinSelf();
