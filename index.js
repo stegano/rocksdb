@@ -121,17 +121,14 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  async query (options) {
+  async * query (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
       })
     }
 
-    const context = binding.iterator_init(this[kContext], {
-      highWaterMarkBytes: 1024 * 1024 * 1024, // TODO (fix): Replace with -1.
-      ...options
-    })
+    const context = binding.iterator_init(this[kContext], options)
     const resource = {
       callback: null,
       close (callback) {
@@ -141,14 +138,31 @@ class RocksLevel extends AbstractLevel {
 
     try {
       this.attachResource(resource)
-      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit || 1000, (err, rows, finished) => {
-        if (err) {
-          reject(err)
-        } else {
-          const sequence = binding.iterator_get_sequence(context)
-          resolve({ rows, sequence, finished })
-        }
-      }))
+
+      let _rows = null
+      let _finished = false
+      while (!_finished) {
+        await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit ?? 1000, (err, rows, finished) => {
+          if (err) {
+            reject(err)
+          } else {
+            if (_rows) {
+              _rows.push(...rows)
+            } else {
+              _rows = rows
+            }
+
+            _finished = finished
+
+            resolve()
+          }
+        }))
+      }
+
+      return {
+        rows: _rows ?? [],
+        sequence: binding.iterator_get_sequence(context)
+      }
     } finally {
       this.detachResource(resource)
       binding.iterator_close(context)

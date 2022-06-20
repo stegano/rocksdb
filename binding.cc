@@ -542,7 +542,7 @@ struct Iterator final : public BaseIterator {
            const bool fillCache,
            const bool keyAsBuffer,
            const bool valueAsBuffer,
-           const int32_t highWaterMarkBytes,
+           const size_t highWaterMarkBytes,
            std::shared_ptr<const rocksdb::Snapshot> snapshot)
       : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot),
         keys_(keys),
@@ -567,7 +567,7 @@ struct Iterator final : public BaseIterator {
   const bool values_;
   const bool keyAsBuffer_;
   const bool valueAsBuffer_;
-  const int32_t highWaterMarkBytes_;
+  const size_t highWaterMarkBytes_;
   bool first_ = true;
 
  private:
@@ -1409,7 +1409,7 @@ NAPI_METHOD(iterator_init) {
   const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
   const auto limit = Int32Property(env, options, "limit").value_or(-1);
-  const auto highWaterMarkBytes = Int32Property(env, options, "highWaterMarkBytes").value_or(16 * 1024);
+  const auto highWaterMarkBytes = Uint32Property(env, options, "highWaterMarkBytes").value_or(64 * 1024);
 
   const auto lt = StringProperty(env, options, "lt");
   const auto lte = StringProperty(env, options, "lte");
@@ -1515,8 +1515,7 @@ struct NextWorker final : public Worker {
         cache_.push_back(v.ToString());
       }
 
-      if ((iterator_->highWaterMarkBytes_ != -1 && bytesRead > static_cast<size_t>(iterator_->highWaterMarkBytes_)) ||
-          cache_.size() / 2 >= size_) {
+      if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
         finished_ = false;
         return rocksdb::Status::OK();
       }
@@ -1528,11 +1527,10 @@ struct NextWorker final : public Worker {
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
-    const auto size = cache_.size();
     napi_value result;
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &result));
 
-    for (size_t n = 0; n < size; n += 2) {
+    for (size_t n = 0; n < cache_.size(); n += 2) {
       napi_value key;
       napi_value val;
 
@@ -1578,8 +1576,6 @@ NAPI_METHOD(batch_do) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto operations = argv[1];
-
   rocksdb::WriteBatch batch;
 
   NapiSlice type;
@@ -1587,11 +1583,11 @@ NAPI_METHOD(batch_do) {
   NapiSlice value;
 
   uint32_t length;
-  NAPI_STATUS_THROWS(napi_get_array_length(env, operations, &length));
+  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
 
   for (uint32_t i = 0; i < length; i++) {
     napi_value element;
-    NAPI_STATUS_THROWS(napi_get_element(env, operations, i, &element));
+    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
 
     NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "type"), type));
 
