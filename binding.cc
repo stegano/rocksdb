@@ -940,7 +940,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     }
 
     if (!updates_->iterator_->Valid()) {
-      return rocksdb::Status::OK();
+      return updates_->iterator_->status();
     }
 
     auto batch = updates_->iterator_->GetBatch();
