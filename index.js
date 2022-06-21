@@ -6,7 +6,6 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
-const assert = require('assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
