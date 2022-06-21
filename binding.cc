@@ -270,9 +270,10 @@ struct Worker {
   virtual rocksdb::Status Execute(Database& database) = 0;
 
   virtual napi_status OnOk(napi_env env, napi_value callback) {
-    napi_value argv;
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv));
-    return CallFunction(env, callback, 1, &argv);
+    napi_value argv[1];
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+    return CallFunction(env, callback, 1, &argv[0]);
   }
 
   virtual napi_status OnError(napi_env env, napi_value callback, napi_value err) {
@@ -654,19 +655,18 @@ struct OpenWorker final : public Worker {
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
+    napi_value argv[2];
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
     const auto size = database_->columns_.size();
-    napi_value result;
-    NAPI_STATUS_RETURN(napi_create_object(env, &result));
+    NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
 
     for (size_t n = 0; n < size; ++n) {
       napi_value column;
       NAPI_STATUS_RETURN(napi_create_external(env, database_->columns_[n], nullptr, nullptr, &column));
-      NAPI_STATUS_RETURN(napi_set_named_property(env, result, column_families_[n].name.c_str(), column));
+      NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], column_families_[n].name.c_str(), column));
     }
 
-    napi_value argv[2];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-    argv[1] = result;
     return CallFunction(env, callback, 2, argv);
   }
 
@@ -818,6 +818,7 @@ NAPI_METHOD(db_open) {
 
   bool hasColumns;
   NAPI_STATUS_THROWS(napi_has_named_property(env, argv[2], "columns", &hasColumns));
+
   if (hasColumns) {
     napi_value columns;
     NAPI_STATUS_THROWS(napi_get_named_property(env, argv[2], "columns", &columns));
@@ -1063,7 +1064,9 @@ struct GetWorker final : public Worker {
   napi_status OnOk(napi_env env, napi_value callback) override {
     napi_value argv[2];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
     NAPI_STATUS_RETURN(Convert(env, &value_, asBuffer_, argv[1]));
+
     return CallFunction(env, callback, 2, argv);
   }
 
@@ -1152,10 +1155,12 @@ struct GetManyWorker final : public Worker {
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
+    napi_value argv[2];
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
     const auto size = values_.size();
 
-    napi_value array;
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &array));
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &argv[1]));
 
     for (size_t idx = 0; idx < size; idx++) {
       napi_value element;
@@ -1164,12 +1169,9 @@ struct GetManyWorker final : public Worker {
       } else {
         NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
       }
-      NAPI_STATUS_RETURN(napi_set_element(env, array, static_cast<uint32_t>(idx), element));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
     }
 
-    napi_value argv[2];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-    argv[1] = array;
     return CallFunction(env, callback, 2, argv);
   }
 
@@ -1478,8 +1480,10 @@ struct NextWorker final : public Worker {
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value result;
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &result));
+    napi_value argv[3];
+    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
 
     for (size_t n = 0; n < cache_.size(); n += 2) {
       napi_value key;
@@ -1488,14 +1492,12 @@ struct NextWorker final : public Worker {
       NAPI_STATUS_RETURN(Convert(env, cache_[n + 0], iterator_->keyAsBuffer_, key));
       NAPI_STATUS_RETURN(Convert(env, cache_[n + 1], iterator_->valueAsBuffer_, val));
 
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 0), key));
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(n + 1), val));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 0), key));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 1), val));
     }
 
-    napi_value argv[3];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-    argv[1] = result;
     NAPI_STATUS_RETURN(napi_get_boolean(env, finished_, &argv[2]));
+
     return CallFunction(env, callback, 3, argv);
   }
 
