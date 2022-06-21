@@ -6,6 +6,7 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
+const assert = require('assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -141,7 +142,7 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  async * query (options) {
+  async query (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -159,30 +160,18 @@ class RocksLevel extends AbstractLevel {
     try {
       this.attachResource(resource)
 
-      let _rows = null
-      let _finished = false
-      while (!_finished) {
-        await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit ?? 1000, (err, rows, finished) => {
-          if (err) {
-            reject(err)
-          } else {
-            if (_rows) {
-              _rows.push(...rows)
-            } else {
-              _rows = rows
-            }
-
-            _finished = finished
-
-            resolve()
-          }
-        }))
-      }
-
-      return {
-        rows: _rows ?? [],
-        sequence: binding.iterator_get_sequence(context)
-      }
+      const limit = options.limit ?? 1000
+      await new Promise((resolve, reject) => binding.iterator_nextv(context, limit, (err, rows, finished) => {
+        if (err) {
+          reject(err)
+        } else {
+          resolve({
+            rows,
+            sequence: binding.iterator_get_sequence(context),
+            finished
+          })
+        }
+      }))
     } finally {
       this.detachResource(resource)
       binding.iterator_close(context)
