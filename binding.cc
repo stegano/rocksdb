@@ -34,27 +34,19 @@ struct Updates;
 
 #define NAPI_STATUS_RETURN(call) \
   {                              \
-    auto status = (call);        \
-    if (status != napi_ok) {     \
-      return status;             \
+    auto _status = (call);       \
+    if (_status != napi_ok) {    \
+      return _status;            \
     }                            \
   }
 
-#define ROCKS_STATUS_THROWS(call)            \
-  {                                          \
-    auto status = (call);                    \
-    if (!status.ok()) {                      \
-      napi_throw(env, ToError(env, status)); \
-      return NULL;                           \
-    }                                        \
-  }
-
-#define ROCKS_STATUS_RETURN(call)  \
-  {                                \
-    auto status = (call);          \
-    if (!status.ok()) {            \
-      return ToError(env, status); \
-    }                              \
+#define ROCKS_STATUS_THROWS(call)             \
+  {                                           \
+    auto _status = (call);                    \
+    if (!_status.ok()) {                      \
+      napi_throw(env, ToError(env, _status)); \
+      return NULL;                            \
+    }                                         \
   }
 
 static bool IsString(napi_env env, napi_value value) {
@@ -882,7 +874,7 @@ NAPI_METHOD(db_open) {
       rocksdb::ColumnFamilyOptions columnOptions;
       NAPI_STATUS_THROWS(InitOptions(env, columnOptions, column));
 
-      const auto name = ToString(env, key); // TODO: Error?
+      const auto name = ToString(env, key);  // TODO: Error?
 
       columnsFamilies.emplace_back(std::move(name), std::move(columnOptions));
     }
@@ -1077,7 +1069,9 @@ NAPI_METHOD(db_put) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[2], val));
 
   rocksdb::WriteOptions writeOptions;
-  return ToError(env, database->db_->Put(writeOptions, key, val));
+  ROCKS_STATUS_THROWS(database->db_->Put(writeOptions, key, val));
+
+  return 0;
 }
 
 struct GetWorker final : public Worker {
@@ -1286,7 +1280,9 @@ NAPI_METHOD(db_del) {
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], column));
 
   rocksdb::WriteOptions writeOptions;
-  return ToError(env, database->db_->Delete(writeOptions, column, key));
+  ROCKS_STATUS_THROWS(database->db_->Delete(writeOptions, column, key));
+
+  return 0;
 }
 
 NAPI_METHOD(db_clear) {
@@ -1327,12 +1323,12 @@ NAPI_METHOD(db_clear) {
     }
     end.PinSelf();
 
-    if (begin.compare(end) > 0) {
-      return ToError(env, rocksdb::Status::OK());
+    if (begin.compare(end) < 0) {
+      rocksdb::WriteOptions writeOptions;
+      ROCKS_STATUS_THROWS(database->db_->DeleteRange(writeOptions, column, begin, end));
     }
 
-    rocksdb::WriteOptions writeOptions;
-    return ToError(env, database->db_->DeleteRange(writeOptions, column, begin, end));
+    return 0;
   } else {
     // TODO (fix): Error handling.
     // TODO (fix): This should be async...
@@ -1372,7 +1368,11 @@ NAPI_METHOD(db_clear) {
 
     it.Close();
 
-    return ToError(env, status);
+    if (!status.ok()) {
+      ROCKS_STATUS_THROWS(status);
+    }
+
+    return 0;
   }
 }
 
@@ -1444,7 +1444,7 @@ NAPI_METHOD(iterator_seek) {
   NAPI_STATUS_THROWS(ToNapiSlice(env, argv[1], target));
 
   iterator->first_ = true;
-  iterator->Seek(target); // TODO: Does seek causing blocking IO?
+  iterator->Seek(target);  // TODO: Does seek causing blocking IO?
 
   return 0;
 }
@@ -1595,18 +1595,20 @@ NAPI_METHOD(batch_do) {
 
     if (type == "del") {
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
-      ROCKS_STATUS_RETURN(batch.Delete(column, key));
+      ROCKS_STATUS_THROWS(batch.Delete(column, key));
     } else if (type == "put") {
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "key"), key));
       NAPI_STATUS_THROWS(ToNapiSlice(env, GetProperty(env, element, "value"), value));
-      ROCKS_STATUS_RETURN(batch.Put(column, key, value));
+      ROCKS_STATUS_THROWS(batch.Put(column, key, value));
     } else {
-      return ToError(env, rocksdb::Status::InvalidArgument());
+      ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument());
     }
   }
 
   rocksdb::WriteOptions writeOptions;
-  return ToError(env, database->db_->Write(writeOptions, &batch));
+  ROCKS_STATUS_THROWS(database->db_->Write(writeOptions, &batch));
+
+  return 0;
 }
 
 NAPI_METHOD(batch_init) {
@@ -1619,6 +1621,7 @@ NAPI_METHOD(batch_init) {
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, batch, Finalize<rocksdb::WriteBatch>, batch, &result));
+
   return result;
 }
 
@@ -1686,7 +1689,9 @@ NAPI_METHOD(batch_write) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
   rocksdb::WriteOptions writeOptions;
-  return ToError(env, database->db_->Write(writeOptions, batch));
+  ROCKS_STATUS_THROWS(database->db_->Write(writeOptions, batch));
+
+  return 0;
 }
 
 NAPI_INIT() {

@@ -75,7 +75,12 @@ class RocksLevel extends AbstractLevel {
   }
 
   _put (key, value, options, callback) {
-    process.nextTick(callback, binding.db_put(this[kContext], key, value, options))
+    try {
+      binding.db_put(this[kContext], key, value, options)
+      process.nextTick(callback, null)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _get (key, options, callback) {
@@ -87,11 +92,21 @@ class RocksLevel extends AbstractLevel {
   }
 
   _del (key, options, callback) {
-    process.nextTick(callback, binding.db_del(this[kContext], key, options))
+    try {
+      binding.db_del(this[kContext], key, options)
+      process.nextTick(callback, null)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _clear (options, callback) {
-    process.nextTick(callback, binding.db_clear(this[kContext], options))
+    try {
+      binding.db_clear(this[kContext], options)
+      process.nextTick(callback, null)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _chainedBatch () {
@@ -99,7 +114,12 @@ class RocksLevel extends AbstractLevel {
   }
 
   _batch (operations, options, callback) {
-    process.nextTick(callback, binding.batch_do(this[kContext], operations, options))
+    try {
+      binding.batch_do(this[kContext], operations, options)
+      process.nextTick(callback, null)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _iterator (options) {
