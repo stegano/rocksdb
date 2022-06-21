@@ -917,34 +917,27 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
-    const auto size = cache_.size();
-    napi_value result;
-
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &result));
-
-    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
-      napi_value key;
-      napi_value val;
-
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->valueAsBuffer_, val));
-
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 0), key));
-      NAPI_STATUS_RETURN(napi_set_element(env, result, static_cast<int>(idx + 1), val));
-    }
-
-    cache_.clear();
-
     napi_value argv[3];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
-    if (updates_->iterator_->Valid()) {
-      argv[1] = result;
-    } else {
-      NAPI_STATUS_RETURN(napi_get_null(env, &argv[1]));
+    if (cache_.empty()) {
+      return CallFunction(env, callback, 1, argv);
+    }
+
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
+
+    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
+      napi_value key;
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 0), key));
+
+      napi_value val;
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 1), val));
     }
 
     NAPI_STATUS_RETURN(napi_create_bigint_int64(env, updates_->seqNumber_, &argv[2]));
+
     return CallFunction(env, callback, 3, argv);
   }
 
@@ -1561,7 +1554,7 @@ NAPI_METHOD(batch_do) {
       napi_value keyProperty;
       NAPI_STATUS_THROWS(napi_get_named_property(env, element, "key", &keyProperty));
       NAPI_STATUS_THROWS(ToString(env, keyProperty, key));
-      
+
       ROCKS_STATUS_THROWS(batch.Delete(column, key));
     } else if (type == "put") {
       napi_value keyProperty;
