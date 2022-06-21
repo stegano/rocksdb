@@ -828,6 +828,7 @@ NAPI_METHOD(db_open) {
     uint32_t len;
     NAPI_STATUS_THROWS(napi_get_array_length(env, keys, &len));
 
+    columnsFamilies.resize(len);
     for (uint32_t n = 0; n < len; ++n) {
       napi_value key;
       NAPI_STATUS_THROWS(napi_get_element(env, keys, n, &key));
@@ -835,13 +836,9 @@ NAPI_METHOD(db_open) {
       napi_value column;
       NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
-      rocksdb::ColumnFamilyOptions columnOptions;
-      NAPI_STATUS_THROWS(InitOptions(env, columnOptions, column));
+      NAPI_STATUS_THROWS(InitOptions(env, columnsFamilies[n].options, column));
 
-      std::string name;
-      NAPI_STATUS_THROWS(ToString(env, key, name));
-
-      columnsFamilies.emplace_back(std::move(name), std::move(columnOptions));
+      NAPI_STATUS_THROWS(ToString(env, key, columnsFamilies[n].name));
     }
   }
 
