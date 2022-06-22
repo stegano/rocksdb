@@ -1112,12 +1112,14 @@ struct GetManyWorker final : public Worker {
                 std::vector<std::string> keys,
                 napi_value callback,
                 const bool valueAsBuffer,
-                const bool fillCache)
+                const bool fillCache,
+                const bool ignoreRangeDeletions)
       : Worker(env, database, callback, "leveldown.get.many"),
         column_(column),
         keys_(std::move(keys)),
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
+        ignoreRangeDeletions_(ignoreRangeDeletions),
         snapshot_(database_->db_->GetSnapshot(), [=](const auto ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
     database_->IncrementPriorityWork(env);
   }
@@ -1128,6 +1130,7 @@ struct GetManyWorker final : public Worker {
     readOptions.snapshot = snapshot_.get();
     readOptions.async_io = true;
     readOptions.adaptive_readahead = true;
+    readOptions.ignore_range_deletions = ignoreRangeDeletions_;
 
     std::vector<rocksdb::Slice> keys;
     keys.reserve(keys_.size());
@@ -1182,6 +1185,7 @@ struct GetManyWorker final : public Worker {
   std::vector<rocksdb::Status> statuses_;
   const bool valueAsBuffer_;
   const bool fillCache_;
+  const bool ignoreRangeDeletions_;
   std::shared_ptr<const rocksdb::Snapshot> snapshot_;
 };
 
@@ -1206,11 +1210,13 @@ NAPI_METHOD(db_get_many) {
 
   const bool asBuffer = EncodingIsBuffer(env, argv[2], "valueEncoding");
   const bool fillCache = BooleanProperty(env, argv[2], "fillCache").value_or(true);
+  const bool ignoreRangeDeletions = BooleanProperty(env, argv[2], "ignoreRangeDeletions").value_or(false);
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], &column));
 
-  auto worker = new GetManyWorker(env, database, column, std::move(keys), argv[3], asBuffer, fillCache);
+  auto worker =
+      new GetManyWorker(env, database, column, std::move(keys), argv[3], asBuffer, fillCache, ignoreRangeDeletions);
   worker->Queue(env);
 
   return 0;
