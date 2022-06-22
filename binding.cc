@@ -1129,7 +1129,6 @@ struct GetManyWorker final : public Worker {
     readOptions.fill_cache = fillCache_;
     readOptions.snapshot = snapshot_.get();
     readOptions.async_io = true;
-    readOptions.adaptive_readahead = true;
     readOptions.ignore_range_deletions = ignoreRangeDeletions_;
 
     std::vector<rocksdb::Slice> keys;
