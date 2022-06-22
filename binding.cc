@@ -1120,14 +1120,18 @@ struct GetManyWorker final : public Worker {
         valueAsBuffer_(valueAsBuffer),
         fillCache_(fillCache),
         ignoreRangeDeletions_(ignoreRangeDeletions),
-        snapshot_(database_->db_->GetSnapshot(), [=](const auto ptr) { database_->db_->ReleaseSnapshot(ptr); }) {
+        snapshot_(database_->db_->GetSnapshot()) {
     database_->IncrementPriorityWork(env);
+  }
+
+  ~GetManyWorker () {
+    database_->db_->ReleaseSnapshot(snapshot_);
   }
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions readOptions;
     readOptions.fill_cache = fillCache_;
-    readOptions.snapshot = snapshot_.get();
+    readOptions.snapshot = snapshot_;
     readOptions.async_io = true;
     readOptions.ignore_range_deletions = ignoreRangeDeletions_;
 
@@ -1185,7 +1189,7 @@ struct GetManyWorker final : public Worker {
   const bool valueAsBuffer_;
   const bool fillCache_;
   const bool ignoreRangeDeletions_;
-  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
+  const rocksdb::Snapshot* snapshot_;
 };
 
 NAPI_METHOD(db_get_many) {
