@@ -814,6 +814,8 @@ NAPI_METHOD(db_open) {
                                   ? rocksdb::CompressionType::kZSTD
                                   : rocksdb::CompressionType::kNoCompression;
 
+  // TODO (feat): dbOptions.listeners
+
   const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
