@@ -14,6 +14,7 @@
 #include <rocksdb/slice_transform.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
+#include <rocksdb/filter_policy.h>
 
 #include <array>
 #include <memory>
@@ -770,6 +771,13 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
     // TODO?
   } else {
     tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
+  }
+
+  const auto filterPolicyOpt = StringProperty(env, options, "filterPolicy");
+  if (filterPolicyOpt) {
+    rocksdb::ConfigOptions configOptions;
+    ROCKS_STATUS_RETURN(
+        rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
   }
 
   tableOptions.block_size = Uint32Property(env, options, "blockSize").value_or(4096);
