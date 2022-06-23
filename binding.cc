@@ -11,9 +11,9 @@
 #include <rocksdb/env.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
+#include <rocksdb/slice_transform.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
-#include <rocksdb/slice_transform.h>
 
 #include <array>
 #include <memory>
@@ -43,11 +43,11 @@ struct Updates;
   }
 
 #define ROCKS_STATUS_RETURN(call) \
-  {                              \
-    auto _status = (call);       \
-    if (!_status.ok()) {    \
-      return _status;            \
-    }                            \
+  {                               \
+    auto _status = (call);        \
+    if (!_status.ok()) {          \
+      return _status;             \
+    }                             \
   }
 
 #define ROCKS_STATUS_THROWS(call)             \
@@ -743,7 +743,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
     ROCKS_STATUS_RETURN(
         rocksdb::Comparator::CreateFromString(configOptions, *comparatorOpt, &columnOptions.comparator));
   }
-  
+
   const auto cacheSize = Uint32Property(env, options, "cacheSize").value_or(8 << 20);
 
   rocksdb::BlockBasedTableOptions tableOptions;
@@ -809,7 +809,9 @@ NAPI_METHOD(db_open) {
   dbOptions.create_missing_column_families = true;
   dbOptions.unordered_write = BooleanProperty(env, argv[2], "unorderedWrite").value_or(false);
   dbOptions.fail_if_options_file_error = true;
-  // TODO (perf): dbOptions.wal_compression = rocksdb::CompressionType::kZSTD;
+  dbOptions.wal_compression = BooleanProperty(env, argv[2], "walCompression").value_or(false)
+                                  ? rocksdb::CompressionType::kZSTD
+                                  : rocksdb::CompressionType::kNoCompression;
 
   const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
