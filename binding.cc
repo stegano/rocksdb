@@ -808,6 +808,8 @@ NAPI_METHOD(db_open) {
   dbOptions.WAL_size_limit_MB = Uint32Property(env, argv[2], "walSizeLimit").value_or(0) / 1e6;
   dbOptions.create_missing_column_families = true;
   dbOptions.unordered_write = BooleanProperty(env, argv[2], "unorderedWrite").value_or(false);
+  dbOptions.fail_if_options_file_error = true;
+  // TODO (perf): dbOptions.wal_compression = rocksdb::CompressionType::kZSTD;
 
   const auto infoLogLevel = StringProperty(env, argv[2], "infoLogLevel").value_or("");
   if (infoLogLevel.size() > 0) {
