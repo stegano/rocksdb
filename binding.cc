@@ -800,6 +800,7 @@ NAPI_METHOD(db_open) {
   dbOptions.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
   dbOptions.avoid_unnecessary_blocking_io = true;
+  dbOptions.write_dbid_to_manifest = true;
   dbOptions.use_adaptive_mutex = true;       // We don't have soo many threads in the libuv thread pool...
   dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
   dbOptions.max_background_jobs = Uint32Property(env, argv[2], "maxBackgroundJobs")
