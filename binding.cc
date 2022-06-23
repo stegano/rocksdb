@@ -6,12 +6,14 @@
 
 #include <rocksdb/cache.h>
 #include <rocksdb/comparator.h>
+#include <rocksdb/convenience.h>
 #include <rocksdb/db.h>
 #include <rocksdb/env.h>
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/options.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
+#include <rocksdb/slice_transform.h>
 
 #include <array>
 #include <memory>
@@ -36,6 +38,14 @@ struct Updates;
   {                              \
     auto _status = (call);       \
     if (_status != napi_ok) {    \
+      return _status;            \
+    }                            \
+  }
+
+#define ROCKS_STATUS_RETURN(call) \
+  {                              \
+    auto _status = (call);       \
+    if (!_status.ok()) {    \
       return _status;            \
     }                            \
   }
@@ -676,7 +686,7 @@ struct OpenWorker final : public Worker {
 };
 
 template <typename T, typename U>
-napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
+rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   const auto memtable_memory_budget = Uint32Property(env, options, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
 
   const auto compaction = StringProperty(env, options, "compaction").value_or("level");
@@ -720,6 +730,20 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     // TODO (perf): compression_opts.parallel_threads
   }
 
+  const auto prefixExtractorOpt = StringProperty(env, options, "prefixExtractor");
+  if (prefixExtractorOpt) {
+    rocksdb::ConfigOptions configOptions;
+    ROCKS_STATUS_RETURN(
+        rocksdb::SliceTransform::CreateFromString(configOptions, *prefixExtractorOpt, &columnOptions.prefix_extractor));
+  }
+
+  const auto comparatorOpt = StringProperty(env, options, "comparator");
+  if (comparatorOpt) {
+    rocksdb::ConfigOptions configOptions;
+    ROCKS_STATUS_RETURN(
+        rocksdb::Comparator::CreateFromString(configOptions, *comparatorOpt, &columnOptions.comparator));
+  }
+  
   const auto cacheSize = Uint32Property(env, options, "cacheSize").value_or(8 << 20);
 
   rocksdb::BlockBasedTableOptions tableOptions;
@@ -756,7 +780,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
-  return napi_ok;
+  return rocksdb::Status::OK();
 }
 
 NAPI_METHOD(db_open) {
@@ -812,7 +836,7 @@ NAPI_METHOD(db_open) {
     dbOptions.info_log.reset(new NullLogger());
   }
 
-  NAPI_STATUS_THROWS(InitOptions(env, dbOptions, argv[2]));
+  ROCKS_STATUS_THROWS(InitOptions(env, dbOptions, argv[2]));
 
   std::vector<rocksdb::ColumnFamilyDescriptor> columnsFamilies;
 
@@ -837,7 +861,7 @@ NAPI_METHOD(db_open) {
       napi_value column;
       NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
-      NAPI_STATUS_THROWS(InitOptions(env, columnsFamilies[n].options, column));
+      ROCKS_STATUS_THROWS(InitOptions(env, columnsFamilies[n].options, column));
 
       NAPI_STATUS_THROWS(ToString(env, key, columnsFamilies[n].name));
     }
@@ -1124,9 +1148,7 @@ struct GetManyWorker final : public Worker {
     database_->IncrementPriorityWork(env);
   }
 
-  ~GetManyWorker () {
-    database_->db_->ReleaseSnapshot(snapshot_);
-  }
+  ~GetManyWorker() { database_->db_->ReleaseSnapshot(snapshot_); }
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions readOptions;
