@@ -1471,7 +1471,7 @@ NAPI_METHOD(iterator_get_sequence) {
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_bigint_int64(env, seq, &result));
 
-  return 0;
+  return result;
 }
 
 struct NextWorker final : public Worker {
