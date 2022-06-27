@@ -1163,7 +1163,11 @@ struct GetManyWorker final : public Worker {
     database_->IncrementPriorityWork(env);
   }
 
-  ~GetManyWorker() { database_->db_->ReleaseSnapshot(snapshot_); }
+  ~GetManyWorker() {
+    if (snapshot_) {
+      database_->db_->ReleaseSnapshot(snapshot_);
+    }
+  }
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::ReadOptions readOptions;
