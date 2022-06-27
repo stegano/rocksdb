@@ -198,6 +198,8 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
     return CreateError(env, "LEVEL_NOT_FOUND", msg);
   } else if (status.IsCorruption()) {
     return CreateError(env, "LEVEL_CORRUPTION", msg);
+  } else if (status.IsTryAgain()) {
+    return CreateError(env, "LEVEL_TRYAGAIN", msg);
   } else if (status.IsIOError()) {
     if (msg.find("IO error: lock ") != std::string::npos) {  // env_posix.cc
       return CreateError(env, "LEVEL_LOCKED", msg);
