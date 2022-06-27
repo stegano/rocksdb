@@ -44,7 +44,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   get sequence () {
-    return binding.get_latest_sequence(this[kContext])
+    return binding.db_get_latest_sequence(this[kContext])
   }
 
   get location () {
