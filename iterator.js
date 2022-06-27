@@ -29,6 +29,10 @@ class Iterator extends AbstractIterator {
     this[kPosition] = 0
   }
 
+  get sequence () {
+    return binding.iterator_get_sequence(this[kContext])
+  }
+
   _seek (target) {
     if (target.length === 0) {
       throw new Error('cannot seek() to an empty target')
