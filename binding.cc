@@ -1395,6 +1395,21 @@ NAPI_METHOD(db_get_property) {
   return result;
 }
 
+
+NAPI_METHOD(db_get_latest_sequence) {
+  NAPI_ARGV(1);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  const auto seq = database->db_->GetLatestSequenceNumber();
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, seq, &result));
+
+  return result;
+}
+
 NAPI_METHOD(iterator_init) {
   NAPI_ARGV(2);
 
@@ -1716,6 +1731,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_del);
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
+  NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
