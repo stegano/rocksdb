@@ -251,11 +251,11 @@ class RocksLevel extends AbstractLevel {
     const updates = new Updates(this, options)
     try {
       while (true) {
-        const entry = await updates.next()
-        if (!entry.rows) {
+        const { sequence, rows } = await updates.next()
+        if (!rows) {
           return
         }
-        yield entry
+        yield { sequence: Number(sequence), rows }
       }
     } finally {
       await updates.close()
