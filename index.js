@@ -195,7 +195,7 @@ class RocksLevel extends AbstractLevel {
       constructor (db, options) {
         this.context = binding.updates_init(db[kContext], {
           ...options,
-          since: BigInt(since || 0)
+          since: BigInt(options.since || 0)
         })
         this.closed = false
         this.promise = null
