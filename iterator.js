@@ -30,7 +30,7 @@ class Iterator extends AbstractIterator {
   }
 
   get sequence () {
-    return binding.iterator_get_sequence(this[kContext])
+    return Number(binding.iterator_get_sequence(this[kContext]))
   }
 
   _seek (target) {

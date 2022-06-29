@@ -44,7 +44,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   get sequence () {
-    return binding.db_get_latest_sequence(this[kContext])
+    return Number(binding.db_get_latest_sequence(this[kContext]))
   }
 
   get location () {
@@ -170,7 +170,7 @@ class RocksLevel extends AbstractLevel {
         } else {
           resolve({
             rows,
-            sequence: binding.iterator_get_sequence(context),
+            sequence: Number(binding.iterator_get_sequence(context)),
             finished
           })
         }
