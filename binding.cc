@@ -1395,7 +1395,6 @@ NAPI_METHOD(db_get_property) {
   return result;
 }
 
-
 NAPI_METHOD(db_get_latest_sequence) {
   NAPI_ARGV(1);
 
