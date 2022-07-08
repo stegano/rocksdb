@@ -1630,6 +1630,22 @@ NAPI_METHOD(batch_do) {
       NAPI_STATUS_THROWS(ToString(env, valueProperty, value));
 
       ROCKS_STATUS_THROWS(batch.Put(column, key, value));
+    } else if (type == "data") {
+      napi_value valueProperty;
+      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "value", &valueProperty));
+      NAPI_STATUS_THROWS(ToString(env, valueProperty, value));
+
+      ROCKS_STATUS_THROWS(batch.PutLogData(value));
+    } else if (type == "merge") {
+      napi_value keyProperty;
+      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "key", &keyProperty));
+      NAPI_STATUS_THROWS(ToString(env, keyProperty, key));
+
+      napi_value valueProperty;
+      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "value", &valueProperty));
+      NAPI_STATUS_THROWS(ToString(env, valueProperty, value));
+
+      ROCKS_STATUS_THROWS(batch.Merge(column, key, value));
     } else {
       ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument());
     }
@@ -1741,6 +1757,29 @@ NAPI_METHOD(batch_put_log_data) {
   return 0;
 }
 
+NAPI_METHOD(batch_merge) {
+  NAPI_ARGV(5);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], (void**)(&batch)));
+
+  std::string key;
+  NAPI_STATUS_THROWS(ToString(env, argv[2], key));
+
+  std::string val;
+  NAPI_STATUS_THROWS(ToString(env, argv[3], val));
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[4], &column));
+
+  ROCKS_STATUS_THROWS(batch->Merge(column, key, val));
+
+  return 0;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1770,4 +1809,5 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);
   NAPI_EXPORT_FUNCTION(batch_put_log_data);
+  NAPI_EXPORT_FUNCTION(batch_merge);
 }

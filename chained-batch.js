@@ -43,6 +43,11 @@ class ChainedBatch extends AbstractChainedBatch {
     // TODO (fix): Check if open...
     binding.batch_put_log_data(this[kDbContext], this[kBatchContext], data, options)
   }
+
+  merge (key, value, options) {
+    // TODO (fix): Check if open...
+    binding.batch_merge(this[kDbContext], this[kBatchContext], key, value, options)
+  }
 }
 
 exports.ChainedBatch = ChainedBatch
