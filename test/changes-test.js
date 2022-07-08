@@ -22,17 +22,20 @@ test('test updates()', async function (t) {
   await batch2.write()
 
   const val = []
-  const allData = []
-  for await (const { rows, sequence, data } of db.updates({ since: 2n })) {
+  for await (const { rows, sequence } of db.updates({ since: 2n })) {
     t.equal(sequence, 2)
     val.push(...rows)
-    allData.push(...data)
   }
 
-  t.equal(val[0], 'key')
-  t.equal(val[1], 'val')
-  t.equal(allData[0], 'hello1')
-  t.equal(allData[1], 'hello2')
+  t.equal(val[0], 'put')
+  t.equal(val[1], 'key')
+  t.equal(val[2], 'val')
+  t.equal(val[3], 'data')
+  t.equal(val[4], null)
+  t.equal(val[5], 'hello1')
+  t.equal(val[6], 'data')
+  t.equal(val[7], null)
+  t.equal(val[8], 'hello2')
   t.end()
 })
 

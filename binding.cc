@@ -539,11 +539,8 @@ struct Iterator final : public BaseIterator {
 };
 
 struct Updates {
-  Updates(Database* database, bool values, bool keyAsBuffer, bool valueAsBuffer, int64_t seqNumber)
+  Updates(Database* database, int64_t seqNumber)
       : database_(database),
-        values_(values),
-        keyAsBuffer_(keyAsBuffer),
-        valueAsBuffer_(valueAsBuffer),
         seqNumber_(seqNumber) {}
 
   void Close() { iterator_.reset(); }
@@ -561,9 +558,6 @@ struct Updates {
   }
 
   Database* database_;
-  const bool values_;
-  const bool keyAsBuffer_;
-  const bool valueAsBuffer_;
   int64_t seqNumber_;
   std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
 
@@ -956,7 +950,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[4];
+    napi_value argv[3];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
     if (cache_.empty()) {
@@ -964,26 +958,23 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     }
 
     NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
-    for (size_t idx = 0; idx < cache_.size(); idx += 2) {
+    for (size_t idx = 0; idx < cache_.size(); idx += 3) {
+      napi_value op;
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], false, op));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 0), op));
+
       napi_value key;
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 0), key));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], false, key));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 1), key));
 
       napi_value val;
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->valueAsBuffer_, val));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 1), val));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 2], false, val));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx + 2), val));
     }
 
     NAPI_STATUS_RETURN(napi_create_bigint_int64(env, updates_->seqNumber_, &argv[2]));
 
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, logData_.size(), &argv[3]));
-    for (size_t idx = 0; idx < logData_.size(); idx += 1) {
-      napi_value logData;
-      NAPI_STATUS_RETURN(Convert(env, logData_[idx], false, logData));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[3], static_cast<int>(idx), logData));
-    }
-
-    return CallFunction(env, callback, 4, argv);
+    return CallFunction(env, callback, 3, argv);
   }
 
   void Destroy(napi_env env) override {
@@ -992,28 +983,33 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   void Put(const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    cache_.emplace_back(key.ToString());
-    if (updates_->values_) {
-      cache_.emplace_back(value.ToString());
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
+    cache_.emplace_back("put");
+    cache_.emplace_back(key.ToStringView());
+    cache_.emplace_back(value.ToStringView());
   }
 
   void Delete(const rocksdb::Slice& key) override {
-    cache_.emplace_back(key.ToString());
+    cache_.emplace_back("del");
+    cache_.emplace_back(key.ToStringView());
     cache_.emplace_back(std::nullopt);
   }
 
-  void LogData(const rocksdb::Slice& logData) override {
-    logData_.emplace_back(logData.ToString());
+  void Merge(const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    cache_.emplace_back("merge");
+    cache_.emplace_back(key.ToStringView());
+    cache_.emplace_back(value.ToStringView());
+  }
+
+  void LogData(const rocksdb::Slice& data) override {
+    cache_.emplace_back("data");
+    cache_.emplace_back(std::nullopt);
+    cache_.emplace_back(data.ToStringView());
   }
 
   bool Continue() override { return true; }
 
  private:
   std::vector<std::optional<std::string>> cache_;
-  std::vector<std::optional<std::string>> logData_;
   Updates* updates_;
 };
 
@@ -1023,12 +1019,9 @@ NAPI_METHOD(updates_init) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto values = BooleanProperty(env, argv[1], "values").value_or(true);
-  const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
-  const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
   const auto seqNumber = Int64Property(env, argv[1], "since").value_or(database->db_->GetLatestSequenceNumber());
 
-  auto updates = std::make_unique<Updates>(database, values, keyAsBuffer, valueAsBuffer, seqNumber);
+  auto updates = std::make_unique<Updates>(database, seqNumber);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
