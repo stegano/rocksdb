@@ -11,19 +11,28 @@ test('setUp db', function (t) {
 })
 
 test('test updates()', async function (t) {
-  await db.batch([{ type: 'put', key: 'should not exit', value: 'val' }])
-  await db.batch([{ type: 'put', key: 'key', value: 'val' }])
-  const seq = 2n
+  const batch1 = db.batch()
+  batch1.put('key1', 'val2')
+  await batch1.write()
+
+  const batch2 = db.batch()
+  batch2.put('key', 'val')
+  batch2.putLogData('hello1')
+  batch2.putLogData('hello2')
+  await batch2.write()
 
   const val = []
-  for await (const { rows, sequence } of db.updates({ since: seq })) {
-    t.equal(sequence, 2n)
+  const allData = []
+  for await (const { rows, sequence, data } of db.updates({ since: 2n })) {
+    t.equal(sequence, 2)
     val.push(...rows)
+    allData.push(...data)
   }
 
-  t.equal(seq, 2n)
   t.equal(val[0], 'key')
   t.equal(val[1], 'val')
+  t.equal(allData[0], 'hello1')
+  t.equal(allData[1], 'hello2')
   t.end()
 })
 

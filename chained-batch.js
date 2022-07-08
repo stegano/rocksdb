@@ -38,6 +38,11 @@ class ChainedBatch extends AbstractChainedBatch {
   _close (callback) {
     process.nextTick(callback)
   }
+
+  putLogData (data, options) {
+    // TODO (fix): Check if open...
+    binding.batch_put_log_data(this[kDbContext], this[kBatchContext], data, options)
+  }
 }
 
 exports.ChainedBatch = ChainedBatch

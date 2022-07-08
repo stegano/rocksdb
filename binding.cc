@@ -956,7 +956,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[3];
+    napi_value argv[4];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
     if (cache_.empty()) {
@@ -964,7 +964,6 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     }
 
     NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
-
     for (size_t idx = 0; idx < cache_.size(); idx += 2) {
       napi_value key;
       NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], updates_->keyAsBuffer_, key));
@@ -977,7 +976,14 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
     NAPI_STATUS_RETURN(napi_create_bigint_int64(env, updates_->seqNumber_, &argv[2]));
 
-    return CallFunction(env, callback, 3, argv);
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, logData_.size(), &argv[3]));
+    for (size_t idx = 0; idx < logData_.size(); idx += 1) {
+      napi_value logData;
+      NAPI_STATUS_RETURN(Convert(env, logData_[idx], false, logData));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[3], static_cast<int>(idx), logData));
+    }
+
+    return CallFunction(env, callback, 4, argv);
   }
 
   void Destroy(napi_env env) override {
@@ -999,10 +1005,15 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     cache_.emplace_back(std::nullopt);
   }
 
+  void LogData(const rocksdb::Slice& logData) override {
+    logData_.emplace_back(logData.ToString());
+  }
+
   bool Continue() override { return true; }
 
  private:
   std::vector<std::optional<std::string>> cache_;
+  std::vector<std::optional<std::string>> logData_;
   Updates* updates_;
 };
 
@@ -1720,6 +1731,23 @@ NAPI_METHOD(batch_write) {
   return 0;
 }
 
+NAPI_METHOD(batch_put_log_data) {
+  NAPI_ARGV(4);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+
+  std::string logData;
+  NAPI_STATUS_THROWS(ToString(env, argv[2], logData));
+
+  ROCKS_STATUS_THROWS(batch->PutLogData(logData));
+
+  return 0;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1748,4 +1776,5 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_del);
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);
+  NAPI_EXPORT_FUNCTION(batch_put_log_data);
 }

@@ -208,12 +208,12 @@ class RocksLevel extends AbstractLevel {
           return {}
         }
 
-        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, rows, sequence) => {
+        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, rows, sequence, data) => {
           this.promise = null
           if (err) {
             resolve(Promise.reject(err))
           } else {
-            resolve({ rows, sequence })
+            resolve({ rows, data, sequence: Number(sequence) })
           }
         }))
 
@@ -251,11 +251,11 @@ class RocksLevel extends AbstractLevel {
     const updates = new Updates(this, options)
     try {
       while (true) {
-        const { sequence, rows } = await updates.next()
-        if (!rows) {
+        const entry = await updates.next()
+        if (!entry.rows) {
           return
         }
-        yield { sequence: Number(sequence), rows }
+        yield entry
       }
     } finally {
       await updates.close()
