@@ -948,37 +948,18 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
   napi_status OnOk(napi_env env, napi_value callback) override {
     napi_value argv[3];
+
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
     if (cache_.empty()) {
       return CallFunction(env, callback, 1, argv);
     }
-
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size() * 4, &argv[1]));
+  
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
     for (size_t idx = 0; idx < cache_.size(); idx++) {
-      napi_value op;
-      NAPI_STATUS_RETURN(Convert(env, std::get<0>(cache_[idx]), false, op));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx * 4 + 0), op));
-
-      napi_value key;
-      NAPI_STATUS_RETURN(Convert(env, std::get<1>(cache_[idx]), false, key));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx * 4 + 1), key));
-
       napi_value val;
-      NAPI_STATUS_RETURN(Convert(env, std::get<2>(cache_[idx]), false, val));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx * 4 + 2), val));
-
-      auto column_family_id = std::get<3>(cache_[idx]);
-      auto columns = database_->columns_;
-      auto columnIt = std::find_if(columns.begin(), columns.end(),
-                                   [&](const auto& handle) { return handle->GetID() == column_family_id; });
-      napi_value column;
-      if (columnIt != columns.end()) {
-        NAPI_STATUS_RETURN(napi_create_external(env, *columnIt, nullptr, nullptr, &column));
-      } else {
-        NAPI_STATUS_RETURN(napi_get_null(env, &column));
-      }
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(idx * 4 + 3), column));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx], false, val));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, val));
     }
 
     NAPI_STATUS_RETURN(napi_create_bigint_int64(env, updates_->seqNumber_, &argv[2]));
@@ -991,28 +972,51 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     Worker::Destroy(env);
   }
 
+  std::optional<std::string> GetColumnName(uint32_t column_family_id) {
+    if (column_family_id == 0) {
+      return "default";
+    }
+    auto columns = database_->columns_;
+    auto columnIt = std::find_if(columns.begin(), columns.end(),
+                                 [&](const auto& handle) { return handle->GetID() == column_family_id; });
+    return columnIt == columns.end() ? std::nullopt : std::optional<std::string>((*columnIt)->GetName());
+  }
+
   rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    cache_.emplace_back("put", key.ToStringView(), value.ToStringView(), column_family_id);
+    cache_.emplace_back("put");
+    cache_.emplace_back(key.ToStringView());
+    cache_.emplace_back(value.ToStringView());
+    cache_.emplace_back(GetColumnName(column_family_id));
     return rocksdb::Status::OK();
   }
 
   rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
-    cache_.emplace_back("del", key.ToStringView(), std::nullopt, column_family_id);
+    cache_.emplace_back("del");
+    cache_.emplace_back(key.ToStringView());
+    cache_.emplace_back(std::nullopt);
+    cache_.emplace_back(GetColumnName(column_family_id));
     return rocksdb::Status::OK();
   }
 
   rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    cache_.emplace_back("merge", key.ToStringView(), value.ToStringView(), column_family_id);
+    cache_.emplace_back("put");
+    cache_.emplace_back(key.ToStringView());
+    cache_.emplace_back(value.ToStringView());
+    cache_.emplace_back(GetColumnName(column_family_id));
     return rocksdb::Status::OK();
   }
 
-  void LogData(const rocksdb::Slice& data) override { cache_.emplace_back("data", std::nullopt, data.ToStringView()); }
+  void LogData(const rocksdb::Slice& data) override {
+    cache_.emplace_back("data");
+    cache_.emplace_back(std::nullopt);
+    cache_.emplace_back(data.ToStringView());
+    cache_.emplace_back(std::nullopt);
+  }
 
   bool Continue() override { return true; }
 
  private:
-  std::vector<std::tuple<std::optional<std::string>, std::optional<std::string>, std::optional<std::string>, uint32_t>>
-      cache_;
+  std::vector<std::optional<std::string>> cache_;
   Updates* updates_;
 };
 
