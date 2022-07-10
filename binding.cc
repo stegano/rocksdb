@@ -1103,7 +1103,7 @@ NAPI_METHOD(updates_next) {
   NAPI_ARGV(2);
 
   Updates* updates;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&updates));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
 
   auto worker = new UpdatesNextWorker(env, updates, argv[1]);
   worker->Queue(env);
@@ -1115,7 +1115,7 @@ NAPI_METHOD(updates_close) {
   NAPI_ARGV(1);
 
   Updates* updates;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)&updates));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
 
   updates->Detach(env);
   updates->Close();
