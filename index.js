@@ -193,10 +193,7 @@ class RocksLevel extends AbstractLevel {
 
     class Updates {
       constructor (db, options) {
-        this.context = binding.updates_init(db[kContext], {
-          ...options,
-          since: BigInt(options.since || 0)
-        })
+        this.context = binding.updates_init(db[kContext], options)
         this.closed = false
         this.promise = null
         this.db = db
@@ -208,12 +205,12 @@ class RocksLevel extends AbstractLevel {
           return {}
         }
 
-        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, rows, sequence) => {
+        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, rows, sequence, count) => {
           this.promise = null
           if (err) {
             resolve(Promise.reject(err))
           } else {
-            resolve({ rows, sequence: Number(sequence) })
+            resolve({ rows, sequence, count })
           }
         }))
 

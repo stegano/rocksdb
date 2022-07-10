@@ -22,7 +22,8 @@ test('test updates()', async function (t) {
   await batch2.write()
 
   const val = []
-  for await (const { rows, sequence } of db.updates({ since: 2n })) {
+  for await (const { rows, sequence, count } of db.updates({ since: 2 })) {
+    t.equal(count, 1)
     t.equal(sequence, 2)
     val.push(...rows)
   }
@@ -45,7 +46,7 @@ test('test updates()', async function (t) {
 
 test('test updates() bad seq', async function (t) {
   try {
-    for await (const _ of db.updates({ since: 10n })) {
+    for await (const _ of db.updates({ since: 10 })) {
       console.log(_)
       t.fail()
     }
