@@ -1135,8 +1135,11 @@ NAPI_METHOD(db_put) {
   std::string val;
   NAPI_STATUS_THROWS(ToString(env, argv[2], val));
 
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[3], &column));
+
   rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db_->Put(writeOptions, key, val));
+  ROCKS_STATUS_THROWS(database->db_->Put(writeOptions, column, key, val));
 
   return 0;
 }
