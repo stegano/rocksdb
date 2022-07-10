@@ -27,15 +27,19 @@ test('test updates()', async function (t) {
     val.push(...rows)
   }
 
-  t.equal(val[0], 'put')
-  t.equal(val[1], 'key')
-  t.equal(val[2], 'val')
-  t.equal(val[3], 'data')
-  t.equal(val[4], null)
-  t.equal(val[5], 'hello1')
-  t.equal(val[6], 'data')
-  t.equal(val[7], null)
-  t.equal(val[8], 'hello2')
+  let n = 0
+  t.equal(val[n++], 'put')
+  t.equal(val[n++], 'key')
+  t.equal(val[n++], 'val')
+  n++
+  t.equal(val[n++], 'data')
+  t.equal(val[n++], null)
+  t.equal(val[n++], 'hello1')
+  n++
+  t.equal(val[n++], 'data')
+  t.equal(val[n++], null)
+  t.equal(val[n++], 'hello2')
+  n++
   t.end()
 })
 
