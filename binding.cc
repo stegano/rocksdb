@@ -537,8 +537,24 @@ struct Iterator final : public BaseIterator {
 };
 
 struct Updates {
-  Updates(Database* database, int64_t seqNumber, bool keys, bool values, bool data)
-      : database_(database), seqNumber_(seqNumber), keys_(keys), values_(values), data_(data) {}
+  Updates(Database* database,
+          int64_t seqNumber,
+          bool keys,
+          bool values,
+          bool data,
+          const std::optional<std::string>& column)
+      : database_(database), seqNumber_(seqNumber), keys_(keys), values_(values), data_(data) {
+    if (column) {
+      auto columns = database->columns_;
+      auto columnIt = std::find_if(columns.begin(), columns.end(),
+                                   [&](const auto& handle) { return handle->GetName() == *column; });
+      if (columnIt != columns.end()) {
+        column_family_id_ = (*columnIt)->GetID();
+      } else {
+        // TODO: Throw?
+      }
+    }
+  }
 
   void Close() { iterator_.reset(); }
 
@@ -560,6 +576,7 @@ struct Updates {
   bool keys_;
   bool values_;
   bool data_;
+  std::optional<uint32_t> column_family_id_;
 
  private:
   napi_ref ref_ = nullptr;
@@ -989,6 +1006,9 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    if (updates_->column_family_id_ && *updates_->column_family_id_ != column_family_id) {
+      return rocksdb::Status::OK();
+    }
     cache_.emplace_back("put");
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
@@ -1005,6 +1025,9 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
+    if (updates_->column_family_id_ && *updates_->column_family_id_ != column_family_id) {
+      return rocksdb::Status::OK();
+    }
     cache_.emplace_back("del");
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
@@ -1017,6 +1040,9 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    if (updates_->column_family_id_ && *updates_->column_family_id_ != column_family_id) {
+      return rocksdb::Status::OK();
+    }
     cache_.emplace_back("put");
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
@@ -1059,8 +1085,9 @@ NAPI_METHOD(updates_init) {
   const auto keys = BooleanProperty(env, argv[1], "keys").value_or(true);
   const auto values = BooleanProperty(env, argv[1], "values").value_or(true);
   const auto data = BooleanProperty(env, argv[1], "data").value_or(true);
+  const auto column = StringProperty(env, argv[1], "column");
 
-  auto updates = std::make_unique<Updates>(database, seqNumber, keys, values, data);
+  auto updates = std::make_unique<Updates>(database, seqNumber, keys, values, data, column);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
