@@ -1054,7 +1054,9 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     } else {
       cache_.emplace_back(std::nullopt);
     }
-    cache_.emplace_back(GetColumnName(column_family_id));
+    if (!updates_->column_family_id_) {
+      cache_.emplace_back(GetColumnName(column_family_id));
+    }
     return rocksdb::Status::OK();
   }
 
