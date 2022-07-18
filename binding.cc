@@ -14,6 +14,7 @@
 #include <rocksdb/slice_transform.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
+#include <rocksdb/merge_operator.h>
 
 #include <array>
 #include <memory>
@@ -701,6 +702,8 @@ struct OpenWorker final : public Worker {
 
 template <typename T, typename U>
 rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
+  rocksdb::ConfigOptions configOptions;
+
   const auto memtable_memory_budget = Uint32Property(env, options, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
 
   const auto compaction = StringProperty(env, options, "compaction").value_or("level");
@@ -746,16 +749,20 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
   const auto prefixExtractorOpt = StringProperty(env, options, "prefixExtractor");
   if (prefixExtractorOpt) {
-    rocksdb::ConfigOptions configOptions;
     ROCKS_STATUS_RETURN(
         rocksdb::SliceTransform::CreateFromString(configOptions, *prefixExtractorOpt, &columnOptions.prefix_extractor));
   }
 
   const auto comparatorOpt = StringProperty(env, options, "comparator");
   if (comparatorOpt) {
-    rocksdb::ConfigOptions configOptions;
     ROCKS_STATUS_RETURN(
         rocksdb::Comparator::CreateFromString(configOptions, *comparatorOpt, &columnOptions.comparator));
+  }
+
+  const auto mergeOperatorOpt = StringProperty(env, options, "mergeOperator");
+  if (mergeOperatorOpt) {
+    ROCKS_STATUS_RETURN(
+        rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
   }
 
   const auto cacheSize = Uint32Property(env, options, "cacheSize").value_or(8 << 20);
