@@ -24,7 +24,7 @@ test('test updates()', async function (t) {
 
   let since = 0
 
-  for await (const { rows, sequence, count } of db.updates({ since })) {
+  for await (const { sequence, count } of db.updates({ since })) {
     since = sequence + count - 1
   }
 
@@ -46,7 +46,7 @@ test('test updates()', async function (t) {
     t.same(rows, [
       'put', 'key', 'val', 'default',
       'data', null, 'hello1', null,
-      'data', null, 'hello2', null,
+      'data', null, 'hello2', null
     ])
   }
 

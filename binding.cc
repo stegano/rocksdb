@@ -10,11 +10,11 @@
 #include <rocksdb/db.h>
 #include <rocksdb/env.h>
 #include <rocksdb/filter_policy.h>
+#include <rocksdb/merge_operator.h>
 #include <rocksdb/options.h>
 #include <rocksdb/slice_transform.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
-#include <rocksdb/merge_operator.h>
 
 #include <array>
 #include <memory>
@@ -543,19 +543,8 @@ struct Updates {
           bool keys,
           bool values,
           bool data,
-          const std::optional<std::string>& column)
-      : database_(database), seqNumber_(seqNumber), keys_(keys), values_(values), data_(data) {
-    if (column) {
-      auto columns = database->columns_;
-      auto columnIt = std::find_if(columns.begin(), columns.end(),
-                                   [&](const auto& handle) { return handle->GetName() == *column; });
-      if (columnIt != columns.end()) {
-        column_family_id_ = (*columnIt)->GetID();
-      } else {
-        // TODO: Throw?
-      }
-    }
-  }
+          const rocksdb::ColumnFamilyHandle* column)
+      : database_(database), seqNumber_(seqNumber), keys_(keys), values_(values), data_(data), column_(column) {}
 
   void Close() { iterator_.reset(); }
 
@@ -577,7 +566,7 @@ struct Updates {
   bool keys_;
   bool values_;
   bool data_;
-  std::optional<uint32_t> column_family_id_;
+  const rocksdb::ColumnFamilyHandle* column_;
 
  private:
   napi_ref ref_ = nullptr;
@@ -586,7 +575,8 @@ struct Updates {
 static napi_status GetColumnFamily(Database* database,
                                    napi_env env,
                                    napi_value options,
-                                   rocksdb::ColumnFamilyHandle** column) {
+                                   rocksdb::ColumnFamilyHandle** column,
+                                   bool fallback = true) {
   bool hasColumn = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, options, "column", &hasColumn));
 
@@ -594,8 +584,10 @@ static napi_status GetColumnFamily(Database* database,
     napi_value value = nullptr;
     NAPI_STATUS_RETURN(napi_get_named_property(env, options, "column", &value));
     NAPI_STATUS_RETURN(napi_get_value_external(env, value, reinterpret_cast<void**>(column)));
-  } else {
+  } else if (fallback) {
     *column = database->db_->DefaultColumnFamily();
+  } else {
+    *column = nullptr;
   }
 
   return napi_ok;
@@ -841,6 +833,7 @@ NAPI_METHOD(db_open) {
   dbOptions.wal_compression = BooleanProperty(env, argv[2], "walCompression").value_or(false)
                                   ? rocksdb::CompressionType::kZSTD
                                   : rocksdb::CompressionType::kNoCompression;
+  dbOptions.manual_wal_flush = BooleanProperty(env, argv[2], "manualWalFlush").value_or(false);
 
   // TODO (feat): dbOptions.listeners
 
@@ -1013,57 +1006,82 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    if (updates_->column_family_id_ && *updates_->column_family_id_ != column_family_id) {
+    if (updates_->column_ && updates_->column_->GetID() != column_family_id) {
       return rocksdb::Status::OK();
     }
+
     cache_.emplace_back("put");
+
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
     } else {
       cache_.emplace_back(std::nullopt);
     }
+
     if (updates_->values_) {
       cache_.emplace_back(value.ToStringView());
     } else {
       cache_.emplace_back(std::nullopt);
     }
-    cache_.emplace_back(GetColumnName(column_family_id));
+
+    if (!updates_->column_) {
+      cache_.emplace_back(GetColumnName(column_family_id));
+    } else {
+      cache_.emplace_back(std::nullopt);
+    }
+
     return rocksdb::Status::OK();
   }
 
   rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
-    if (updates_->column_family_id_ && *updates_->column_family_id_ != column_family_id) {
+    if (updates_->column_ && updates_->column_->GetID() != column_family_id) {
       return rocksdb::Status::OK();
     }
+
     cache_.emplace_back("del");
+
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
     } else {
       cache_.emplace_back(std::nullopt);
     }
+
     cache_.emplace_back(std::nullopt);
-    cache_.emplace_back(GetColumnName(column_family_id));
+
+    if (!updates_->column_) {
+      cache_.emplace_back(GetColumnName(column_family_id));
+    } else {
+      cache_.emplace_back(std::nullopt);
+    }
+
     return rocksdb::Status::OK();
   }
 
   rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    if (updates_->column_family_id_ && *updates_->column_family_id_ != column_family_id) {
+    if (updates_->column_ && updates_->column_->GetID() != column_family_id) {
       return rocksdb::Status::OK();
     }
+
     cache_.emplace_back("put");
+
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
     } else {
       cache_.emplace_back(std::nullopt);
     }
+
     if (updates_->values_) {
       cache_.emplace_back(value.ToStringView());
     } else {
       cache_.emplace_back(std::nullopt);
     }
-    if (!updates_->column_family_id_) {
+
+    if (!updates_->column_) {
       cache_.emplace_back(GetColumnName(column_family_id));
+    } else {
+      cache_.emplace_back(std::nullopt);
     }
+
     return rocksdb::Status::OK();
   }
 
@@ -1094,7 +1112,9 @@ NAPI_METHOD(updates_init) {
   const auto keys = BooleanProperty(env, argv[1], "keys").value_or(true);
   const auto values = BooleanProperty(env, argv[1], "values").value_or(true);
   const auto data = BooleanProperty(env, argv[1], "data").value_or(true);
-  const auto column = StringProperty(env, argv[1], "column");
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column, false));
 
   auto updates = std::make_unique<Updates>(database, seqNumber, keys, values, data, column);
 
@@ -1858,6 +1878,19 @@ NAPI_METHOD(batch_merge) {
   return 0;
 }
 
+NAPI_METHOD(db_flush_wal) {
+  NAPI_ARGV(2);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  const auto flush = BooleanProperty(env, argv[1], "flush").value_or(false);
+
+  ROCKS_STATUS_THROWS(database->db_->FlushWAL(flush));
+
+  return 0;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1879,6 +1912,8 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(updates_init);
   NAPI_EXPORT_FUNCTION(updates_close);
   NAPI_EXPORT_FUNCTION(updates_next);
+
+  NAPI_EXPORT_FUNCTION(db_flush_wal);
 
   NAPI_EXPORT_FUNCTION(batch_do);
   NAPI_EXPORT_FUNCTION(batch_init);

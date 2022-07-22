@@ -145,6 +145,10 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
+  async flushWAL (options) {
+    binding.db_flush_wal(this[kContext], options)
+  }
+
   async query (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
