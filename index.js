@@ -6,11 +6,11 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
+const os = require('os')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
-const kOptions = Symbol('options')
 
 class RocksLevel extends AbstractLevel {
   constructor (location, options, _) {
@@ -24,6 +24,21 @@ class RocksLevel extends AbstractLevel {
     if (typeof location !== 'string' || location === '') {
       throw new TypeError("The first argument 'location' must be a non-empty string")
     }
+
+    options = {
+      ...options, // TODO (fix): Other defaults...
+      parallelism: options?.parallelism ?? Math.max(1, os.cpus().length / 2),
+      createIfMissing: options?.createIfMissing ?? true,
+      errorIfExists: options?.errorIfExists ?? false,
+      walTTL: options?.walTTL ?? 0,
+      walSizeLimit: options?.walSizeLimit ?? 0,
+      walCompression: options?.walCompression ?? false,
+      unorderedWrite: options?.unorderedWrite ?? false,
+      manualWalFlush: options?.manualWalFlush ?? false,
+      infoLogLevel: options?.infoLogLevel ?? ''
+    }
+
+    // TODO (fix): Check options.
 
     super({
       encodings: {
@@ -42,10 +57,6 @@ class RocksLevel extends AbstractLevel {
     this[kLocation] = location
     this[kContext] = binding.db_init()
     this[kColumns] = {}
-  }
-
-  get options () {
-    return this[kOptions]
   }
 
   get sequence () {
@@ -72,10 +83,10 @@ class RocksLevel extends AbstractLevel {
     if (options.createIfMissing) {
       fs.mkdir(this[kLocation], { recursive: true }, (err) => {
         if (err) return callback(err)
-        this[kOptions] = binding.db_open(this[kContext], this[kLocation], options, onOpen)
+        binding.db_open(this[kContext], this[kLocation], options, onOpen)
       })
     } else {
-      this[kOptions] = binding.db_open(this[kContext], this[kLocation], options, onOpen)
+      binding.db_open(this[kContext], this[kLocation], options, onOpen)
     }
   }
 
