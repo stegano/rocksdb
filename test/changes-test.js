@@ -6,7 +6,9 @@ const testCommon = require('./common')
 let db
 
 test('setUp db', function (t) {
-  db = testCommon.factory()
+  db = testCommon.factory({
+    walSizeLimit: 1e6
+  })
   db.open(t.end.bind(t))
 })
 
