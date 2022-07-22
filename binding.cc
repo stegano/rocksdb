@@ -544,7 +544,13 @@ struct Updates {
           bool values,
           bool data,
           const rocksdb::ColumnFamilyHandle* column)
-      : database_(database), seqNumber_(seqNumber), keys_(keys), values_(values), data_(data), column_(column) {}
+      : database_(database),
+        sequence_(seqNumber),
+        start_(seqNumber),
+        keys_(keys),
+        values_(values),
+        data_(data),
+        column_(column) {}
 
   void Close() { iterator_.reset(); }
 
@@ -561,7 +567,8 @@ struct Updates {
   }
 
   Database* database_;
-  int64_t seqNumber_;
+  int64_t sequence_;
+  int64_t start_;
   std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
   bool keys_;
   bool values_;
@@ -940,24 +947,23 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   rocksdb::Status Execute(Database& database) override {
-    rocksdb::TransactionLogIterator::ReadOptions options;
-
     if (!updates_->iterator_) {
-      const auto status = database_->db_->GetUpdatesSince(updates_->seqNumber_, &updates_->iterator_, options);
+      rocksdb::TransactionLogIterator::ReadOptions options;
+      const auto status = database_->db_->GetUpdatesSince(updates_->sequence_, &updates_->iterator_, options);
       if (!status.ok()) {
         return status;
       }
-    } else {
+    } else if (updates_->iterator_->Valid()) {
       updates_->iterator_->Next();
     }
 
-    if (!updates_->iterator_->Valid()) {
+    if (!updates_->iterator_->Valid() || !updates_->iterator_->status().ok()) {
       return updates_->iterator_->status();
     }
 
     auto batch = updates_->iterator_->GetBatch();
 
-    updates_->seqNumber_ = batch.sequence;
+    updates_->sequence_ = batch.sequence;
 
     count_ = batch.writeBatchPtr->Count();
     cache_.reserve(batch.writeBatchPtr->Count() * 4);
@@ -966,7 +972,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[4];
+    napi_value argv[5];
 
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
@@ -981,11 +987,13 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, val));
     }
 
-    NAPI_STATUS_RETURN(napi_create_int64(env, updates_->seqNumber_, &argv[2]));
+    NAPI_STATUS_RETURN(napi_create_int64(env, updates_->sequence_, &argv[2]));
 
     NAPI_STATUS_RETURN(napi_create_int64(env, count_, &argv[3]));
 
-    return CallFunction(env, callback, 4, argv);
+    NAPI_STATUS_RETURN(napi_create_int64(env, updates_->start_, &argv[4]));
+
+    return CallFunction(env, callback, 5, argv);
   }
 
   void Destroy(napi_env env) override {
@@ -1126,6 +1134,7 @@ NAPI_METHOD(updates_init) {
   NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "data", &dataProperty));
   NAPI_STATUS_THROWS(napi_get_value_bool(env, dataProperty, &data));
 
+  // TODO (fix): Needs to support { column: null }
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column, false));
 

@@ -241,8 +241,7 @@ class RocksLevel extends AbstractLevel {
       since: options?.since ?? 0,
       keys: options?.keys ?? true,
       values: options?.values ?? true,
-      data: options?.data ?? true,
-      column: options?.column ?? null
+      data: options?.data ?? true
     }
 
     if (typeof options.since !== 'number') {
@@ -261,7 +260,7 @@ class RocksLevel extends AbstractLevel {
       throw new TypeError("'data' must be nully or a boolean")
     }
 
-    if (typeof options.column !== 'object') {
+    if (options.column !== undefined && typeof options.column !== 'object') {
       throw new TypeError("'column' must be nully or a object")
     }
 
