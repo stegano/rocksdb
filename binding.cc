@@ -1149,46 +1149,39 @@ NAPI_METHOD(updates_init) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto seqNumber = Int64Property(env, argv[1], "since").value_or(0);
-  const auto keys = BooleanProperty(env, argv[1], "keys").value_or(true);
-  const auto values = BooleanProperty(env, argv[1], "values").value_or(true);
-  const auto data = BooleanProperty(env, argv[1], "data").value_or(true);
+  napi_value sinceProperty;
+  int64_t since;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "since", &sinceProperty));
+  NAPI_STATUS_THROWS(napi_get_value_int64(env, sinceProperty, &since));
+
+  napi_value keysProperty;
+  bool keys;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "keys", &keysProperty));
+  NAPI_STATUS_THROWS(napi_get_value_bool(env, keysProperty, &keys));
+
+  napi_value valuesProperty;
+  bool values;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "values", &valuesProperty));
+  NAPI_STATUS_THROWS(napi_get_value_bool(env, valuesProperty, &values));
+
+  napi_value dataProperty;
+  bool data;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "data", &dataProperty));
+  NAPI_STATUS_THROWS(napi_get_value_bool(env, dataProperty, &data));
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column, false));
 
-  auto updates = std::make_unique<Updates>(database, seqNumber, keys, values, data, column);
+  auto updates = std::make_unique<Updates>(database, since, keys, values, data, column);
 
-  napi_value ret;
-  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
 
-  {
-    napi_value context;
-    NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &context));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "context", context));
+  // Prevent GC of JS object before the iterator is closed (explicitly or on
+  // db close) and keep track of non-closed iterators to end them on db close.
+  updates.release()->Attach(env, result);
 
-    // Prevent GC of JS object before the iterator is closed (explicitly or on
-    // db close) and keep track of non-closed iterators to end them on db close.
-    updates.release()->Attach(env, context);
-
-    napi_value since;
-    NAPI_STATUS_THROWS(napi_create_int64(env, seqNumber, &since));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "since", since));
-
-    napi_value keys;
-    NAPI_STATUS_THROWS(napi_get_boolean(env, keys, &keys));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "keys", keys));
-
-    napi_value values;
-    NAPI_STATUS_THROWS(napi_get_boolean(env, seqNumber, &values));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "values", values));
-
-    napi_value data;
-    NAPI_STATUS_THROWS(napi_get_boolean(env, seqNumber, &data));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "data", data));
-  }
-
-  return ret;
+  return result;
 }
 
 NAPI_METHOD(updates_next) {

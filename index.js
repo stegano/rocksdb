@@ -6,7 +6,6 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
-const assert = require('assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -152,14 +151,32 @@ class RocksLevel extends AbstractLevel {
   }
 
   async getCurrentWALFile () {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
     return binding.db_get_current_wal_file(this[kContext])
   }
 
   async getSortedWALFiles () {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
     return binding.db_get_sorted_wal_files(this[kContext])
   }
 
   async flushWAL (options) {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
     binding.db_flush_wal(this[kContext], options)
   }
 
@@ -209,17 +226,32 @@ class RocksLevel extends AbstractLevel {
       })
     }
 
+    options = {
+      since: options?.since ?? 0,
+      keys: options?.keys ?? true,
+      values: options?.values ?? true,
+      data: options?.data ?? true
+    }
+
+    if (typeof options.since !== 'number') {
+      throw new TypeError("'since' must be nully or a number")
+    }
+
+    if (typeof options.keys !== 'boolean') {
+      throw new TypeError("'keys' must be nully or a boolean")
+    }
+
+    if (typeof options.values !== 'boolean') {
+      throw new TypeError("'values' must be nully or a boolean")
+    }
+
+    if (typeof options.data !== 'boolean') {
+      throw new TypeError("'data' must be nully or a boolean")
+    }
+
     class Updates {
       constructor (db, options) {
-        const { since, context, keys, values, data } = binding.updates_init(db[kContext], options)
-
-        assert(context)
-        assert.equal(since, options.since || 0)
-        assert.equal(keys, keys ?? true)
-        assert.equal(values, values ?? true)
-        assert.equal(data, data ?? true)
-
-        this.context = context
+        this.context = binding.updates_init(db[kContext], options)
         this.closed = false
         this.promise = null
         this.db = db
