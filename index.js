@@ -6,6 +6,7 @@ const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
+const assert = require('assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -210,7 +211,15 @@ class RocksLevel extends AbstractLevel {
 
     class Updates {
       constructor (db, options) {
-        this.context = binding.updates_init(db[kContext], options)
+        const { since, context, keys, values, data } = binding.updates_init(db[kContext], options)
+
+        assert(context)
+        assert.equal(since, options.since || 0)
+        assert.equal(keys, keys ?? true)
+        assert.equal(values, values ?? true)
+        assert.equal(data, data ?? true)
+
+        this.context = context
         this.closed = false
         this.promise = null
         this.db = db
