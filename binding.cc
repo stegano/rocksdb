@@ -814,8 +814,9 @@ NAPI_METHOD(db_open) {
 
   rocksdb::Options dbOptions;
 
-  dbOptions.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism")
-                                    .value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2)));
+  const auto parallelismValue = Uint32Property(env, argv[2], "parallelism")
+                                    .value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2));
+  dbOptions.IncreaseParallelism(parallelismValue);
 
   dbOptions.create_if_missing = BooleanProperty(env, argv[2], "createIfMissing").value_or(true);
   dbOptions.error_if_exists = BooleanProperty(env, argv[2], "errorIfExists").value_or(false);
@@ -827,13 +828,53 @@ NAPI_METHOD(db_open) {
                                       .value_or(std::max<uint32_t>(2, std::thread::hardware_concurrency() / 8));
   dbOptions.WAL_ttl_seconds = Uint32Property(env, argv[2], "walTTL").value_or(0) / 1e3;
   dbOptions.WAL_size_limit_MB = Uint32Property(env, argv[2], "walSizeLimit").value_or(0) / 1e6;
-  dbOptions.create_missing_column_families = true;
-  dbOptions.unordered_write = BooleanProperty(env, argv[2], "unorderedWrite").value_or(false);
-  dbOptions.fail_if_options_file_error = true;
   dbOptions.wal_compression = BooleanProperty(env, argv[2], "walCompression").value_or(false)
                                   ? rocksdb::CompressionType::kZSTD
                                   : rocksdb::CompressionType::kNoCompression;
+  dbOptions.create_missing_column_families = true;
+  dbOptions.unordered_write = BooleanProperty(env, argv[2], "unorderedWrite").value_or(false);
+  dbOptions.fail_if_options_file_error = true;
   dbOptions.manual_wal_flush = BooleanProperty(env, argv[2], "manualWalFlush").value_or(false);
+
+  napi_value ret;
+  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
+  {
+    napi_value parallelism;
+    NAPI_STATUS_THROWS(napi_create_int64(env, parallelismValue, &parallelism));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "parallelism", parallelism));
+
+    napi_value createIfMissing;
+    NAPI_STATUS_THROWS(napi_get_boolean(env, dbOptions.create_if_missing, &createIfMissing));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "createIfMissing", createIfMissing));
+
+    napi_value errorIfExists;
+    NAPI_STATUS_THROWS(napi_get_boolean(env, dbOptions.error_if_exists, &errorIfExists));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "errorIfExists", errorIfExists));
+
+    napi_value maxBackgroundJobs;
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.max_background_jobs, &maxBackgroundJobs));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "maxBackgroundJobs", maxBackgroundJobs));
+
+    napi_value walTTL;
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.WAL_ttl_seconds, &walTTL));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "walTTL", walTTL));
+
+    napi_value walSizeLimit;
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.WAL_size_limit_MB, &walSizeLimit));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "walSizeLimit", walSizeLimit));
+
+    napi_value walCompression;
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.wal_compression, &walCompression));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "walCompression", walCompression));
+
+    napi_value unorderedWrite;
+    NAPI_STATUS_THROWS(napi_get_boolean(env, dbOptions.error_if_exists, &unorderedWrite));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "unorderedWrite", unorderedWrite));
+
+    napi_value manualWalFlush;
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.manual_wal_flush, &manualWalFlush));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "manualWalFlush", manualWalFlush));
+  }
 
   // TODO (feat): dbOptions.listeners
 
@@ -898,7 +939,7 @@ NAPI_METHOD(db_open) {
   auto worker = new OpenWorker(env, database, argv[3], location, dbOptions, columnsFamilies);
   worker->Queue(env);
 
-  return 0;
+  return ret;
 }
 
 struct CloseWorker final : public Worker {
@@ -1891,6 +1932,68 @@ NAPI_METHOD(db_flush_wal) {
   return 0;
 }
 
+napi_status FromLogFile(napi_env env, const auto& file, napi_value* obj) {
+  NAPI_STATUS_RETURN(napi_create_object(env, obj));
+
+  napi_value pathName;
+  NAPI_STATUS_RETURN(napi_create_string_utf8(env, file->PathName().c_str(), NAPI_AUTO_LENGTH, &pathName));
+  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "pathName", pathName));
+
+  napi_value logNumber;
+  NAPI_STATUS_RETURN(napi_create_int64(env, file->LogNumber(), &logNumber));
+  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "logNumber", logNumber));
+
+  napi_value type;
+  NAPI_STATUS_RETURN(napi_create_int64(env, file->Type(), &type));
+  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "type", type));
+
+  napi_value startSequence;
+  NAPI_STATUS_RETURN(napi_create_int64(env, file->StartSequence(), &startSequence));
+  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "startSequence", startSequence));
+
+  napi_value sizeFileBytes;
+  NAPI_STATUS_RETURN(napi_create_int64(env, file->SizeFileBytes(), &sizeFileBytes));
+  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "sizeFileBytes", sizeFileBytes));
+
+  return napi_ok;
+}
+
+NAPI_METHOD(db_get_sorted_wal_files) {
+  NAPI_ARGV(1);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  rocksdb::VectorLogPtr files;
+  ROCKS_STATUS_THROWS(database->db_->GetSortedWalFiles(files));
+
+  napi_value ret;
+  NAPI_STATUS_THROWS(napi_create_array_with_length(env, files.size(), &ret));
+
+  for (size_t n = 0; n < files.size(); ++n) {
+    napi_value obj;
+    NAPI_STATUS_THROWS(FromLogFile(env, files[n], &obj));
+    NAPI_STATUS_THROWS(napi_set_element(env, ret, n, obj));
+  }
+
+  return ret;
+}
+
+NAPI_METHOD(db_get_current_wal_file) {
+  NAPI_ARGV(1);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  std::unique_ptr<rocksdb::LogFile> file;
+  ROCKS_STATUS_THROWS(database->db_->GetCurrentWalFile(&file));
+
+  napi_value ret;
+  NAPI_STATUS_THROWS(FromLogFile(env, file, &ret));
+
+  return ret;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1914,6 +2017,8 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(updates_next);
 
   NAPI_EXPORT_FUNCTION(db_flush_wal);
+  NAPI_EXPORT_FUNCTION(db_get_sorted_wal_files);
+  NAPI_EXPORT_FUNCTION(db_get_current_wal_file);
 
   NAPI_EXPORT_FUNCTION(batch_do);
   NAPI_EXPORT_FUNCTION(batch_init);

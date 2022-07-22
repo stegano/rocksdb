@@ -10,6 +10,7 @@ const { Iterator } = require('./iterator')
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
+const kOptions = Symbol('options')
 
 class RocksLevel extends AbstractLevel {
   constructor (location, options, _) {
@@ -43,6 +44,10 @@ class RocksLevel extends AbstractLevel {
     this[kColumns] = {}
   }
 
+  get options () {
+    return this[kOptions]
+  }
+
   get sequence () {
     return Number(binding.db_get_latest_sequence(this[kContext]))
   }
@@ -67,10 +72,10 @@ class RocksLevel extends AbstractLevel {
     if (options.createIfMissing) {
       fs.mkdir(this[kLocation], { recursive: true }, (err) => {
         if (err) return callback(err)
-        binding.db_open(this[kContext], this[kLocation], options, onOpen)
+        this[kOptions] = binding.db_open(this[kContext], this[kLocation], options, onOpen)
       })
     } else {
-      binding.db_open(this[kContext], this[kLocation], options, onOpen)
+      this[kOptions] = binding.db_open(this[kContext], this[kLocation], options, onOpen)
     }
   }
 
@@ -143,6 +148,14 @@ class RocksLevel extends AbstractLevel {
     }
 
     return binding.db_get_property(this[kContext], property)
+  }
+
+  async getCurrentWALFile () {
+    return binding.db_get_current_wal_file(this[kContext])
+  }
+
+  async getSortedWALFiles () {
+    return binding.db_get_sorted_wal_files(this[kContext])
   }
 
   async flushWAL (options) {
