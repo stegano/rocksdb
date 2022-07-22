@@ -264,6 +264,11 @@ class RocksLevel extends AbstractLevel {
       throw new TypeError("'column' must be nully or a object")
     }
 
+    // HACK: We don't properly check for nully column in binding.
+    if (!options.column) {
+      delete options.column
+    }
+
     class Updates {
       constructor (db, options) {
         this.context = binding.updates_init(db[kContext], options)
