@@ -856,11 +856,11 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "maxBackgroundJobs", maxBackgroundJobs));
 
     napi_value walTTL;
-    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.WAL_ttl_seconds, &walTTL));
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.WAL_ttl_seconds * 1e3, &walTTL));
     NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "walTTL", walTTL));
 
     napi_value walSizeLimit;
-    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.WAL_size_limit_MB, &walSizeLimit));
+    NAPI_STATUS_THROWS(napi_create_int64(env, dbOptions.WAL_size_limit_MB * 1e6, &walSizeLimit));
     NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "walSizeLimit", walSizeLimit));
 
     napi_value walCompression;
