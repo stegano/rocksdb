@@ -1068,7 +1068,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       return rocksdb::Status::OK();
     }
 
-    cache_.emplace_back("put");
+    cache_.emplace_back("merge");
 
     if (updates_->keys_) {
       cache_.emplace_back(key.ToStringView());
