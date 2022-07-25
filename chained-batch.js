@@ -48,6 +48,10 @@ class ChainedBatch extends AbstractChainedBatch {
     // TODO (fix): Check if open...
     binding.batch_merge(this[kDbContext], this[kBatchContext], key, value, options)
   }
+
+  get count () {
+    return binding.batch_count(this[kDbContext], this[kBatchContext])
+  }
 }
 
 exports.ChainedBatch = ChainedBatch

@@ -1845,6 +1845,18 @@ NAPI_METHOD(batch_clear) {
   return 0;
 }
 
+NAPI_METHOD(batch_count) {
+  NAPI_ARGV(2);
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, batch->Count(), &result));
+
+  return result;
+}
+
 NAPI_METHOD(batch_write) {
   NAPI_ARGV(3);
 
