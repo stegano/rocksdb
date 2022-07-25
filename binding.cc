@@ -130,17 +130,6 @@ static std::optional<int> Int32Property(napi_env env, napi_value obj, const std:
   return {};
 }
 
-static std::optional<int64_t> Int64Property(napi_env env, napi_value obj, const std::string_view& key) {
-  if (HasProperty(env, obj, key.data())) {
-    const auto value = GetProperty(env, obj, key.data());
-    int64_t result;
-    napi_get_value_int64(env, value, &result);
-    return result;
-  }
-
-  return {};
-}
-
 static napi_status ToString(napi_env env, napi_value from, std::string& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
