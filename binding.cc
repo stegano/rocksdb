@@ -1609,7 +1609,7 @@ NAPI_METHOD(iterator_get_sequence) {
   const auto seq = iterator->snapshot_->GetSequenceNumber();
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, seq, &result));
+  NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result));
 
   return result;
 }
