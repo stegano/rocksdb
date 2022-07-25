@@ -1925,7 +1925,8 @@ NAPI_METHOD(db_flush_wal) {
   return 0;
 }
 
-napi_status FromLogFile(napi_env env, const auto& file, napi_value* obj) {
+template<typename T>
+napi_status FromLogFile(napi_env env, const T& file, napi_value* obj) {
   NAPI_STATUS_RETURN(napi_create_object(env, obj));
 
   napi_value pathName;
