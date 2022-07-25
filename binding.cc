@@ -976,7 +976,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
-    if (cache_.empty()) {
+    if (count_ == -1) {
       return CallFunction(env, callback, 1, argv);
     }
 
@@ -1103,7 +1103,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
   bool Continue() override { return true; }
 
  private:
-  size_t count_;
+  int64_t count_ = -1;
   std::vector<std::optional<std::string>> cache_;
   Updates* updates_;
 };
