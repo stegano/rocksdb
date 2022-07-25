@@ -18,6 +18,7 @@ test('test updates()', async function (t) {
   batch1.put('key1', 'val2')
   await batch1.write()
   t.equal(1, db.sequence - seq1)
+  t.equal(batch1.count, 1)
 
   const batch2 = db.batch()
   const seq2 = db.sequence
@@ -27,6 +28,7 @@ test('test updates()', async function (t) {
   await batch2.write()
   t.equal(2, db.sequence - seq1)
   t.equal(1, db.sequence - seq2)
+  t.equal(batch2.count, 1)
 
   const val = []
   for await (const { rows, sequence, count } of db.updates({ since: 2 })) {
