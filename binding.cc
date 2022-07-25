@@ -2021,4 +2021,5 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_write);
   NAPI_EXPORT_FUNCTION(batch_put_log_data);
   NAPI_EXPORT_FUNCTION(batch_merge);
+  NAPI_EXPORT_FUNCTION(batch_count);
 }
