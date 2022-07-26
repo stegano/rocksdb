@@ -215,7 +215,9 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   if (!s) {
     return napi_get_null(env, &result);
   } else if (asBuffer) {
-    return napi_create_buffer_copy(env, s->size(), s->data(), NULL, &result);
+    using Y = typename std::remove_pointer<typename std::decay<decltype(*s)>::type>::type;
+    auto ptr = new Y(std::move(*s));
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<Y>, ptr, &result);
   } else {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
   }
