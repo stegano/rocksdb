@@ -43,8 +43,6 @@ int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   return endA - endB;
 }
 
-// Merge operator that picks the maximum operand, Comparison is based on
-// Slice::compare
 class MaxRevOperator : public rocksdb::MergeOperator {
  public:
   bool FullMergeV2(const MergeOperationInput& merge_in,
