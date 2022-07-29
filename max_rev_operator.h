@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory.h>
-
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   auto indexA = 0;
   auto indexB = 0;
