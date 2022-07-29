@@ -156,6 +156,37 @@ static napi_status ToString(napi_env env, napi_value from, std::string& to) {
   return napi_ok;
 }
 
+void noop(void* arg1, void* arg2) {}
+
+// TODO (fix): Should use rocksdb::Slice since "to" cannot outlive "from".
+static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlice& to) {
+  napi_valuetype type;
+  NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
+
+  if (type == napi_string) {
+    size_t length = 0;
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &length));
+    to.GetSelf()->resize(length, '\0');
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, &(*to.GetSelf())[0], length + 1, &length));
+    to.PinSelf();
+  } else {
+    bool isBuffer;
+    NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
+
+    if (isBuffer) {
+      char* buf = nullptr;
+      size_t length = 0;
+      NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
+
+      to.PinSlice(rocksdb::Slice(buf, length), noop, nullptr, nullptr);
+    } else {
+      return napi_invalid_arg;
+    }
+  }
+
+  return napi_ok;
+}
+
 static std::optional<std::string> StringProperty(napi_env env, napi_value opts, const std::string_view& name) {
   if (HasProperty(env, opts, name)) {
     const auto property = GetProperty(env, opts, name);
@@ -1171,10 +1202,10 @@ NAPI_METHOD(db_put) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  std::string key;
+  rocksdb::PinnableSlice key;
   NAPI_STATUS_THROWS(ToString(env, argv[1], key));
 
-  std::string val;
+  rocksdb::PinnableSlice val;
   NAPI_STATUS_THROWS(ToString(env, argv[2], val));
 
   rocksdb::ColumnFamilyHandle* column;
@@ -1389,7 +1420,7 @@ NAPI_METHOD(db_del) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  std::string key;
+  rocksdb::PinnableSlice key;
   NAPI_STATUS_THROWS(ToString(env, argv[1], key));
 
   rocksdb::ColumnFamilyHandle* column;
@@ -1498,7 +1529,7 @@ NAPI_METHOD(db_get_property) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  std::string property;
+  rocksdb::PinnableSlice property;
   NAPI_STATUS_THROWS(ToString(env, argv[1], property));
 
   std::string value;
@@ -1570,7 +1601,7 @@ NAPI_METHOD(iterator_seek) {
   Iterator* iterator;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
-  std::string target;
+  rocksdb::PinnableSlice target;
   NAPI_STATUS_THROWS(ToString(env, argv[1], target));
 
   iterator->first_ = true;
@@ -1707,14 +1738,14 @@ NAPI_METHOD(batch_do) {
 
   rocksdb::WriteBatch batch;
 
-  std::string type;
-  std::string key;
-  std::string value;
-
   uint32_t length;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
 
   for (uint32_t i = 0; i < length; i++) {
+    rocksdb::PinnableSlice type;
+    rocksdb::PinnableSlice key;
+    rocksdb::PinnableSlice value;
+
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
 
@@ -1791,10 +1822,10 @@ NAPI_METHOD(batch_put) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], (void**)(&batch)));
 
-  std::string key;
+  rocksdb::PinnableSlice key;
   NAPI_STATUS_THROWS(ToString(env, argv[2], key));
 
-  std::string val;
+  rocksdb::PinnableSlice val;
   NAPI_STATUS_THROWS(ToString(env, argv[3], val));
 
   rocksdb::ColumnFamilyHandle* column;
@@ -1814,7 +1845,7 @@ NAPI_METHOD(batch_del) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
-  std::string key;
+  rocksdb::PinnableSlice key;
   NAPI_STATUS_THROWS(ToString(env, argv[2], key));
 
   rocksdb::ColumnFamilyHandle* column;
@@ -1860,7 +1891,7 @@ NAPI_METHOD(batch_put_log_data) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
-  std::string logData;
+  rocksdb::PinnableSlice logData;
   NAPI_STATUS_THROWS(ToString(env, argv[2], logData));
 
   ROCKS_STATUS_THROWS(batch->PutLogData(logData));
@@ -1877,10 +1908,10 @@ NAPI_METHOD(batch_merge) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], (void**)(&batch)));
 
-  std::string key;
+  rocksdb::PinnableSlice key;
   NAPI_STATUS_THROWS(ToString(env, argv[2], key));
 
-  std::string val;
+  rocksdb::PinnableSlice val;
   NAPI_STATUS_THROWS(ToString(env, argv[3], val));
 
   rocksdb::ColumnFamilyHandle* column;
@@ -1916,7 +1947,7 @@ NAPI_METHOD(db_flush_wal) {
   return 0;
 }
 
-template<typename T>
+template <typename T>
 napi_status FromLogFile(napi_env env, const T& file, napi_value* obj) {
   NAPI_STATUS_RETURN(napi_create_object(env, obj));
 
