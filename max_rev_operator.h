@@ -4,22 +4,9 @@
 
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   auto indexA = 0;
-  const auto endA = a.size();
-  auto lenA = endA;
-
   auto indexB = 0;
+  const auto endA = a.size();
   const auto endB = b.size();
-  auto lenB = endB;
-
-  // Skip leading zeroes
-  while (a[indexA] == '0') {
-    ++indexA;
-    --lenA;
-  }
-  while (b[indexB] == '0') {
-    ++indexB;
-    --lenB;
-  }
 
   // Compare the revision number
   auto result = 0;
@@ -47,7 +34,7 @@ int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   }
 
   // Compare the rest
-  while (indexA < end) {
+  while (indexA < end && indexB < end) {
     const auto ac = a[indexA++];
     const auto bc = b[indexB++];
     if (ac != bc) {
@@ -55,7 +42,7 @@ int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
     }
   }
 
-  return lenA - lenB;
+  return endA - endB;
 }
 
 // Merge operator that picks the maximum operand, Comparison is based on
