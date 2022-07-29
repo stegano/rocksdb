@@ -1,8 +1,8 @@
 #pragma once
 
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
-  auto indexA = 0;
-  auto indexB = 0;
+  auto indexA = 0UL;
+  auto indexB = 0UL;
   const auto endA = a.size();
   const auto endB = b.size();
 
