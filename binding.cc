@@ -180,6 +180,7 @@ static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlic
       size_t length = 0;
       NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
 
+      // TODO (fix): Should extend life of "from". Or "to" should be a non-pinnable slice.
       to.PinSlice(rocksdb::Slice(buf, length), noop, nullptr, nullptr);
     } else {
       return napi_invalid_arg;
