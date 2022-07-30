@@ -9,7 +9,7 @@ int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   // Compare the revision number
   auto result = 0;
   const auto end = std::min(endA, endB);
-  while (indexA < end) {
+  while (indexA < end && indexB < end) {
     const auto ac = a[indexA++];
     const auto bc = b[indexB++];
 
