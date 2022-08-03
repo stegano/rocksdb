@@ -105,11 +105,17 @@ class RocksLevel extends AbstractLevel {
   }
 
   _get (key, options, callback) {
-    try {
-      binding.db_get(this[kContext], key, options, callback)
-    } catch (err) {
-      process.nextTick(callback, err)
-    }
+    this._getMany([key], options, (err, val) => {
+      if (err) {
+        callback(err)
+      } else if (val[0] === undefined) {
+        callback(Object.assign(new Error('not found'), {
+          code: 'LEVEL_NOT_FOUND'
+        }))
+      } else {
+        callback(null, val[0])
+      }
+    })
   }
 
   _getMany (keys, options, callback) {
