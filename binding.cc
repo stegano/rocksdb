@@ -1025,7 +1025,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     NAPI_STATUS_RETURN(napi_create_string_utf8(env, "merge", NAPI_AUTO_LENGTH, &mergeStr));
 
     NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
-    for (size_t idx = 0; idx < cache_.size(); idx += 3) {
+    for (size_t idx = 0; idx < cache_.size(); idx += 4) {
       napi_value op;
       if (cache_[idx + 0] == "put") {
         op = putStr;
@@ -1045,6 +1045,8 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       napi_value val;
       NAPI_STATUS_RETURN(Convert(env, cache_[idx + 2], updates_->valueAsBuffer_, val));
       NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 2, val));
+
+      // XXX: column
     }
 
     NAPI_STATUS_RETURN(napi_create_int64(env, updates_->sequence_, &argv[2]));
@@ -1090,11 +1092,8 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       cache_.emplace_back(std::nullopt);
     }
 
-    if (!updates_->column_) {
-      cache_.emplace_back(GetColumnName(column_family_id));
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
+    // XXX: column
+    cache_.emplace_back(std::nullopt);
 
     return rocksdb::Status::OK();
   }
@@ -1114,11 +1113,8 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
     cache_.emplace_back(std::nullopt);
 
-    if (!updates_->column_) {
-      cache_.emplace_back(GetColumnName(column_family_id));
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
+    // XXX: column
+    cache_.emplace_back(std::nullopt);
 
     return rocksdb::Status::OK();
   }
@@ -1142,11 +1138,8 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       cache_.emplace_back(std::nullopt);
     }
 
-    if (!updates_->column_) {
-      cache_.emplace_back(GetColumnName(column_family_id));
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
+    // XXX: column
+    cache_.emplace_back(std::nullopt);
 
     return rocksdb::Status::OK();
   }
@@ -1975,6 +1968,158 @@ NAPI_METHOD(batch_count) {
   return result;
 }
 
+struct BatchIterator : public rocksdb::WriteBatch::Handler {
+  BatchIterator(bool keys, bool values, bool data) : keys_(keys), values_(values), data_(data) {}
+
+  rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    result_->emplace_back("put");
+
+    if (keys_) {
+      result_->emplace_back(key.ToStringView());
+    } else {
+      result_->emplace_back(std::nullopt);
+    }
+
+    if (values_) {
+      result_->emplace_back(value.ToStringView());
+    } else {
+      result_->emplace_back(std::nullopt);
+    }
+
+    // XXX: column
+    result_->emplace_back(std::nullopt);
+
+    return rocksdb::Status::OK();
+  }
+
+  rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
+    result_->emplace_back("del");
+
+    if (keys_) {
+      result_->emplace_back(key.ToStringView());
+    } else {
+      result_->emplace_back(std::nullopt);
+    }
+
+    result_->emplace_back(std::nullopt);
+
+    // XXX: column
+    result_->emplace_back(std::nullopt);
+
+    return rocksdb::Status::OK();
+  }
+
+  rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    result_->emplace_back("merge");
+
+    if (keys_) {
+      result_->emplace_back(key.ToStringView());
+    } else {
+      result_->emplace_back(std::nullopt);
+    }
+
+    if (values_) {
+      result_->emplace_back(value.ToStringView());
+    } else {
+      result_->emplace_back(std::nullopt);
+    }
+
+    // XXX: column
+    result_->emplace_back(std::nullopt);
+
+    return rocksdb::Status::OK();
+  }
+
+  void LogData(const rocksdb::Slice& data) override {
+    if (data_) {
+      result_->emplace_back("data");
+      result_->emplace_back(std::nullopt);
+      result_->emplace_back(data.ToStringView());
+      result_->emplace_back(std::nullopt);
+    }
+  }
+
+  bool Continue() override { return true; }
+
+  rocksdb::Status Iterate(const rocksdb::WriteBatch& batch, std::vector<std::optional<std::string>>& result) {
+    result_ = &result;
+    result_->reserve(batch.Count() * 4);
+    return batch.Iterate(this);
+  }
+
+  std::vector<std::optional<std::string>>* result_;
+  bool keys_;
+  bool values_;
+  bool data_;
+};
+
+NAPI_METHOD(batch_iterate) {
+  NAPI_ARGV(2);
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
+
+  napi_value keysProperty;
+  bool keys;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "keys", &keysProperty));
+  NAPI_STATUS_THROWS(napi_get_value_bool(env, keysProperty, &keys));
+
+  napi_value valuesProperty;
+  bool values;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "values", &valuesProperty));
+  NAPI_STATUS_THROWS(napi_get_value_bool(env, valuesProperty, &values));
+
+  napi_value dataProperty;
+  bool data;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "data", &dataProperty));
+  NAPI_STATUS_THROWS(napi_get_value_bool(env, dataProperty, &data));
+
+  const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
+  const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
+
+  BatchIterator iterator(keys, values, data);
+
+  std::vector<std::optional<std::string>> cache;
+  ROCKS_STATUS_THROWS(iterator.Iterate(*batch, cache));
+
+  napi_value putStr;
+  NAPI_STATUS_THROWS(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
+
+  napi_value delStr;
+  NAPI_STATUS_THROWS(napi_create_string_utf8(env, "del", NAPI_AUTO_LENGTH, &delStr));
+
+  napi_value mergeStr;
+  NAPI_STATUS_THROWS(napi_create_string_utf8(env, "merge", NAPI_AUTO_LENGTH, &mergeStr));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_array_with_length(env, cache.size(), &result));
+  for (size_t idx = 0; idx < cache.size(); idx += 4) {
+    napi_value op;
+    if (cache[idx + 0] == "put") {
+      op = putStr;
+    } else if (cache[idx + 0] == "del") {
+      op = delStr;
+    } else if (cache[idx + 0] == "merge") {
+      op = mergeStr;
+    } else {
+      NAPI_STATUS_THROWS(Convert(env, cache[idx + 0], false, op));
+    }
+    NAPI_STATUS_THROWS(napi_set_element(env, result, idx + 0, op));
+
+    napi_value key;
+    NAPI_STATUS_THROWS(Convert(env, cache[idx + 1], keyAsBuffer, key));
+    NAPI_STATUS_THROWS(napi_set_element(env, result, idx + 1, key));
+
+    napi_value val;
+    NAPI_STATUS_THROWS(Convert(env, cache[idx + 2], valueAsBuffer, val));
+    NAPI_STATUS_THROWS(napi_set_element(env, result, idx + 2, val));
+
+    // XXX: column
+  }
+
+  return result;
+}
+
 NAPI_METHOD(db_flush_wal) {
   NAPI_ARGV(2);
 
@@ -2086,4 +2231,5 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_put_log_data);
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
+  NAPI_EXPORT_FUNCTION(batch_iterate);
 }
