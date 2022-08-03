@@ -96,25 +96,35 @@ class RocksLevel extends AbstractLevel {
 
   _put (key, value, options, callback) {
     try {
-      binding.db_put(this[kContext], key, value, options)
-      process.nextTick(callback, null)
+      const batch = this.batch()
+      batch.put(key, value, options)
+      batch.write(callback)
     } catch (err) {
       process.nextTick(callback, err)
     }
   }
 
   _get (key, options, callback) {
-    binding.db_get(this[kContext], key, options, callback)
+    try {
+      binding.db_get(this[kContext], key, options, callback)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _getMany (keys, options, callback) {
-    binding.db_get_many(this[kContext], keys, options, callback)
+    try {
+      binding.db_get_many(this[kContext], keys, options, callback)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _del (key, options, callback) {
     try {
-      binding.db_del(this[kContext], key, options)
-      process.nextTick(callback, null)
+      const batch = this.batch()
+      batch.del(key, options)
+      batch.write(callback)
     } catch (err) {
       process.nextTick(callback, err)
     }

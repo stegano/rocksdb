@@ -1230,27 +1230,6 @@ NAPI_METHOD(updates_close) {
   return 0;
 }
 
-NAPI_METHOD(db_put) {
-  NAPI_ARGV(4);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
-
-  rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], val));
-
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[3], &column));
-
-  rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db_->Put(writeOptions, column, key, val));
-
-  return 0;
-}
-
 struct GetWorker final : public Worker {
   GetWorker(napi_env env,
             Database* database,
@@ -1444,24 +1423,6 @@ NAPI_METHOD(db_get_many) {
   auto worker =
       new GetManyWorker(env, database, column, std::move(keys), argv[3], asBuffer, fillCache, ignoreRangeDeletions);
   worker->Queue(env);
-
-  return 0;
-}
-
-NAPI_METHOD(db_del) {
-  NAPI_ARGV(3);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
-
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], &column));
-
-  rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db_->Delete(writeOptions, column, key));
 
   return 0;
 }
@@ -2200,10 +2161,8 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
   NAPI_EXPORT_FUNCTION(db_close);
-  NAPI_EXPORT_FUNCTION(db_put);
   NAPI_EXPORT_FUNCTION(db_get);
   NAPI_EXPORT_FUNCTION(db_get_many);
-  NAPI_EXPORT_FUNCTION(db_del);
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
