@@ -249,7 +249,7 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   if (!s) {
     return napi_get_null(env, &result);
   } else if (asBuffer) {
-    using Y = typename std::remove_pointer<typename std::decay<decltype(*s)>::type>::type;
+    using Y = typename std::decay<decltype(*s)>::type;
     auto ptr = new Y(std::move(*s));
     return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<Y>, ptr, &result);
   } else {
@@ -568,14 +568,18 @@ struct Updates {
           bool keys,
           bool values,
           bool data,
-          const rocksdb::ColumnFamilyHandle* column)
+          const rocksdb::ColumnFamilyHandle* column,
+          bool keyAsBuffer,
+          bool valueAsBuffer)
       : database_(database),
         sequence_(seqNumber),
         start_(seqNumber),
         keys_(keys),
         values_(values),
         data_(data),
-        column_(column) {}
+        column_(column),
+        keyAsBuffer_(keyAsBuffer),
+        valueAsBuffer_(valueAsBuffer) {}
 
   void Close() { iterator_.reset(); }
 
@@ -599,6 +603,8 @@ struct Updates {
   bool values_;
   bool data_;
   const rocksdb::ColumnFamilyHandle* column_;
+  bool keyAsBuffer_;
+  bool valueAsBuffer_;
 
  private:
   napi_ref ref_ = nullptr;
@@ -1009,11 +1015,36 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       return CallFunction(env, callback, 1, argv);
     }
 
+    napi_value putStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
+
+    napi_value delStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "del", NAPI_AUTO_LENGTH, &delStr));
+
+    napi_value mergeStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "merge", NAPI_AUTO_LENGTH, &mergeStr));
+
     NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
-    for (size_t idx = 0; idx < cache_.size(); idx++) {
+    for (size_t idx = 0; idx < cache_.size(); idx += 3) {
+      napi_value op;
+      if (cache_[idx + 0] == "put") {
+        op = putStr;
+      } else if (cache_[idx + 0] == "del") {
+        op = delStr;
+      } else if (cache_[idx + 0] == "merge") {
+        op = mergeStr;
+      } else {
+        NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], false, op));
+      }
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 0, op));
+
+      napi_value key;
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 1, key));
+
       napi_value val;
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx], false, val));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, val));
+      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 2], updates_->valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 2, val));
     }
 
     NAPI_STATUS_RETURN(napi_create_int64(env, updates_->sequence_, &argv[2]));
@@ -1163,11 +1194,14 @@ NAPI_METHOD(updates_init) {
   NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "data", &dataProperty));
   NAPI_STATUS_THROWS(napi_get_value_bool(env, dataProperty, &data));
 
+  const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
+  const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
+
   // TODO (fix): Needs to support { column: null }
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column, false));
 
-  auto updates = std::make_unique<Updates>(database, since, keys, values, data, column);
+  auto updates = std::make_unique<Updates>(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
