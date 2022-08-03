@@ -16,7 +16,7 @@ test('test batch iterate', async function (t) {
   const batch = db.batch()
   batch.put('1', 'a')
   batch.put('2', 'b')
-  t.same([...batch], [
+  t.same(batch.toArray(), [
     { type: 'put', key: '1', value: 'a' },
     { type: 'put', key: '2', value: 'b' }
   ])

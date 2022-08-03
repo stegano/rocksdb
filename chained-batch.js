@@ -53,19 +53,28 @@ class ChainedBatch extends AbstractChainedBatch {
     return binding.batch_count(this[kDbContext], this[kBatchContext])
   }
 
-  * [Symbol.iterator] () {
+  forEach (fn, options) {
     const rows = binding.batch_iterate(this[kBatchContext], {
       keys: true,
       values: true,
-      data: true
+      data: true,
+      ...options
     })
     for (let n = 0; n < rows.length; n += 4) {
-      yield {
+      fn({
         type: rows[n + 0],
         key: rows[n + 1],
         value: rows[n + 2]
-      }
+      }, n, this)
     }
+  }
+
+  toArray (options) {
+    const result = []
+    this.forEach(val => {
+      result.push(val)
+    }, options)
+    return result
   }
 }
 
