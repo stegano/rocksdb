@@ -3,36 +3,31 @@
 const { AbstractChainedBatch } = require('abstract-level')
 const binding = require('./binding')
 
-const kDbContext = Symbol('db')
+const kWrite = Symbol('write')
 const kBatchContext = Symbol('context')
 
 class ChainedBatch extends AbstractChainedBatch {
-  constructor (db, context) {
+  constructor (db, write) {
     super(db)
 
-    this[kDbContext] = context
-    this[kBatchContext] = binding.batch_init(this[kDbContext])
+    this[kWrite] = write
+    this[kBatchContext] = binding.batch_init()
   }
 
   _put (key, value, options) {
-    binding.batch_put(this[kDbContext], this[kBatchContext], key, value, options)
+    binding.batch_put(this[kBatchContext], key, value, options)
   }
 
   _del (key, options) {
-    binding.batch_del(this[kDbContext], this[kBatchContext], key, options)
+    binding.batch_del(this[kBatchContext], key, options)
   }
 
   _clear () {
-    binding.batch_clear(this[kDbContext], this[kBatchContext])
+    binding.batch_clear(this[kBatchContext])
   }
 
   _write (options, callback) {
-    try {
-      binding.batch_write(this[kDbContext], this[kBatchContext], options)
-      process.nextTick(callback, null)
-    } catch (err) {
-      process.nextTick(callback, err)
-    }
+    this[kWrite](this, this[kBatchContext], options, callback)
   }
 
   _close (callback) {
@@ -41,16 +36,16 @@ class ChainedBatch extends AbstractChainedBatch {
 
   putLogData (data, options) {
     // TODO (fix): Check if open...
-    binding.batch_put_log_data(this[kDbContext], this[kBatchContext], data, options)
+    binding.batch_put_log_data(this[kBatchContext], data, options)
   }
 
   merge (key, value, options = {}) {
     // TODO (fix): Check if open...
-    binding.batch_merge(this[kDbContext], this[kBatchContext], key, value, options)
+    binding.batch_merge(this[kBatchContext], key, value, options)
   }
 
   get count () {
-    return binding.batch_count(this[kDbContext], this[kBatchContext])
+    return binding.batch_count(this[kBatchContext])
   }
 
   forEach (fn, options) {

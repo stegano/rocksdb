@@ -622,7 +622,7 @@ static napi_status GetColumnFamily(Database* database,
     napi_value value = nullptr;
     NAPI_STATUS_RETURN(napi_get_named_property(env, options, "column", &value));
     NAPI_STATUS_RETURN(napi_get_value_external(env, value, reinterpret_cast<void**>(column)));
-  } else if (fallback) {
+  } else if (fallback && database) {
     *column = database->db_->DefaultColumnFamily();
   } else {
     *column = nullptr;
@@ -1795,11 +1795,6 @@ NAPI_METHOD(batch_do) {
 }
 
 NAPI_METHOD(batch_init) {
-  NAPI_ARGV(1);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
   auto batch = new rocksdb::WriteBatch();
 
   napi_value result;
@@ -1809,53 +1804,79 @@ NAPI_METHOD(batch_init) {
 }
 
 NAPI_METHOD(batch_put) {
-  NAPI_ARGV(5);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+  NAPI_ARGV(4);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], (void**)(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], key));
+  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
 
   rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(ToString(env, argv[3], val));
+  NAPI_STATUS_THROWS(ToString(env, argv[2], val));
 
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[4], &column));
+  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
 
-  ROCKS_STATUS_THROWS(batch->Put(column, key, val));
+  if (column) {
+    ROCKS_STATUS_THROWS(batch->Put(column, key, val));
+  } else {
+    ROCKS_STATUS_THROWS(batch->Put(key, val));
+  }
 
   return 0;
 }
 
 NAPI_METHOD(batch_del) {
-  NAPI_ARGV(4);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+  NAPI_ARGV(3);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], key));
+  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
 
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[3], &column));
+  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
 
-  ROCKS_STATUS_THROWS(batch->Delete(column, key));
+  if (column) {
+    ROCKS_STATUS_THROWS(batch->Delete(column, key));
+  } else {
+    ROCKS_STATUS_THROWS(batch->Delete(key));
+  }
+
+  return 0;
+}
+
+NAPI_METHOD(batch_merge) {
+  NAPI_ARGV(4);
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
+
+  rocksdb::PinnableSlice key;
+  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
+
+  rocksdb::PinnableSlice val;
+  NAPI_STATUS_THROWS(ToString(env, argv[2], val));
+
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
+
+  if (column) {
+    ROCKS_STATUS_THROWS(batch->Merge(column, key, val));
+  } else {
+    ROCKS_STATUS_THROWS(batch->Merge(key, val));
+  }
 
   return 0;
 }
 
 NAPI_METHOD(batch_clear) {
-  NAPI_ARGV(2);
+  NAPI_ARGV(1);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   batch->Clear();
 
@@ -1878,50 +1899,24 @@ NAPI_METHOD(batch_write) {
 }
 
 NAPI_METHOD(batch_put_log_data) {
-  NAPI_ARGV(4);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+  NAPI_ARGV(3);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice logData;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], logData));
+  NAPI_STATUS_THROWS(ToString(env, argv[1], logData));
 
   ROCKS_STATUS_THROWS(batch->PutLogData(logData));
 
   return 0;
 }
 
-NAPI_METHOD(batch_merge) {
-  NAPI_ARGV(5);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], (void**)(&batch)));
-
-  rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], key));
-
-  rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(ToString(env, argv[3], val));
-
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[4], &column));
-
-  ROCKS_STATUS_THROWS(batch->Merge(column, key, val));
-
-  return 0;
-}
-
 NAPI_METHOD(batch_count) {
-  NAPI_ARGV(2);
+  NAPI_ARGV(1);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_int64(env, batch->Count(), &result));
