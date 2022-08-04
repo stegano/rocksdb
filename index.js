@@ -386,8 +386,10 @@ class RocksLevel extends AbstractLevel {
                 throw new AbortError()
               }
 
-              yield update
-              since = update.sequence + update.count
+              if (update.sequence >= since) {
+                yield update
+                since = update.sequence + update.count
+              }
             }
           }
         } catch (err) {
