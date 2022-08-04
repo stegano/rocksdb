@@ -64,6 +64,9 @@ class RocksLevel extends AbstractLevel {
     this[kLocation] = location
     this[kContext] = binding.db_init()
     this[kColumns] = {}
+
+    // .updates(...) uses 'write' listener.
+    this.setMaxListeners(100)
   }
 
   get sequence () {
