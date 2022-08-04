@@ -3,9 +3,12 @@
 const { AbstractChainedBatch } = require('abstract-level')
 const binding = require('./binding')
 const ModuleError = require('module-error')
+const { fromCallback } = require('catering')
+
 const kWrite = Symbol('write')
 const kBatchContext = Symbol('batchContext')
 const kDbContext = Symbol('dbContext')
+const kPromise = Symbol('promise')
 
 const NOOP = () => {}
 const EMPTY = {}
@@ -50,7 +53,11 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _write (options, callback) {
-    this[kWrite](this, this[kBatchContext], options ?? EMPTY, callback ?? NOOP)
+    callback = fromCallback(callback, kPromise)
+
+    this[kWrite](this, this[kBatchContext], options ?? EMPTY, callback)
+
+    return callback[kPromise]
   }
 
   _close (callback) {

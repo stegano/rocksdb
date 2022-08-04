@@ -1,5 +1,6 @@
 'use strict'
 
+const { fromCallback } = require('catering')
 const { AbstractLevel } = require('abstract-level')
 const ModuleError = require('module-error')
 const fs = require('fs')
@@ -11,6 +12,9 @@ const os = require('os')
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
+const kPromise = Symbol('promise')
+
+const EMPTY = {}
 
 class RocksLevel extends AbstractLevel {
   constructor (location, options, _) {
@@ -95,17 +99,21 @@ class RocksLevel extends AbstractLevel {
   }
 
   _put (key, value, options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     try {
       const batch = this.batch()
-      batch.put(key, value, options)
+      batch.put(key, value, options ?? EMPTY)
       batch.write(callback)
     } catch (err) {
       process.nextTick(callback, err)
     }
+    
+    return callback[kPromise]
   }
 
   _get (key, options, callback) {
-    this._getMany([key], options, (err, val) => {
+    this._getMany([key], options ?? EMPTY, (err, val) => {
       if (err) {
         callback(err)
       } else if (val[0] === undefined) {
@@ -119,31 +127,43 @@ class RocksLevel extends AbstractLevel {
   }
 
   _getMany (keys, options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     try {
-      binding.db_get_many(this[kContext], keys, options, callback)
+      binding.db_get_many(this[kContext], keys, options ?? EMPTY, callback)
     } catch (err) {
       process.nextTick(callback, err)
     }
+
+    return callback[kPromise]
   }
 
   _del (key, options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     try {
       const batch = this.batch()
-      batch.del(key, options)
+      batch.del(key, options ?? EMPTY)
       batch.write(callback)
     } catch (err) {
       process.nextTick(callback, err)
     }
+
+    return callback[kPromise]
   }
 
   _clear (options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     try {
       // TODO (fix): Use batch + DeleteRange...
-      binding.db_clear(this[kContext], options)
+      binding.db_clear(this[kContext], options ?? EMPTY)
       process.nextTick(callback, null)
     } catch (err) {
       process.nextTick(callback, err)
     }
+
+    return callback[kPromise]
   }
 
   _chainedBatch () {
@@ -160,16 +180,20 @@ class RocksLevel extends AbstractLevel {
   }
 
   _batch (operations, options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     try {
-      binding.batch_do(this[kContext], operations, options)
+      binding.batch_do(this[kContext], operations, options ?? EMPTY)
       process.nextTick(callback, null)
     } catch (err) {
       process.nextTick(callback, err)
     }
+
+    return callback[kPromise]
   }
 
   _iterator (options) {
-    return new Iterator(this, this[kContext], options)
+    return new Iterator(this, this[kContext], options ?? EMPTY)
   }
 
   getProperty (property) {
