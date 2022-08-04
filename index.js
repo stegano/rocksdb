@@ -406,7 +406,7 @@ class RocksLevel extends AbstractLevel {
         }
       }
     } finally {
-      options.signal?.removeventListener('abort', onAbort)
+      options.signal?.removeEventListener('abort', onAbort)
     }
   }
 
