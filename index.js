@@ -108,7 +108,7 @@ class RocksLevel extends AbstractLevel {
     } catch (err) {
       process.nextTick(callback, err)
     }
-    
+
     return callback[kPromise]
   }
 

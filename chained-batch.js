@@ -10,7 +10,6 @@ const kBatchContext = Symbol('batchContext')
 const kDbContext = Symbol('dbContext')
 const kPromise = Symbol('promise')
 
-const NOOP = () => {}
 const EMPTY = {}
 
 class ChainedBatch extends AbstractChainedBatch {

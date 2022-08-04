@@ -16,7 +16,6 @@ test('setUp db', function (t) {
 test('test sequences()', async function (t) {
   const batches = []
   db.on('write', (batch, sequence) => {
-    console.error("###", sequence)
     batches.push({ rows: [...batch], sequence })
   })
 
