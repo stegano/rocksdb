@@ -16,6 +16,7 @@ const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
 const kPromise = Symbol('promise')
+const kUpdates = Symbol('updates')
 
 const EMPTY = {}
 
@@ -380,7 +381,7 @@ class RocksLevel extends AbstractLevel {
 
         try {
           if (since <= this.sequence) {
-            for await (const update of this._updates(options)) {
+            for await (const update of this[kUpdates](options)) {
               if (ac.signal.aborted) {
                 throw new AbortError()
               }
@@ -412,7 +413,7 @@ class RocksLevel extends AbstractLevel {
     }
   }
 
-  async * _updates (options) {
+  async * [kUpdates] (options) {
     class Updates {
       constructor (db, options) {
         this.context = binding.updates_init(db[kContext], options)
