@@ -7,6 +7,9 @@ const kWrite = Symbol('write')
 const kBatchContext = Symbol('batchContext')
 const kDbContext = Symbol('dbContext')
 
+const NOOP = () => {}
+const EMPTY = {}
+
 class ChainedBatch extends AbstractChainedBatch {
   constructor (db, context, write) {
     super(db)
@@ -29,7 +32,7 @@ class ChainedBatch extends AbstractChainedBatch {
       })
     }
 
-    binding.batch_put(this[kBatchContext], key, value, options ?? {})
+    binding.batch_put(this[kBatchContext], key, value, options ?? EMPTY)
   }
 
   _del (key, options) {
@@ -39,7 +42,7 @@ class ChainedBatch extends AbstractChainedBatch {
       })
     }
 
-    binding.batch_del(this[kBatchContext], key, options ?? {})
+    binding.batch_del(this[kBatchContext], key, options ?? EMPTY)
   }
 
   _clear () {
@@ -47,7 +50,7 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _write (options, callback) {
-    this[kWrite](this, this[kBatchContext], options ?? {}, callback)
+    this[kWrite](this, this[kBatchContext], options ?? EMPTY, callback ?? NOOP)
   }
 
   _close (callback) {
@@ -65,7 +68,7 @@ class ChainedBatch extends AbstractChainedBatch {
       })
     }
 
-    binding.batch_put_log_data(this[kBatchContext], value, options ?? {})
+    binding.batch_put_log_data(this[kBatchContext], value, options ?? EMPTY)
   }
 
   _merge (key, value, options) {
@@ -81,7 +84,7 @@ class ChainedBatch extends AbstractChainedBatch {
       })
     }
 
-    binding.batch_merge(this[kBatchContext], key, value, options ?? {})
+    binding.batch_merge(this[kBatchContext], key, value, options ?? EMPTY)
   }
 
   * [Symbol.iterator] () {
