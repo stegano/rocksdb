@@ -138,6 +138,7 @@ class RocksLevel extends AbstractLevel {
 
   _clear (options, callback) {
     try {
+      // TODO (fix): Use batch + DeleteRange...
       binding.db_clear(this[kContext], options)
       process.nextTick(callback, null)
     } catch (err) {
@@ -148,7 +149,9 @@ class RocksLevel extends AbstractLevel {
   _chainedBatch () {
     return new ChainedBatch(this, this[kContext], (batch, context, options, callback) => {
       try {
+        const seq = this.sequence
         binding.batch_write(this[kContext], context, options)
+        this.emit('write', batch, seq + 1)
         process.nextTick(callback, null)
       } catch (err) {
         process.nextTick(callback, err)

@@ -2,7 +2,7 @@
 
 const { AbstractChainedBatch } = require('abstract-level')
 const binding = require('./binding')
-
+const ModuleError = require('module-error')
 const kWrite = Symbol('write')
 const kBatchContext = Symbol('batchContext')
 const kDbContext = Symbol('dbContext')
@@ -17,10 +17,28 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _put (key, value, options) {
+    if (key === null || key === undefined) {
+      throw new ModuleError('Key cannot be null or undefined', {
+        code: 'LEVEL_INVALID_KEY'
+      })
+    }
+
+    if (value === null || value === undefined) {
+      throw new ModuleError('value cannot be null or undefined', {
+        code: 'LEVEL_INVALID_VALUE'
+      })
+    }
+
     binding.batch_put(this[kBatchContext], key, value, options ?? {})
   }
 
   _del (key, options) {
+    if (key === null || key === undefined) {
+      throw new ModuleError('Key cannot be null or undefined', {
+        code: 'LEVEL_INVALID_KEY'
+      })
+    }
+
     binding.batch_del(this[kBatchContext], key, options ?? {})
   }
 
@@ -40,11 +58,29 @@ class ChainedBatch extends AbstractChainedBatch {
     return binding.batch_count(this[kBatchContext])
   }
 
-  _putLogData (data, options) {
-    binding.batch_put_log_data(this[kBatchContext], data, options ?? {})
+  _putLogData (value, options) {
+    if (value === null || value === undefined) {
+      throw new ModuleError('value cannot be null or undefined', {
+        code: 'LEVEL_INVALID_VALUE'
+      })
+    }
+
+    binding.batch_put_log_data(this[kBatchContext], value, options ?? {})
   }
 
   _merge (key, value, options) {
+    if (key === null || key === undefined) {
+      throw new ModuleError('Key cannot be null or undefined', {
+        code: 'LEVEL_INVALID_KEY'
+      })
+    }
+
+    if (value === null || value === undefined) {
+      throw new ModuleError('value cannot be null or undefined', {
+        code: 'LEVEL_INVALID_VALUE'
+      })
+    }
+
     binding.batch_merge(this[kBatchContext], key, value, options ?? {})
   }
 
