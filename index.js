@@ -305,9 +305,8 @@ class RocksLevel extends AbstractLevel {
       signal: options?.signal ?? null
     }
 
-    // HACK: We don't properly check for nully column in binding.
     if (options.column) {
-      throw new TypeError("'column' not supported")
+      throw new TypeError("'column' not implemented")
     }
 
     if (typeof options.since !== 'number') {

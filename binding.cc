@@ -1248,8 +1248,8 @@ NAPI_METHOD(updates_init) {
   const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[1], &column));
+  rocksdb::ColumnFamilyHandle* column = nullptr;
+  // NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[1], &column));
 
   auto updates = std::make_unique<Updates>(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
@@ -1933,8 +1933,8 @@ NAPI_METHOD(batch_iterate) {
   const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
+  rocksdb::ColumnFamilyHandle* column = nullptr;
+  // NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
 
   napi_value result;
   BatchIterator iterator(nullptr, keys, values, data, column, keyAsBuffer, valueAsBuffer);
