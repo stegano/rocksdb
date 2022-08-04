@@ -333,6 +333,7 @@ struct ColumnFamily {
   napi_ref ref;
   napi_value val;
   rocksdb::ColumnFamilyHandle* handle;
+  rocksdb::ColumnFamilyDescriptor descriptor;
 };
 
 struct Database {
@@ -449,8 +450,9 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       NAPI_STATUS_RETURN(Convert(env, cache_[n].val, valueAsBuffer_, val));
       NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 2, val));
 
+      // TODO (fix)
       // napi_value column = cache_[n].column ? cache_[n].column->val : nullVal;
-      // NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 3, column));
+      NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 3, nullVal));
     }
 
     return napi_ok;
@@ -473,9 +475,9 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       entry.val = value.ToStringView();
     }
 
-    if (database_) {
-      entry.column = database_->columns_[column_family_id];
-    }
+    // if (database_ && database_->columns_.find(column_family_id) != database_->columns_.end()) {
+    //   entry.column = database_->columns_[column_family_id];
+    // }
 
     cache_.push_back(entry);
 
@@ -495,9 +497,9 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       entry.key = key.ToStringView();
     }
 
-    if (database_) {
-      entry.column = database_->columns_[column_family_id];
-    }
+    // if (database_ && database_->columns_.find(column_family_id) != database_->columns_.end()) {
+    //   entry.column = database_->columns_[column_family_id];
+    // }
 
     cache_.push_back(entry);
 
@@ -521,9 +523,9 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       entry.val = value.ToStringView();
     }
 
-    if (database_) {
-      entry.column = database_->columns_[column_family_id];
-    }
+    // if (database_ && database_->columns_.find(column_family_id) != database_->columns_.end()) {
+    //   entry.column = database_->columns_[column_family_id];
+    // }
 
     cache_.push_back(entry);
 
@@ -892,9 +894,10 @@ struct OpenWorker final : public Worker {
     for (size_t n = 0; n < size; ++n) {
       ColumnFamily column;
       column.handle = handles_[n];
+      column.descriptor = descriptors_[n];
       NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &column.val));
-      NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors_[n].name.c_str(), column.val));
       NAPI_STATUS_RETURN(napi_create_reference(env, column.val, 1, &column.ref));
+
       NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors_[n].name.c_str(), column.val));
 
       database_->columns_[column.handle->GetID()] = column;

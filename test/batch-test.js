@@ -14,9 +14,9 @@ test('setUp db', function (t) {
 
 test('test batch iterate', async function (t) {
   const batch = db.batch()
-  batch.put('1', 'a')
-  batch.put('2', 'b')
-  t.same(batch.toArray(), [
+  batch._put('1', 'a')
+  batch._put('2', 'b')
+  t.same([...batch], [
     { type: 'put', key: '1', value: 'a' },
     { type: 'put', key: '2', value: 'b' }
   ])

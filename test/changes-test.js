@@ -15,20 +15,20 @@ test('setUp db', function (t) {
 test('test updates()', async function (t) {
   const batch1 = db.batch()
   const seq1 = db.sequence
-  batch1.put('key1', 'val2')
+  batch1._put('key1', 'val2')
   await batch1.write()
   t.equal(1, db.sequence - seq1)
-  t.equal(batch1.count, 1)
+  t.equal(batch1.length, 1)
 
   const batch2 = db.batch()
   const seq2 = db.sequence
-  batch2.put('key', 'val')
-  batch2.putLogData('hello1')
-  batch2.putLogData('hello2')
+  batch2._put('key', 'val')
+  batch2._putLogData('hello1')
+  batch2._putLogData('hello2')
   await batch2.write()
   t.equal(2, db.sequence - seq1)
   t.equal(1, db.sequence - seq2)
-  t.equal(batch2.count, 1)
+  t.equal(batch2.length, 1)
 
   const val = []
   for await (const { rows, sequence, count } of db.updates({ since: 2 })) {

@@ -17,11 +17,11 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _put (key, value, options) {
-    binding.batch_put(this[kBatchContext], key, value, options)
+    binding.batch_put(this[kBatchContext], key, value, options ?? {})
   }
 
   _del (key, options) {
-    binding.batch_del(this[kBatchContext], key, options)
+    binding.batch_del(this[kBatchContext], key, options ?? {})
   }
 
   _clear () {
@@ -29,49 +29,38 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _write (options, callback) {
-    this[kWrite](this, this[kBatchContext], options, callback)
+    this[kWrite](this, this[kBatchContext], options ?? {}, callback)
   }
 
   _close (callback) {
     process.nextTick(callback)
   }
 
-  putLogData (data, options) {
-    // TODO (fix): Check if open...
-    binding.batch_put_log_data(this[kBatchContext], data, options)
-  }
-
-  merge (key, value, options = {}) {
-    // TODO (fix): Check if open...
-    binding.batch_merge(this[kBatchContext], key, value, options)
-  }
-
-  get count () {
+  get length () {
     return binding.batch_count(this[kBatchContext])
   }
 
-  forEach (fn, options) {
+  _putLogData (data, options) {
+    binding.batch_put_log_data(this[kBatchContext], data, options ?? {})
+  }
+
+  _merge (key, value, options) {
+    binding.batch_merge(this[kBatchContext], key, value, options ?? {})
+  }
+
+  * [Symbol.iterator] () {
     const rows = binding.batch_iterate(this[kDbContext], this[kBatchContext], {
       keys: true,
       values: true,
-      data: true,
-      ...options
+      data: true
     })
     for (let n = 0; n < rows.length; n += 4) {
-      fn({
+      yield {
         type: rows[n + 0],
         key: rows[n + 1],
         value: rows[n + 2]
-      }, n, this)
+      }
     }
-  }
-
-  toArray (options) {
-    const result = []
-    this.forEach(val => {
-      result.push(val)
-    }, options)
-    return result
   }
 }
 
