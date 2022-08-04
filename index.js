@@ -146,7 +146,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _chainedBatch () {
-    return new ChainedBatch(this, (batch, context, options, callback) => {
+    return new ChainedBatch(this, this[kContext], (batch, context, options, callback) => {
       try {
         binding.batch_write(this[kContext], context, options)
         process.nextTick(callback, null)

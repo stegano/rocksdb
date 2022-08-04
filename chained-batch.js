@@ -4,13 +4,15 @@ const { AbstractChainedBatch } = require('abstract-level')
 const binding = require('./binding')
 
 const kWrite = Symbol('write')
-const kBatchContext = Symbol('context')
+const kBatchContext = Symbol('batchContext')
+const kDbContext = Symbol('dbContext')
 
 class ChainedBatch extends AbstractChainedBatch {
-  constructor (db, write) {
+  constructor (db, context, write) {
     super(db)
 
     this[kWrite] = write
+    this[kDbContext] = context
     this[kBatchContext] = binding.batch_init()
   }
 
@@ -49,7 +51,7 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   forEach (fn, options) {
-    const rows = binding.batch_iterate(this[kBatchContext], {
+    const rows = binding.batch_iterate(this[kDbContext], this[kBatchContext], {
       keys: true,
       values: true,
       data: true,

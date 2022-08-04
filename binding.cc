@@ -329,6 +329,12 @@ struct Worker {
   rocksdb::Status status_;
 };
 
+struct ColumnFamily {
+  napi_ref ref;
+  napi_value val;
+  rocksdb::ColumnFamilyHandle* handle;
+};
+
 struct Database {
   void AttachIterator(napi_env env, Iterator* iterator) {
     iterators_.insert(iterator);
@@ -367,11 +373,225 @@ struct Database {
   Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
   std::set<Updates*> updates_;
-  std::vector<rocksdb::ColumnFamilyHandle*> columns_;
+  std::map<int32_t, ColumnFamily> columns_;
   napi_ref priorityRef_;
 
  private:
   uint32_t priorityWork_ = 0;
+};
+
+enum BatchOp { Empty, Put, Delete, Merge, Data };
+
+struct BatchEntry {
+  BatchOp op = BatchOp::Empty;
+  std::optional<std::string> key;
+  std::optional<std::string> val;
+  std::optional<ColumnFamily> column;
+};
+
+struct BatchIterator : public rocksdb::WriteBatch::Handler {
+  BatchIterator(Database* database,
+                bool keys = true,
+                bool values = true,
+                bool data = true,
+                const rocksdb::ColumnFamilyHandle* column = nullptr,
+                bool keyAsBuffer = false,
+                bool valueAsBuffer = false)
+      : database_(database),
+        keys_(keys),
+        values_(values),
+        data_(data),
+        column_(column),
+        keyAsBuffer_(keyAsBuffer),
+        valueAsBuffer_(valueAsBuffer) {}
+
+  napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
+    cache_.reserve(batch.Count());
+    batch.Iterate(this);  // TODO (fix): Error?
+
+    napi_value putStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
+
+    napi_value delStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "del", NAPI_AUTO_LENGTH, &delStr));
+
+    napi_value mergeStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "merge", NAPI_AUTO_LENGTH, &mergeStr));
+
+    napi_value dataStr;
+    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "data", NAPI_AUTO_LENGTH, &dataStr));
+
+    napi_value nullVal;
+    NAPI_STATUS_RETURN(napi_get_null(env, &nullVal));
+
+    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size() * 4, result));
+    for (size_t n = 0; n < cache_.size(); ++n) {
+      napi_value op;
+      if (cache_[n].op == BatchOp::Put) {
+        op = putStr;
+      } else if (cache_[n].op == BatchOp::Delete) {
+        op = delStr;
+      } else if (cache_[n].op == BatchOp::Merge) {
+        op = mergeStr;
+      } else if (cache_[n].op == BatchOp::Data) {
+        op = dataStr;
+      } else {
+        continue;
+      }
+
+      NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 0, op));
+
+      napi_value key;
+      NAPI_STATUS_RETURN(Convert(env, cache_[n].key, keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 1, key));
+
+      napi_value val;
+      NAPI_STATUS_RETURN(Convert(env, cache_[n].val, valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 2, val));
+
+      // napi_value column = cache_[n].column ? cache_[n].column->val : nullVal;
+      // NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 3, column));
+    }
+
+    return napi_ok;
+  }
+
+  rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    if (column_ && column_->GetID() != column_family_id) {
+      return rocksdb::Status::OK();
+    }
+
+    BatchEntry entry;
+
+    entry.op = BatchOp::Put;
+
+    if (keys_) {
+      entry.key = key.ToStringView();
+    }
+
+    if (values_) {
+      entry.val = value.ToStringView();
+    }
+
+    if (database_) {
+      entry.column = database_->columns_[column_family_id];
+    }
+
+    cache_.push_back(entry);
+
+    return rocksdb::Status::OK();
+  }
+
+  rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
+    if (column_ && column_->GetID() != column_family_id) {
+      return rocksdb::Status::OK();
+    }
+
+    BatchEntry entry;
+
+    entry.op = BatchOp::Delete;
+
+    if (keys_) {
+      entry.key = key.ToStringView();
+    }
+
+    if (database_) {
+      entry.column = database_->columns_[column_family_id];
+    }
+
+    cache_.push_back(entry);
+
+    return rocksdb::Status::OK();
+  }
+
+  rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
+    if (column_ && column_->GetID() != column_family_id) {
+      return rocksdb::Status::OK();
+    }
+
+    BatchEntry entry;
+
+    entry.op = BatchOp::Merge;
+
+    if (keys_) {
+      entry.key = key.ToStringView();
+    }
+
+    if (values_) {
+      entry.val = value.ToStringView();
+    }
+
+    if (database_) {
+      entry.column = database_->columns_[column_family_id];
+    }
+
+    cache_.push_back(entry);
+
+    return rocksdb::Status::OK();
+  }
+
+  void LogData(const rocksdb::Slice& data) override {
+    if (!data_) {
+      return;
+    }
+
+    BatchEntry entry;
+
+    entry.op = BatchOp::Data;
+
+    entry.val = data.ToStringView();
+
+    cache_.push_back(entry);
+  }
+
+  bool Continue() override { return true; }
+
+ private:
+  Database* database_;
+  bool keys_;
+  bool values_;
+  bool data_;
+  const rocksdb::ColumnFamilyHandle* column_;
+  bool keyAsBuffer_;
+  bool valueAsBuffer_;
+  std::vector<BatchEntry> cache_;
+};
+
+struct Updates : public BatchIterator {
+  Updates(Database* database,
+          int64_t seqNumber,
+          bool keys,
+          bool values,
+          bool data,
+          const rocksdb::ColumnFamilyHandle* column,
+          bool keyAsBuffer,
+          bool valueAsBuffer)
+      : BatchIterator(database, keys, values, data, column, keyAsBuffer, valueAsBuffer),
+        database_(database),
+        sequence_(seqNumber),
+        start_(seqNumber) {}
+
+  void Close() { iterator_.reset(); }
+
+  void Attach(napi_env env, napi_value context) {
+    napi_create_reference(env, context, 1, &ref_);
+    database_->AttachUpdates(env, this);
+  }
+
+  void Detach(napi_env env) {
+    database_->DetachUpdates(env, this);
+    if (ref_) {
+      napi_delete_reference(env, ref_);
+    }
+  }
+
+  Database* database_;
+  int64_t sequence_;
+  int64_t start_;
+  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
+
+ private:
+  napi_ref ref_ = nullptr;
 };
 
 struct BaseIterator {
@@ -562,59 +782,10 @@ struct Iterator final : public BaseIterator {
   napi_ref ref_ = nullptr;
 };
 
-struct Updates {
-  Updates(Database* database,
-          int64_t seqNumber,
-          bool keys,
-          bool values,
-          bool data,
-          const rocksdb::ColumnFamilyHandle* column,
-          bool keyAsBuffer,
-          bool valueAsBuffer)
-      : database_(database),
-        sequence_(seqNumber),
-        start_(seqNumber),
-        keys_(keys),
-        values_(values),
-        data_(data),
-        column_(column),
-        keyAsBuffer_(keyAsBuffer),
-        valueAsBuffer_(valueAsBuffer) {}
-
-  void Close() { iterator_.reset(); }
-
-  void Attach(napi_env env, napi_value context) {
-    napi_create_reference(env, context, 1, &ref_);
-    database_->AttachUpdates(env, this);
-  }
-
-  void Detach(napi_env env) {
-    database_->DetachUpdates(env, this);
-    if (ref_) {
-      napi_delete_reference(env, ref_);
-    }
-  }
-
-  Database* database_;
-  int64_t sequence_;
-  int64_t start_;
-  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
-  bool keys_;
-  bool values_;
-  bool data_;
-  const rocksdb::ColumnFamilyHandle* column_;
-  bool keyAsBuffer_;
-  bool valueAsBuffer_;
-
- private:
-  napi_ref ref_ = nullptr;
-};
-
 static napi_status GetColumnFamily(Database* database,
                                    napi_env env,
                                    napi_value options,
-                                   rocksdb::ColumnFamilyHandle** column,
-                                   bool fallback = true) {
+                                   rocksdb::ColumnFamilyHandle** column) {
   bool hasColumn = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, options, "column", &hasColumn));
 
@@ -622,7 +793,7 @@ static napi_status GetColumnFamily(Database* database,
     napi_value value = nullptr;
     NAPI_STATUS_RETURN(napi_get_named_property(env, options, "column", &value));
     NAPI_STATUS_RETURN(napi_get_value_external(env, value, reinterpret_cast<void**>(column)));
-  } else if (fallback && database) {
+  } else if (database) {
     *column = database->db_->DefaultColumnFamily();
   } else {
     *column = nullptr;
@@ -647,18 +818,18 @@ static void env_cleanup_hook(void* arg) {
   // following code must be a safe noop if called before db_open() or after
   // db_close().
   if (database && database->db_) {
-    for (auto it : database->iterators_) {
+    for (auto& it : database->iterators_) {
       // TODO: does not do `napi_delete_reference`. Problem?
       it->Close();
     }
 
-    for (auto it : database->updates_) {
+    for (auto& it : database->updates_) {
       // TODO: does not do `napi_delete_reference`. Problem?
       it->Close();
     }
 
-    for (auto it : database->columns_) {
-      database->db_->DestroyColumnFamilyHandle(it);
+    for (auto& it : database->columns_) {
+      database->db_->DestroyColumnFamilyHandle(it.second.handle);
     }
 
     // Having closed the iterators (and released snapshots) we can safely close.
@@ -672,6 +843,9 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
     if (database->priorityRef_)
       napi_delete_reference(env, database->priorityRef_);
+    for (auto& it : database->columns_) {
+      napi_delete_reference(env, it.second.ref);
+    }
     delete database;
   }
 }
@@ -694,17 +868,16 @@ struct OpenWorker final : public Worker {
              napi_value callback,
              const std::string& location,
              const rocksdb::Options& options,
-             std::vector<rocksdb::ColumnFamilyDescriptor> column_families)
+             std::vector<rocksdb::ColumnFamilyDescriptor> descriptors)
       : Worker(env, database, callback, "leveldown.db.open"),
         options_(options),
         location_(location),
-        column_families_(std::move(column_families)) {}
+        descriptors_(std::move(descriptors)) {}
 
   rocksdb::Status Execute(Database& database) override {
     rocksdb::DB* db = nullptr;
-    const auto status = column_families_.empty()
-                            ? rocksdb::DB::Open(options_, location_, &db)
-                            : rocksdb::DB::Open(options_, location_, column_families_, &database.columns_, &db);
+    const auto status = descriptors_.empty() ? rocksdb::DB::Open(options_, location_, &db)
+                                             : rocksdb::DB::Open(options_, location_, descriptors_, &handles_, &db);
     database.db_.reset(db);
     return status;
   }
@@ -713,13 +886,18 @@ struct OpenWorker final : public Worker {
     napi_value argv[2];
     NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
-    const auto size = database_->columns_.size();
+    const auto size = handles_.size();
     NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
 
     for (size_t n = 0; n < size; ++n) {
-      napi_value column;
-      NAPI_STATUS_RETURN(napi_create_external(env, database_->columns_[n], nullptr, nullptr, &column));
-      NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], column_families_[n].name.c_str(), column));
+      ColumnFamily column;
+      column.handle = handles_[n];
+      NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &column.val));
+      NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors_[n].name.c_str(), column.val));
+      NAPI_STATUS_RETURN(napi_create_reference(env, column.val, 1, &column.ref));
+      NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors_[n].name.c_str(), column.val));
+
+      database_->columns_[column.handle->GetID()] = column;
     }
 
     return CallFunction(env, callback, 2, argv);
@@ -727,7 +905,8 @@ struct OpenWorker final : public Worker {
 
   rocksdb::Options options_;
   const std::string location_;
-  std::vector<rocksdb::ColumnFamilyDescriptor> column_families_;
+  std::vector<rocksdb::ColumnFamilyDescriptor> descriptors_;
+  std::vector<rocksdb::ColumnFamilyHandle*> handles_;
 };
 
 template <typename T, typename U>
@@ -946,8 +1125,8 @@ struct CloseWorker final : public Worker {
       : Worker(env, database, callback, "leveldown.db.close") {}
 
   rocksdb::Status Execute(Database& database) override {
-    for (auto it : database.columns_) {
-      database.db_->DestroyColumnFamilyHandle(it);
+    for (auto& it : database.columns_) {
+      database.db_->DestroyColumnFamilyHandle(it.second.handle);
     }
 
     return database.db_->Close();
@@ -975,7 +1154,7 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
-struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Worker {
+struct UpdatesNextWorker final : public Worker {
   UpdatesNextWorker(napi_env env, Updates* updates, napi_value callback)
       : Worker(env, updates->database_, callback, "rocks_level.db.get"), updates_(updates) {
     database_->IncrementPriorityWork(env);
@@ -1000,10 +1179,10 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
 
     updates_->sequence_ = batch.sequence;
 
-    count_ = batch.writeBatchPtr->Count();
-    cache_.reserve(batch.writeBatchPtr->Count() * 4);
+    batch_ = std::move(batch.writeBatchPtr);
+    count_ = batch_->Count();
 
-    return batch.writeBatchPtr->Iterate(this);
+    return rocksdb::Status::OK();
   }
 
   napi_status OnOk(napi_env env, napi_value callback) override {
@@ -1015,39 +1194,7 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
       return CallFunction(env, callback, 1, argv);
     }
 
-    napi_value putStr;
-    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
-
-    napi_value delStr;
-    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "del", NAPI_AUTO_LENGTH, &delStr));
-
-    napi_value mergeStr;
-    NAPI_STATUS_RETURN(napi_create_string_utf8(env, "merge", NAPI_AUTO_LENGTH, &mergeStr));
-
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
-    for (size_t idx = 0; idx < cache_.size(); idx += 4) {
-      napi_value op;
-      if (cache_[idx + 0] == "put") {
-        op = putStr;
-      } else if (cache_[idx + 0] == "del") {
-        op = delStr;
-      } else if (cache_[idx + 0] == "merge") {
-        op = mergeStr;
-      } else {
-        NAPI_STATUS_RETURN(Convert(env, cache_[idx + 0], false, op));
-      }
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 0, op));
-
-      napi_value key;
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 1], updates_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 1, key));
-
-      napi_value val;
-      NAPI_STATUS_RETURN(Convert(env, cache_[idx + 2], updates_->valueAsBuffer_, val));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx + 2, val));
-
-      // XXX: column
-    }
+    NAPI_STATUS_RETURN(updates_->Iterate(env, *batch_, &argv[1]));
 
     NAPI_STATUS_RETURN(napi_create_int64(env, updates_->sequence_, &argv[2]));
 
@@ -1063,101 +1210,9 @@ struct UpdatesNextWorker final : public rocksdb::WriteBatch::Handler, public Wor
     Worker::Destroy(env);
   }
 
-  std::optional<std::string> GetColumnName(uint32_t column_family_id) {
-    if (column_family_id == 0) {
-      return "default";
-    }
-    auto columns = database_->columns_;
-    auto columnIt = std::find_if(columns.begin(), columns.end(),
-                                 [&](const auto& handle) { return handle->GetID() == column_family_id; });
-    return columnIt == columns.end() ? std::nullopt : std::optional<std::string>((*columnIt)->GetName());
-  }
-
-  rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    if (updates_->column_ && updates_->column_->GetID() != column_family_id) {
-      return rocksdb::Status::OK();
-    }
-
-    cache_.emplace_back("put");
-
-    if (updates_->keys_) {
-      cache_.emplace_back(key.ToStringView());
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
-
-    if (updates_->values_) {
-      cache_.emplace_back(value.ToStringView());
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
-
-    // XXX: column
-    cache_.emplace_back(std::nullopt);
-
-    return rocksdb::Status::OK();
-  }
-
-  rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
-    if (updates_->column_ && updates_->column_->GetID() != column_family_id) {
-      return rocksdb::Status::OK();
-    }
-
-    cache_.emplace_back("del");
-
-    if (updates_->keys_) {
-      cache_.emplace_back(key.ToStringView());
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
-
-    cache_.emplace_back(std::nullopt);
-
-    // XXX: column
-    cache_.emplace_back(std::nullopt);
-
-    return rocksdb::Status::OK();
-  }
-
-  rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    if (updates_->column_ && updates_->column_->GetID() != column_family_id) {
-      return rocksdb::Status::OK();
-    }
-
-    cache_.emplace_back("merge");
-
-    if (updates_->keys_) {
-      cache_.emplace_back(key.ToStringView());
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
-
-    if (updates_->values_) {
-      cache_.emplace_back(value.ToStringView());
-    } else {
-      cache_.emplace_back(std::nullopt);
-    }
-
-    // XXX: column
-    cache_.emplace_back(std::nullopt);
-
-    return rocksdb::Status::OK();
-  }
-
-  void LogData(const rocksdb::Slice& data) override {
-    if (updates_->data_) {
-      cache_.emplace_back("data");
-      cache_.emplace_back(std::nullopt);
-      cache_.emplace_back(data.ToStringView());
-      cache_.emplace_back(std::nullopt);
-    }
-  }
-
-  bool Continue() override { return true; }
-
  private:
   int64_t count_ = -1;
-  std::vector<std::optional<std::string>> cache_;
+  std::unique_ptr<rocksdb::WriteBatch> batch_;
   Updates* updates_;
 };
 
@@ -1190,9 +1245,8 @@ NAPI_METHOD(updates_init) {
   const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
 
-  // TODO (fix): Needs to support { column: null }
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column, false));
+  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[1], &column));
 
   auto updates = std::make_unique<Updates>(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
@@ -1849,154 +1903,40 @@ NAPI_METHOD(batch_count) {
   return result;
 }
 
-struct BatchIterator : public rocksdb::WriteBatch::Handler {
-  BatchIterator(bool keys, bool values, bool data) : keys_(keys), values_(values), data_(data) {}
-
-  rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    result_->emplace_back("put");
-
-    if (keys_) {
-      result_->emplace_back(key.ToStringView());
-    } else {
-      result_->emplace_back(std::nullopt);
-    }
-
-    if (values_) {
-      result_->emplace_back(value.ToStringView());
-    } else {
-      result_->emplace_back(std::nullopt);
-    }
-
-    // XXX: column
-    result_->emplace_back(std::nullopt);
-
-    return rocksdb::Status::OK();
-  }
-
-  rocksdb::Status DeleteCF(uint32_t column_family_id, const rocksdb::Slice& key) override {
-    result_->emplace_back("del");
-
-    if (keys_) {
-      result_->emplace_back(key.ToStringView());
-    } else {
-      result_->emplace_back(std::nullopt);
-    }
-
-    result_->emplace_back(std::nullopt);
-
-    // XXX: column
-    result_->emplace_back(std::nullopt);
-
-    return rocksdb::Status::OK();
-  }
-
-  rocksdb::Status MergeCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
-    result_->emplace_back("merge");
-
-    if (keys_) {
-      result_->emplace_back(key.ToStringView());
-    } else {
-      result_->emplace_back(std::nullopt);
-    }
-
-    if (values_) {
-      result_->emplace_back(value.ToStringView());
-    } else {
-      result_->emplace_back(std::nullopt);
-    }
-
-    // XXX: column
-    result_->emplace_back(std::nullopt);
-
-    return rocksdb::Status::OK();
-  }
-
-  void LogData(const rocksdb::Slice& data) override {
-    if (data_) {
-      result_->emplace_back("data");
-      result_->emplace_back(std::nullopt);
-      result_->emplace_back(data.ToStringView());
-      result_->emplace_back(std::nullopt);
-    }
-  }
-
-  bool Continue() override { return true; }
-
-  rocksdb::Status Iterate(const rocksdb::WriteBatch& batch, std::vector<std::optional<std::string>>& result) {
-    result_ = &result;
-    result_->reserve(batch.Count() * 4);
-    return batch.Iterate(this);
-  }
-
-  std::vector<std::optional<std::string>>* result_;
-  bool keys_;
-  bool values_;
-  bool data_;
-};
-
 NAPI_METHOD(batch_iterate) {
-  NAPI_ARGV(2);
+  NAPI_ARGV(3);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
   napi_value keysProperty;
   bool keys;
-  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "keys", &keysProperty));
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[2], "keys", &keysProperty));
   NAPI_STATUS_THROWS(napi_get_value_bool(env, keysProperty, &keys));
 
   napi_value valuesProperty;
   bool values;
-  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "values", &valuesProperty));
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[2], "values", &valuesProperty));
   NAPI_STATUS_THROWS(napi_get_value_bool(env, valuesProperty, &values));
 
   napi_value dataProperty;
   bool data;
-  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "data", &dataProperty));
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[2], "data", &dataProperty));
   NAPI_STATUS_THROWS(napi_get_value_bool(env, dataProperty, &data));
 
   const bool keyAsBuffer = EncodingIsBuffer(env, argv[1], "keyEncoding");
   const bool valueAsBuffer = EncodingIsBuffer(env, argv[1], "valueEncoding");
 
-  BatchIterator iterator(keys, values, data);
-
-  std::vector<std::optional<std::string>> cache;
-  ROCKS_STATUS_THROWS(iterator.Iterate(*batch, cache));
-
-  napi_value putStr;
-  NAPI_STATUS_THROWS(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
-
-  napi_value delStr;
-  NAPI_STATUS_THROWS(napi_create_string_utf8(env, "del", NAPI_AUTO_LENGTH, &delStr));
-
-  napi_value mergeStr;
-  NAPI_STATUS_THROWS(napi_create_string_utf8(env, "merge", NAPI_AUTO_LENGTH, &mergeStr));
+  rocksdb::ColumnFamilyHandle* column;
+  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_array_with_length(env, cache.size(), &result));
-  for (size_t idx = 0; idx < cache.size(); idx += 4) {
-    napi_value op;
-    if (cache[idx + 0] == "put") {
-      op = putStr;
-    } else if (cache[idx + 0] == "del") {
-      op = delStr;
-    } else if (cache[idx + 0] == "merge") {
-      op = mergeStr;
-    } else {
-      NAPI_STATUS_THROWS(Convert(env, cache[idx + 0], false, op));
-    }
-    NAPI_STATUS_THROWS(napi_set_element(env, result, idx + 0, op));
+  BatchIterator iterator(nullptr, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
-    napi_value key;
-    NAPI_STATUS_THROWS(Convert(env, cache[idx + 1], keyAsBuffer, key));
-    NAPI_STATUS_THROWS(napi_set_element(env, result, idx + 1, key));
-
-    napi_value val;
-    NAPI_STATUS_THROWS(Convert(env, cache[idx + 2], valueAsBuffer, val));
-    NAPI_STATUS_THROWS(napi_set_element(env, result, idx + 2, val));
-
-    // XXX: column
-  }
+  NAPI_STATUS_THROWS(iterator.Iterate(env, *batch, &result));
 
   return result;
 }
