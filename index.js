@@ -342,6 +342,7 @@ class RocksLevel extends AbstractLevel {
     }
 
     options.signal?.addEventListener('abort', onAbort)
+    this.on('closing', onAbort)
 
     try {
       let since = options.since
@@ -406,6 +407,7 @@ class RocksLevel extends AbstractLevel {
         }
       }
     } finally {
+      this.off('closing', onAbort)
       options.signal?.removeEventListener('abort', onAbort)
     }
   }
