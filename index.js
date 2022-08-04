@@ -1,13 +1,16 @@
 'use strict'
 
 const { fromCallback } = require('catering')
+const { AbortError } = require('./common')
 const { AbstractLevel } = require('abstract-level')
 const ModuleError = require('module-error')
 const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
+const { Readable } = require('readable-stream')
 const os = require('os')
+const AbortController = require('abort-controller')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -281,6 +284,11 @@ class RocksLevel extends AbstractLevel {
   }
 
   async * updates (options) {
+    // TODO (fix): Ensure open status etc...?
+    if (this.status !== 'open') {
+      throw new Error('Database is not open')
+    }
+
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
@@ -292,12 +300,14 @@ class RocksLevel extends AbstractLevel {
       keys: options?.keys ?? true,
       values: options?.values ?? true,
       data: options?.data ?? true,
-      column: options?.column ?? null
+      live: options?.live ?? false,
+      column: options?.column ?? null,
+      signal: options?.signal ?? null
     }
 
     // HACK: We don't properly check for nully column in binding.
-    if (!options.column) {
-      delete options.column
+    if (options.column) {
+      throw new TypeError("'column' not supported")
     }
 
     if (typeof options.since !== 'number') {
@@ -320,6 +330,85 @@ class RocksLevel extends AbstractLevel {
       throw new TypeError("'column' must be nully or a object")
     }
 
+    if (typeof options.live !== 'boolean') {
+      throw new TypeError("'live' must be nully or a boolean")
+    }
+
+    const ac = new AbortController()
+    const onAbort = () => {
+      ac.abort()
+    }
+
+    options.signal?.addEventListener('abort', onAbort)
+
+    try {
+      let since = options.since
+
+      const db = this
+      while (true) {
+        const buffer = new Readable({
+          signal: ac.signal,
+          objectMode: true,
+          readableHighWaterMark: 1024,
+          construct (callback) {
+            this._next = (batch, sequence) => {
+              const rows = []
+              for (const { type, key, value } of batch) {
+                rows.push(type, key, value, null)
+              }
+              if (!this.push({ rows, sequence, count: batch.length })) {
+                this.push(null)
+                db.off('write', this._next)
+              }
+            }
+            db.on('write', this._next)
+            callback()
+          },
+          read () {},
+          destroy (err, callback) {
+            db.off('write', this._next)
+            callback(err)
+          }
+        })
+
+        if (ac.signal.aborted) {
+          throw new AbortError()
+        }
+
+        try {
+          if (since <= this.sequence) {
+            for await (const update of this._updates(options)) {
+              if (ac.signal.aborted) {
+                throw new AbortError()
+              }
+
+              yield update
+              since = update.sequence + update.count
+            }
+          }
+        } catch (err) {
+          if (err.code !== 'LEVEL_TRYAGAIN') {
+            throw err
+          }
+        }
+
+        if (!options.live) {
+          return
+        }
+
+        for await (const update of buffer) {
+          if (update.sequence >= since) {
+            yield update
+            since = update.sequence + update.count
+          }
+        }
+      }
+    } finally {
+      options.signal?.removeventListener('abort', onAbort)
+    }
+  }
+
+  async * _updates (options) {
     class Updates {
       constructor (db, options) {
         this.context = binding.updates_init(db[kContext], options)
