@@ -45,7 +45,6 @@ test('test live()', async function (t) {
   }, 2e2)
 
   for await (const update of db.updates({ since: 0, live: true })) {
-    t.ok(update.batch)
     t.same(update.rows, batches.shift())
     if (batches.length === 0) {
       break

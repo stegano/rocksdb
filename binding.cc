@@ -794,6 +794,25 @@ static napi_status GetColumnFamily(Database* database,
   if (hasColumn) {
     napi_value value = nullptr;
     NAPI_STATUS_RETURN(napi_get_named_property(env, options, "column", &value));
+
+    bool nully = false;
+
+    napi_value nullVal;
+    NAPI_STATUS_RETURN(napi_get_null(env, &nullVal));
+    NAPI_STATUS_RETURN(napi_strict_equals(env, nullVal, value, &nully));
+    if (nully) {
+      *column = nullptr;
+      return napi_ok;
+    }
+
+    napi_value undefinedVal;
+    NAPI_STATUS_RETURN(napi_get_undefined(env, &undefinedVal));
+    NAPI_STATUS_RETURN(napi_strict_equals(env, undefinedVal, value, &nully));
+    if (nully) {
+      *column = nullptr;
+      return napi_ok;
+    }
+
     NAPI_STATUS_RETURN(napi_get_value_external(env, value, reinterpret_cast<void**>(column)));
   } else if (database) {
     *column = database->db_->DefaultColumnFamily();
