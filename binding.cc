@@ -268,9 +268,7 @@ struct Worker final {
          Database* database,
          T1&& execute,
          T2&& onOK)
-      : database_(database)
-      , execute_(std::forward<T1>(execute))
-      , onOk_(std::forward<T2>(onOK)) {
+      : database_(database), execute_(std::forward<T1>(execute)), onOk_(std::forward<T2>(onOK)) {
     NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
     napi_value asyncResourceName;
     NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), resourceName.size(), &asyncResourceName));
@@ -336,18 +334,52 @@ struct ColumnFamily {
   rocksdb::ColumnFamilyDescriptor descriptor;
 };
 
-struct Database {
-  void AttachIterator(napi_env env, Iterator* iterator) { iterators_.insert(iterator); }
+struct Closable {
+  virtual ~Closable() {}
 
-  void DetachIterator(napi_env env, Iterator* iterator) { iterators_.erase(iterator); }
+  virtual rocksdb::Status Close() = 0;
+};
 
-  void AttachUpdates(napi_env env, Updates* update) { updates_.insert(update); }
+struct Database : public Closable {
+  void AttachIterator(napi_env env, Closable* iterator) { iterators_.insert(iterator); }
 
-  void DetachUpdates(napi_env env, Updates* update) { updates_.erase(update); }
+  void DetachIterator(napi_env env, Closable* iterator) { iterators_.erase(iterator); }
+
+  void AttachUpdates(napi_env env, Closable* update) { updates_.insert(update); }
+
+  void DetachUpdates(napi_env env, Closable* update) { updates_.erase(update); }
+
+  virtual ~Database () {
+    assert(!db_);
+  }
+
+  rocksdb::Status Close() {
+    if (!db_) {
+      return rocksdb::Status::OK();
+    }
+
+    for (auto& it : iterators_) {
+      it->Close();
+    }
+    iterators_.clear();
+
+    for (auto& it : updates_) {
+      it->Close();
+    }
+    updates_.clear();
+
+    for (auto& it : columns_) {
+      db_->DestroyColumnFamilyHandle(it.second.handle);
+    }
+    columns_.clear();
+
+    auto db = std::move(db_);
+    return db->Close();
+  }
 
   std::unique_ptr<rocksdb::DB> db_;
-  std::set<Iterator*> iterators_;
-  std::set<Updates*> updates_;
+  std::set<Closable*> iterators_;
+  std::set<Closable*> updates_;
   std::map<int32_t, ColumnFamily> columns_;
 };
 
@@ -532,7 +564,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
   std::vector<BatchEntry> cache_;
 };
 
-struct Updates : public BatchIterator {
+struct Updates : public BatchIterator, public Closable {
   Updates(Database* database,
           int64_t seqNumber,
           bool keys,
@@ -545,7 +577,12 @@ struct Updates : public BatchIterator {
         database_(database),
         start_(seqNumber) {}
 
-  void Close() { iterator_.reset(); }
+  virtual ~Updates() { assert(!iterator_); }
+
+  rocksdb::Status Close() override {
+    iterator_.reset();
+    return rocksdb::Status::OK();
+  }
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
@@ -567,7 +604,7 @@ struct Updates : public BatchIterator {
   napi_ref ref_ = nullptr;
 };
 
-struct BaseIterator {
+struct BaseIterator : public Closable {
   BaseIterator(Database* database,
                rocksdb::ColumnFamilyHandle* column,
                const bool reverse,
@@ -640,9 +677,10 @@ struct BaseIterator {
     }
   }
 
-  void Close() {
+  rocksdb::Status Close() override {
     snapshot_.reset();
     iterator_.reset();
+    return rocksdb::Status::OK();
   }
 
   bool Valid() const {
@@ -794,44 +832,17 @@ static napi_status GetColumnFamily(Database* database,
   return napi_ok;
 }
 
-/**
- * Hook for when the environment exits. This hook will be called after
- * already-scheduled napi_async_work items have finished, which gives us
- * the guarantee that no db operations will be in-flight at this time.
- */
 static void env_cleanup_hook(void* arg) {
   auto database = reinterpret_cast<Database*>(arg);
-
-  // Do everything that db_close() does but synchronously. We're expecting that
-  // GC did not (yet) collect the database because that would be a user mistake
-  // (not closing their db) made during the lifetime of the environment. That's
-  // different from an environment being torn down (like the main process or a
-  // worker thread) where it's our responsibility to clean up. Note also, the
-  // following code must be a safe noop if called before db_open() or after
-  // db_close().
-  if (database && database->db_) {
-    for (auto& it : database->iterators_) {
-      // TODO: does not do `napi_delete_reference`. Problem?
-      it->Close();
-    }
-
-    for (auto& it : database->updates_) {
-      // TODO: does not do `napi_delete_reference`. Problem?
-      it->Close();
-    }
-
-    for (auto& it : database->columns_) {
-      database->db_->DestroyColumnFamilyHandle(it.second.handle);
-    }
-
-    // Having closed the iterators (and released snapshots) we can safely close.
-    database->db_->Close();
+  if (database) {
+    database->Close();
   }
 }
 
 static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   if (data) {
     auto database = reinterpret_cast<Database*>(data);
+    database->Close();
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
     for (auto& it : database->columns_) {
       napi_delete_reference(env, it.second.ref);
@@ -1106,14 +1117,7 @@ NAPI_METHOD(db_close) {
   struct State {};
   runAsync<State>(
       "leveldown.close", env, callback, database,
-      [=](auto& state, auto& database) -> rocksdb::Status {
-        for (auto& it : database.columns_) {
-          database.db_->DestroyColumnFamilyHandle(it.second.handle);
-        }
-        database.columns_.clear();
-
-        return database.db_->Close();
-      },
+      [=](auto& state, auto& database) -> rocksdb::Status { return database.Close(); },
       [](auto& state, napi_env env, napi_value callback) -> napi_status {
         napi_value argv[1];
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
