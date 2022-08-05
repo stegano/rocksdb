@@ -17,6 +17,10 @@ const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
 const kPromise = Symbol('promise')
 const kUpdates = Symbol('updates')
+const kRef = Symbol('ref')
+const kUnref = Symbol('unref')
+const kRefs = Symbol('refs')
+const kPendingClose = Symbol('pendingClose')
 
 const EMPTY = {}
 
@@ -66,6 +70,9 @@ class RocksLevel extends AbstractLevel {
     this[kContext] = binding.db_init()
     this[kColumns] = {}
 
+    this[kRefs] = 0
+    this[kPendingClose] = null
+
     // .updates(...) uses 'update' listener.
     this.setMaxListeners(100)
   }
@@ -101,8 +108,23 @@ class RocksLevel extends AbstractLevel {
     }
   }
 
+  [kRef] () {
+    this[kRefs]++
+  }
+
+  [kUnref] () {
+    this[kRefs]--
+    if (this[kRefs] === 0 && this[kPendingClose]) {
+      this[kPendingClose]()
+    }
+  }
+
   _close (callback) {
-    binding.db_close(this[kContext], callback)
+    if (this[kRefs]) {
+      this[kPendingClose] = callback
+    } else {
+      binding.db_close(this[kContext], callback)
+    }
   }
 
   _put (key, value, options, callback) {
@@ -137,9 +159,14 @@ class RocksLevel extends AbstractLevel {
     callback = fromCallback(callback, kPromise)
 
     try {
-      binding.db_get_many(this[kContext], keys, options ?? EMPTY, callback)
+      this[kRef]()
+      binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, val) => {
+        callback(err, val)
+        this[kUnref]()
+      })
     } catch (err) {
       process.nextTick(callback, err)
+      this[kUnref]()
     }
 
     return callback[kPromise]
@@ -230,16 +257,8 @@ class RocksLevel extends AbstractLevel {
     }
 
     const context = binding.iterator_init(this[kContext], options ?? {})
-    const resource = {
-      callback: null,
-      close (callback) {
-        this.callback = callback
-      }
-    }
-
     try {
-      this.attachResource(resource)
-
+      this[kRef]()
       const limit = options.limit ?? 1000
       return await new Promise((resolve, reject) => binding.iterator_nextv(context, limit, (err, rows, finished) => {
         if (err) {
@@ -253,11 +272,8 @@ class RocksLevel extends AbstractLevel {
         }
       }))
     } finally {
-      this.detachResource(resource)
       binding.iterator_close(context)
-      if (resource.callback) {
-        resource.callback()
-      }
+      this[kUnref]()
     }
   }
 

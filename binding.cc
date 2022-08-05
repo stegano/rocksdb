@@ -359,19 +359,11 @@ struct Database {
 
   void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, priorityRef_, &priorityWork_); }
 
-  void DecrementPriorityWork(napi_env env) {
-    napi_reference_unref(env, priorityRef_, &priorityWork_);
-
-    if (priorityWork_ == 0 && pendingCloseWorker_) {
-      pendingCloseWorker_->Queue(env);
-      pendingCloseWorker_ = nullptr;
-    }
-  }
+  void DecrementPriorityWork(napi_env env) { napi_reference_unref(env, priorityRef_, &priorityWork_); }
 
   bool HasPriorityWork() const { return priorityWork_ > 0; }
 
   std::unique_ptr<rocksdb::DB> db_;
-  Worker* pendingCloseWorker_;
   std::set<Iterator*> iterators_;
   std::set<Updates*> updates_;
   std::map<int32_t, ColumnFamily> columns_;
@@ -864,19 +856,7 @@ struct GenericWorker final : public Worker {
 };
 
 template <typename State, typename T1, typename T2>
-Worker* createWorker(const std::string& name,
-                     napi_env env,
-                     napi_value callback,
-                     Database* database,
-                     bool priority,
-                     T1&& execute,
-                     T2&& onOk) {
-  return new GenericWorker<State, typename std::decay<T1>::type, typename std::decay<T2>::type>(
-      name, env, callback, database, priority, std::forward<T1>(execute), std::forward<T2>(onOk));
-}
-
-template <typename State, typename T1, typename T2>
-void runWorker(const std::string& name,
+void runAsync(const std::string& name,
                napi_env env,
                napi_value callback,
                Database* database,
@@ -1155,7 +1135,7 @@ NAPI_METHOD(db_open) {
 
   auto callback = argv[3];
 
-  runWorker<std::vector<rocksdb::ColumnFamilyHandle*>>(
+  runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
       "leveldown.open", env, callback, database, false,
       [=](auto& handles, auto& database) -> rocksdb::Status {
         rocksdb::DB* db = nullptr;
@@ -1201,28 +1181,27 @@ NAPI_METHOD(db_close) {
 
   auto callback = argv[1];
 
-  struct State {};
-  auto worker = createWorker<State>(
-      "leveldown.close", env, callback, database, false,
-      [=](auto& state, auto& database) -> rocksdb::Status {
-        for (auto& it : database.columns_) {
-          database.db_->DestroyColumnFamilyHandle(it.second.handle);
-        }
-        database.columns_.clear();
-
-        return database.db_->Close();
-      },
-      [](auto& state, napi_env env, napi_value callback) -> napi_status {
-        napi_value argv[1];
-        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-        return CallFunction(env, callback, 1, &argv[0]);
-      });
-
-  if (!database->HasPriorityWork()) {
-    worker->Queue(env);
+  if (database->HasPriorityWork()) {
+    auto err = CreateError(env, "LEVEL_TRY_AGAIN", "database has pending operations");
+    CallFunction(env, callback, 1, &err);
   } else {
-    database->pendingCloseWorker_ = worker;
+    struct State {};
+    runAsync<State>(
+        "leveldown.close", env, callback, database, false,
+        [=](auto& state, auto& database) -> rocksdb::Status {
+          for (auto& it : database.columns_) {
+            database.db_->DestroyColumnFamilyHandle(it.second.handle);
+          }
+          database.columns_.clear();
+
+          return database.db_->Close();
+        },
+        [](auto& state, napi_env env, napi_value callback) -> napi_status {
+          napi_value argv[1];
+          NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+          return CallFunction(env, callback, 1, &argv[0]);
+        });
   }
 
   return 0;
@@ -1280,7 +1259,7 @@ NAPI_METHOD(updates_next) {
 
   auto callback = argv[1];
 
-  runWorker<rocksdb::BatchResult>(
+  runAsync<rocksdb::BatchResult>(
       "leveldown.updates.next", env, callback, updates->database_, true,
       [=](auto& batchResult, auto& database) -> rocksdb::Status {
         if (!updates->iterator_) {
@@ -1365,7 +1344,7 @@ NAPI_METHOD(db_get_many) {
   auto snapshot = std::shared_ptr<const rocksdb::Snapshot>(
       database->db_->GetSnapshot(), [database](auto ptr) { database->db_->ReleaseSnapshot(ptr); });
 
-  runWorker<std::vector<rocksdb::PinnableSlice>>(
+  runAsync<std::vector<rocksdb::PinnableSlice>>(
       "leveldown.get.many", env, callback, database, true,
       [=, keys = std::move(keys)](auto& values, Database& db) -> rocksdb::Status {
         rocksdb::ReadOptions readOptions;
@@ -1638,7 +1617,7 @@ NAPI_METHOD(iterator_nextv) {
     bool finished = false;
   };
 
-  runWorker<State>(
+  runAsync<State>(
       std::string("leveldown.iterator.next"), env, callback, iterator->database_, true,
       [=](auto& state, Database& db) -> rocksdb::Status {
         if (!iterator->DidSeek()) {
