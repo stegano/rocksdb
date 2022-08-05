@@ -407,7 +407,6 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
         valueAsBuffer_(valueAsBuffer) {}
 
   napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
-    cache_.clear();
     cache_.reserve(batch.Count());
 
     batch.Iterate(this);  // TODO (fix): Handle error?
@@ -456,6 +455,8 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       // napi_value column = cache_[n].column ? cache_[n].column->val : nullVal;
       NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 3, nullVal));
     }
+
+    cache_.clear();
 
     return napi_ok;
   }
