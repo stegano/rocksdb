@@ -333,29 +333,6 @@ class RocksLevel extends AbstractLevel {
 
     const db = this
 
-    async function * _updates (options) {
-      let first = true
-      for await (const update of db[kUpdates]({ ...options, since: Math.max(0, options.since - 1024) })) {
-        if (first) {
-          if (update.sequence > options.since) {
-            // HACK
-            db.emit('warning', `Invalid update sequence ${update.sequence} > ${options.since}. Starting from 0.`)
-            first = null
-            break
-          } else {
-            first = false
-          }
-        }
-        yield update
-      }
-
-      if (first === null) {
-        for await (const update of db[kUpdates]({ ...options, since: 0 })) {
-          yield update
-        }
-      }
-    }
-
     try {
       let since = options.since
       while (true) {
@@ -387,7 +364,7 @@ class RocksLevel extends AbstractLevel {
         try {
           if (since <= db.sequence) {
             let first = true
-            for await (const update of _updates({
+            for await (const update of db[kUpdates]({
               ...options,
               // HACK: https://github.com/facebook/rocksdb/issues/10476
               since: Math.max(0, options.since - 2048)
