@@ -349,20 +349,17 @@ class RocksLevel extends AbstractLevel {
       for await (const update of db[kUpdates](options)) {
         if (first) {
           if (update.sequence > options.since) {
+            // HACK
             db.emit('warning', `Invalid update sequence ${update.sequence} > ${options.since}. Starting from 0.`)
-            first = null
+            for await (const update of db[kUpdates]({ ...options, since: 0 })) {
+              yield update
+            }
             break
           } else {
             first = false
           }
         }
         yield update
-      }
-
-      if (first === null) {
-        for await (const update of db[kUpdates]({ ...options, since: 0 })) {
-          yield update
-        }
       }
     }
 
@@ -421,7 +418,16 @@ class RocksLevel extends AbstractLevel {
           return
         }
 
+        let first = true
         for await (const update of buffer) {
+          if (first) {
+            if (update.sequence > since) {
+              // HACK
+              db.emit('warning', `Invalid batch sequence. Restarting.`)
+              break
+            }
+            first = false
+          }
           if (update.sequence >= since) {
             yield update
             since = update.sequence + update.count
