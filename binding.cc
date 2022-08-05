@@ -1305,13 +1305,11 @@ NAPI_METHOD(updates_next) {
           return CallFunction(env, callback, 1, argv);
         }
 
-        auto batch = std::move(state.batchResult.writeBatchPtr);
-
-        NAPI_STATUS_RETURN(updates->Iterate(env, *batch, &argv[1]));
+        NAPI_STATUS_RETURN(updates->Iterate(env, *state.batchResult.writeBatchPtr, &argv[1]));
 
         NAPI_STATUS_RETURN(napi_create_int64(env, state.batchResult.sequence, &argv[2]));
 
-        NAPI_STATUS_RETURN(napi_create_int64(env, batch->Count(), &argv[3]));
+        NAPI_STATUS_RETURN(napi_create_int64(env, state.batchResult.writeBatchPtr->Count(), &argv[3]));
 
         NAPI_STATUS_RETURN(napi_create_int64(env, updates->start_, &argv[4]));
 
