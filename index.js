@@ -341,6 +341,29 @@ class RocksLevel extends AbstractLevel {
     options.signal?.addEventListener('abort', onAbort)
     this.on('closing', onAbort)
 
+    // HACK: https://github.com/facebook/rocksdb/issues/10476
+    async function* _updates (options) {
+      let first = true
+      for await (const update of this[kUpdates](options)) {
+        if (first) {
+          if (update.sequence > options.since) {
+            this.emit('warning', `Invalid sequence ${update.sequence} > ${options.since}. Starting from 0.`)
+            first = null
+            break
+          } else {
+            first = false
+          }
+        }
+        yield update
+      }
+
+      if (first === null) {
+        for await (const update of this[kUpdates]({ ...options, since: 0 })) {
+          yield update
+        }
+      }
+    }
+
     try {
       let since = options.since
 
@@ -377,7 +400,7 @@ class RocksLevel extends AbstractLevel {
 
         try {
           if (since <= this.sequence) {
-            for await (const update of this[kUpdates](options)) {
+            for await (const update of _updates(options)) {
               if (ac.signal.aborted) {
                 throw new AbortError()
               }
