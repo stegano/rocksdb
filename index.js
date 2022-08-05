@@ -349,7 +349,7 @@ class RocksLevel extends AbstractLevel {
       for await (const update of db[kUpdates](options)) {
         if (first) {
           if (update.sequence > options.since) {
-            db.emit('warning', `Invalid sequence ${update.sequence} > ${options.since}. Starting from 0.`)
+            db.emit('warning', `Invalid update sequence ${update.sequence} > ${options.since}. Starting from 0.`)
             first = null
             break
           } else {
