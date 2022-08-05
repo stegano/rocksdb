@@ -570,7 +570,6 @@ struct Updates : public BatchIterator {
           bool valueAsBuffer)
       : BatchIterator(database, keys, values, data, column, keyAsBuffer, valueAsBuffer),
         database_(database),
-        sequence_(seqNumber),
         start_(seqNumber) {}
 
   void Close() { iterator_.reset(); }
@@ -588,7 +587,6 @@ struct Updates : public BatchIterator {
   }
 
   Database* database_;
-  int64_t sequence_;
   int64_t start_;
   std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
 
@@ -823,6 +821,57 @@ static napi_status GetColumnFamily(Database* database,
   return napi_ok;
 }
 
+template <typename State,
+          typename ExecuteType = std::function<rocksdb::Status(State& state, Database& database)>,
+          typename OnOkType = std::function<napi_status(State& state, napi_env env, napi_value callback)>>
+struct GenericWorker final : public Worker {
+  template <typename T1, typename T2>
+  GenericWorker(const std::string& name,
+                napi_env env,
+                napi_value callback,
+                Database* database,
+                bool priority,
+                T1&& execute,
+                T2&& onOK)
+      : Worker(env, database, callback, name),
+        priority_(priority),
+        execute_(std::forward<T1>(execute)),
+        onOk_(std::forward<T2>(onOK)) {
+    if (priority_) {
+      database_->IncrementPriorityWork(env);
+    }
+  }
+
+  rocksdb::Status Execute(Database& database) override { return execute_(state_, database); }
+
+  napi_status OnOk(napi_env env, napi_value callback) override { return onOk_(state_, env, callback); }
+
+  void Destroy(napi_env env) override {
+    if (priority_) {
+      database_->DecrementPriorityWork(env);
+    }
+    Worker::Destroy(env);
+  }
+
+ private:
+  State state_;
+  bool priority_ = false;
+  ExecuteType execute_;
+  OnOkType onOk_;
+};
+
+template <typename State, typename T1, typename T2>
+Worker* createWorker(const std::string& name,
+                     napi_env env,
+                     napi_value callback,
+                     Database* database,
+                     bool priority,
+                     T1&& execute,
+                     T2&& onOk) {
+  return new GenericWorker<State, typename std::decay<T1>::type, typename std::decay<T2>::type>(
+      name, env, callback, database, priority, std::forward<T1>(execute), std::forward<T2>(onOk));
+}
+
 /**
  * Hook for when the environment exits. This hook will be called after
  * already-scheduled napi_async_work items have finished, which gives us
@@ -882,54 +931,6 @@ NAPI_METHOD(db_init) {
 
   return result;
 }
-
-struct OpenWorker final : public Worker {
-  OpenWorker(napi_env env,
-             Database* database,
-             napi_value callback,
-             const std::string& location,
-             const rocksdb::Options& options,
-             std::vector<rocksdb::ColumnFamilyDescriptor> descriptors)
-      : Worker(env, database, callback, "leveldown.db.open"),
-        options_(options),
-        location_(location),
-        descriptors_(std::move(descriptors)) {}
-
-  rocksdb::Status Execute(Database& database) override {
-    rocksdb::DB* db = nullptr;
-    const auto status = descriptors_.empty() ? rocksdb::DB::Open(options_, location_, &db)
-                                             : rocksdb::DB::Open(options_, location_, descriptors_, &handles_, &db);
-    database.db_.reset(db);
-    return status;
-  }
-
-  napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[2];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-    const auto size = handles_.size();
-    NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
-
-    for (size_t n = 0; n < size; ++n) {
-      ColumnFamily column;
-      column.handle = handles_[n];
-      column.descriptor = descriptors_[n];
-      NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &column.val));
-      NAPI_STATUS_RETURN(napi_create_reference(env, column.val, 1, &column.ref));
-
-      NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors_[n].name.c_str(), column.val));
-
-      database_->columns_[column.handle->GetID()] = column;
-    }
-
-    return CallFunction(env, callback, 2, argv);
-  }
-
-  rocksdb::Options options_;
-  const std::string location_;
-  std::vector<rocksdb::ColumnFamilyDescriptor> descriptors_;
-  std::vector<rocksdb::ColumnFamilyHandle*> handles_;
-};
 
 template <typename T, typename U>
 rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
@@ -1107,7 +1108,7 @@ NAPI_METHOD(db_open) {
 
   ROCKS_STATUS_THROWS(InitOptions(env, dbOptions, argv[2]));
 
-  std::vector<rocksdb::ColumnFamilyDescriptor> columnsFamilies;
+  std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
 
   bool hasColumns;
   NAPI_STATUS_THROWS(napi_has_named_property(env, argv[2], "columns", &hasColumns));
@@ -1122,7 +1123,7 @@ NAPI_METHOD(db_open) {
     uint32_t len;
     NAPI_STATUS_THROWS(napi_get_array_length(env, keys, &len));
 
-    columnsFamilies.resize(len);
+    descriptors.resize(len);
     for (uint32_t n = 0; n < len; ++n) {
       napi_value key;
       NAPI_STATUS_THROWS(napi_get_element(env, keys, n, &key));
@@ -1130,30 +1131,53 @@ NAPI_METHOD(db_open) {
       napi_value column;
       NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
-      ROCKS_STATUS_THROWS(InitOptions(env, columnsFamilies[n].options, column));
+      ROCKS_STATUS_THROWS(InitOptions(env, descriptors[n].options, column));
 
-      NAPI_STATUS_THROWS(ToString(env, key, columnsFamilies[n].name));
+      NAPI_STATUS_THROWS(ToString(env, key, descriptors[n].name));
     }
   }
 
-  auto worker = new OpenWorker(env, database, argv[3], location, dbOptions, columnsFamilies);
+  auto callback = argv[3];
+
+  struct State {
+    std::vector<rocksdb::ColumnFamilyHandle*> handles;
+  };
+  auto worker = createWorker<State>(
+      "leveldown.open", env, callback, database, false,
+      [=](auto& state, auto& database) -> rocksdb::Status {
+        rocksdb::DB* db = nullptr;
+        const auto status = descriptors.empty()
+                                ? rocksdb::DB::Open(dbOptions, location, &db)
+                                : rocksdb::DB::Open(dbOptions, location, descriptors, &state.handles, &db);
+        database.db_.reset(db);
+        return status;
+      },
+      [=](auto& state, napi_env env, napi_value callback) -> napi_status {
+        napi_value argv[2];
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+        const auto size = state.handles.size();
+        NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
+
+        for (size_t n = 0; n < size; ++n) {
+          ColumnFamily column;
+          column.handle = state.handles[n];
+          column.descriptor = descriptors[n];
+          NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &column.val));
+          NAPI_STATUS_RETURN(napi_create_reference(env, column.val, 1, &column.ref));
+
+          NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors[n].name.c_str(), column.val));
+
+          database->columns_[column.handle->GetID()] = column;
+        }
+
+        return CallFunction(env, callback, 2, argv);
+      });
+
   worker->Queue(env);
 
   return 0;
 }
-
-struct CloseWorker final : public Worker {
-  CloseWorker(napi_env env, Database* database, napi_value callback)
-      : Worker(env, database, callback, "leveldown.db.close") {}
-
-  rocksdb::Status Execute(Database& database) override {
-    for (auto& it : database.columns_) {
-      database.db_->DestroyColumnFamilyHandle(it.second.handle);
-    }
-
-    return database.db_->Close();
-  }
-};
 
 napi_value noop_callback(napi_env env, napi_callback_info info) {
   return 0;
@@ -1165,7 +1189,25 @@ NAPI_METHOD(db_close) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  auto worker = new CloseWorker(env, database, argv[1]);
+  auto callback = argv[1];
+
+  struct State {};
+  auto worker = createWorker<State>(
+      "leveldown.close", env, callback, database, false,
+      [=](auto& state, auto& database) -> rocksdb::Status {
+        for (auto& it : database.columns_) {
+          database.db_->DestroyColumnFamilyHandle(it.second.handle);
+        }
+        database.columns_.clear();
+
+        return database.db_->Close();
+      },
+      [](auto& state, napi_env env, napi_value callback) -> napi_status {
+        napi_value argv[1];
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+        return CallFunction(env, callback, 1, &argv[0]);
+      });
 
   if (!database->HasPriorityWork()) {
     worker->Queue(env);
@@ -1175,68 +1217,6 @@ NAPI_METHOD(db_close) {
 
   return 0;
 }
-
-struct UpdatesNextWorker final : public Worker {
-  UpdatesNextWorker(napi_env env, Updates* updates, napi_value callback)
-      : Worker(env, updates->database_, callback, "rocks_level.db.get"), updates_(updates) {
-    database_->IncrementPriorityWork(env);
-  }
-
-  rocksdb::Status Execute(Database& database) override {
-    if (!updates_->iterator_) {
-      rocksdb::TransactionLogIterator::ReadOptions options;
-      const auto status = database_->db_->GetUpdatesSince(updates_->sequence_, &updates_->iterator_, options);
-      if (!status.ok()) {
-        return status;
-      }
-    } else if (updates_->iterator_->Valid()) {
-      updates_->iterator_->Next();
-    }
-
-    if (!updates_->iterator_->Valid() || !updates_->iterator_->status().ok()) {
-      return updates_->iterator_->status();
-    }
-
-    auto batch = updates_->iterator_->GetBatch();
-
-    updates_->sequence_ = batch.sequence;
-
-    batch_ = std::move(batch.writeBatchPtr);
-    count_ = batch_->Count();
-
-    return rocksdb::Status::OK();
-  }
-
-  napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[5];
-
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-    if (count_ == -1) {
-      return CallFunction(env, callback, 1, argv);
-    }
-
-    NAPI_STATUS_RETURN(updates_->Iterate(env, *batch_, &argv[1]));
-
-    NAPI_STATUS_RETURN(napi_create_int64(env, updates_->sequence_, &argv[2]));
-
-    NAPI_STATUS_RETURN(napi_create_int64(env, count_, &argv[3]));
-
-    NAPI_STATUS_RETURN(napi_create_int64(env, updates_->start_, &argv[4]));
-
-    return CallFunction(env, callback, 5, argv);
-  }
-
-  void Destroy(napi_env env) override {
-    database_->DecrementPriorityWork(env);
-    Worker::Destroy(env);
-  }
-
- private:
-  int64_t count_ = -1;
-  std::unique_ptr<rocksdb::WriteBatch> batch_;
-  Updates* updates_;
-};
 
 NAPI_METHOD(updates_init) {
   NAPI_ARGV(2);
@@ -1288,7 +1268,55 @@ NAPI_METHOD(updates_next) {
   Updates* updates;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
 
-  auto worker = new UpdatesNextWorker(env, updates, argv[1]);
+  auto callback = argv[1];
+
+  auto result = std::make_shared<rocksdb::BatchResult>();
+
+  struct State {
+    rocksdb::BatchResult batchResult;
+  };
+  auto worker = createWorker<State>(
+      "leveldown.updates.next", env, callback, updates->database_, true,
+      [=](auto& state, auto& database) -> rocksdb::Status {
+        if (!updates->iterator_) {
+          rocksdb::TransactionLogIterator::ReadOptions options;
+          const auto status = database.db_->GetUpdatesSince(updates->start_, &updates->iterator_, options);
+          if (!status.ok()) {
+            return status;
+          }
+        } else if (updates->iterator_->Valid()) {
+          updates->iterator_->Next();
+        }
+
+        if (!updates->iterator_->Valid() || !updates->iterator_->status().ok()) {
+          return updates->iterator_->status();
+        }
+
+        state.batchResult = updates->iterator_->GetBatch();
+
+        return rocksdb::Status::OK();
+      },
+      [=](auto& state, napi_env env, napi_value callback) -> napi_status {
+        napi_value argv[5];
+
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+        if (!state.batchResult.writeBatchPtr) {
+          return CallFunction(env, callback, 1, argv);
+        }
+
+        auto batch = std::move(state.batchResult.writeBatchPtr);
+
+        NAPI_STATUS_RETURN(updates->Iterate(env, *batch, &argv[1]));
+
+        NAPI_STATUS_RETURN(napi_create_int64(env, state.batchResult.sequence, &argv[2]));
+
+        NAPI_STATUS_RETURN(napi_create_int64(env, batch->Count(), &argv[3]));
+
+        NAPI_STATUS_RETURN(napi_create_int64(env, updates->start_, &argv[4]));
+
+        return CallFunction(env, callback, 5, argv);
+      });
   worker->Queue(env);
 
   return 0;
@@ -1305,95 +1333,6 @@ NAPI_METHOD(updates_close) {
 
   return 0;
 }
-
-struct GetManyWorker final : public Worker {
-  GetManyWorker(napi_env env,
-                Database* database,
-                rocksdb::ColumnFamilyHandle* column,
-                std::vector<std::string> keys,
-                napi_value callback,
-                const bool valueAsBuffer,
-                const bool fillCache,
-                const bool ignoreRangeDeletions)
-      : Worker(env, database, callback, "leveldown.get.many"),
-        column_(column),
-        keys_(std::move(keys)),
-        valueAsBuffer_(valueAsBuffer),
-        fillCache_(fillCache),
-        ignoreRangeDeletions_(ignoreRangeDeletions),
-        snapshot_(database_->db_->GetSnapshot()) {
-    database_->IncrementPriorityWork(env);
-  }
-
-  ~GetManyWorker() {
-    if (snapshot_) {
-      database_->db_->ReleaseSnapshot(snapshot_);
-    }
-  }
-
-  rocksdb::Status Execute(Database& database) override {
-    rocksdb::ReadOptions readOptions;
-    readOptions.fill_cache = fillCache_;
-    readOptions.snapshot = snapshot_;
-    readOptions.async_io = true;
-    readOptions.ignore_range_deletions = ignoreRangeDeletions_;
-
-    std::vector<rocksdb::Slice> keys;
-    keys.reserve(keys_.size());
-    for (const auto& key : keys_) {
-      keys.emplace_back(key);
-    }
-
-    statuses_.resize(keys.size());
-    values_.resize(keys.size());
-
-    database.db_->MultiGet(readOptions, column_, keys.size(), keys.data(), values_.data(), statuses_.data());
-
-    for (const auto& status : statuses_) {
-      if (!status.ok() && !status.IsNotFound()) {
-        return status;
-      }
-    }
-
-    return rocksdb::Status::OK();
-  }
-
-  napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[2];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-    const auto size = values_.size();
-
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &argv[1]));
-
-    for (size_t idx = 0; idx < size; idx++) {
-      napi_value element;
-      if (statuses_[idx].ok()) {
-        NAPI_STATUS_RETURN(Convert(env, &values_[idx], valueAsBuffer_, element));
-      } else {
-        NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
-      }
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
-    }
-
-    return CallFunction(env, callback, 2, argv);
-  }
-
-  void Destroy(napi_env env) override {
-    database_->DecrementPriorityWork(env);
-    Worker::Destroy(env);
-  }
-
- private:
-  rocksdb::ColumnFamilyHandle* column_;
-  std::vector<std::string> keys_;
-  std::vector<rocksdb::PinnableSlice> values_;
-  std::vector<rocksdb::Status> statuses_;
-  const bool valueAsBuffer_;
-  const bool fillCache_;
-  const bool ignoreRangeDeletions_;
-  const rocksdb::Snapshot* snapshot_;
-};
 
 NAPI_METHOD(db_get_many) {
   NAPI_ARGV(4);
@@ -1414,15 +1353,72 @@ NAPI_METHOD(db_get_many) {
     }
   }
 
-  const bool asBuffer = EncodingIsBuffer(env, argv[2], "valueEncoding");
+  const bool valueAsBuffer = EncodingIsBuffer(env, argv[2], "valueEncoding");
   const bool fillCache = BooleanProperty(env, argv[2], "fillCache").value_or(true);
   const bool ignoreRangeDeletions = BooleanProperty(env, argv[2], "ignoreRangeDeletions").value_or(false);
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[2], &column));
 
-  auto worker =
-      new GetManyWorker(env, database, column, std::move(keys), argv[3], asBuffer, fillCache, ignoreRangeDeletions);
+  auto callback = argv[3];
+
+  auto snapshot = std::shared_ptr<const rocksdb::Snapshot>(
+      database->db_->GetSnapshot(), [database](auto ptr) { database->db_->ReleaseSnapshot(ptr); });
+
+  struct State {
+    std::vector<rocksdb::PinnableSlice> values;
+    std::vector<rocksdb::Status> statuses;
+  };
+
+  auto worker = createWorker<State>(
+      "leveldown.get.many", env, callback, database, true,
+      [=, keys = std::move(keys)](auto& state, Database& db) -> rocksdb::Status {
+        rocksdb::ReadOptions readOptions;
+        readOptions.fill_cache = fillCache;
+        readOptions.snapshot = snapshot.get();
+        readOptions.async_io = true;
+        readOptions.ignore_range_deletions = ignoreRangeDeletions;
+
+        std::vector<rocksdb::Slice> keys2;
+        keys2.reserve(keys.size());
+        for (const auto& key : keys) {
+          keys2.emplace_back(key);
+        }
+
+        state.statuses.resize(keys2.size());
+        state.values.resize(keys2.size());
+
+        db.db_->MultiGet(readOptions, column, keys2.size(), keys2.data(), state.values.data(), state.statuses.data());
+
+        for (const auto& status : state.statuses) {
+          if (!status.ok() && !status.IsNotFound()) {
+            return status;
+          }
+        }
+
+        return rocksdb::Status::OK();
+      },
+      [=](auto& state, napi_env env, napi_value callback) -> napi_status {
+        napi_value argv[2];
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+        const auto size = state.values.size();
+
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &argv[1]));
+
+        for (size_t idx = 0; idx < size; idx++) {
+          napi_value element;
+          if (state.statuses[idx].ok()) {
+            NAPI_STATUS_RETURN(Convert(env, &state.values[idx], valueAsBuffer, element));
+          } else {
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
+          }
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
+        }
+
+        return CallFunction(env, callback, 2, argv);
+      });
+
   worker->Queue(env);
 
   return 0;
@@ -1632,85 +1628,6 @@ NAPI_METHOD(iterator_get_sequence) {
   return result;
 }
 
-struct NextWorker final : public Worker {
-  NextWorker(napi_env env, Iterator* iterator, uint32_t size, napi_value callback)
-      : Worker(env, iterator->database_, callback, "leveldown.iterator.next"), iterator_(iterator), size_(size) {}
-
-  rocksdb::Status Execute(Database& database) override {
-    if (!iterator_->DidSeek()) {
-      iterator_->SeekToRange();
-    }
-
-    cache_.reserve(size_ * 2);
-    size_t bytesRead = 0;
-
-    while (true) {
-      if (!iterator_->first_)
-        iterator_->Next();
-      else
-        iterator_->first_ = false;
-
-      if (!iterator_->Valid() || !iterator_->Increment())
-        break;
-
-      if (iterator_->keys_ && iterator_->values_) {
-        auto k = iterator_->CurrentKey();
-        auto v = iterator_->CurrentValue();
-        bytesRead += k.size() + v.size();
-        cache_.push_back(k.ToString());
-        cache_.push_back(v.ToString());
-      } else if (iterator_->keys_) {
-        auto k = iterator_->CurrentKey();
-        bytesRead += k.size();
-        cache_.push_back(k.ToString());
-        cache_.push_back(std::nullopt);
-      } else if (iterator_->values_) {
-        auto v = iterator_->CurrentValue();
-        bytesRead += v.size();
-        cache_.push_back(std::nullopt);
-        cache_.push_back(v.ToString());
-      }
-
-      if (bytesRead > iterator_->highWaterMarkBytes_ || cache_.size() / 2 >= size_) {
-        finished_ = false;
-        return rocksdb::Status::OK();
-      }
-    }
-
-    finished_ = true;
-
-    return iterator_->Status();
-  }
-
-  napi_status OnOk(napi_env env, napi_value callback) override {
-    napi_value argv[3];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-    NAPI_STATUS_RETURN(napi_create_array_with_length(env, cache_.size(), &argv[1]));
-
-    for (size_t n = 0; n < cache_.size(); n += 2) {
-      napi_value key;
-      napi_value val;
-
-      NAPI_STATUS_RETURN(Convert(env, cache_[n + 0], iterator_->keyAsBuffer_, key));
-      NAPI_STATUS_RETURN(Convert(env, cache_[n + 1], iterator_->valueAsBuffer_, val));
-
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 0), key));
-      NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 1), val));
-    }
-
-    NAPI_STATUS_RETURN(napi_get_boolean(env, finished_, &argv[2]));
-
-    return CallFunction(env, callback, 3, argv);
-  }
-
- private:
-  std::vector<std::optional<std::string>> cache_;
-  Iterator* iterator_ = nullptr;
-  uint32_t size_ = 0;
-  bool finished_ = true;
-};
-
 NAPI_METHOD(iterator_nextv) {
   NAPI_ARGV(3);
 
@@ -1720,7 +1637,81 @@ NAPI_METHOD(iterator_nextv) {
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &size));
 
-  auto worker = new NextWorker(env, iterator, size, argv[2]);
+  auto callback = argv[2];
+
+  struct State {
+    std::vector<std::optional<std::string>> cache;
+    bool finished = false;
+  };
+
+  auto worker = createWorker<State>(
+      std::string("leveldown.iterator.next"), env, callback, iterator->database_, true,
+      [=](auto& state, Database& db) -> rocksdb::Status {
+        if (!iterator->DidSeek()) {
+          iterator->SeekToRange();
+        }
+
+        state.cache.reserve(size * 2);
+        size_t bytesRead = 0;
+
+        while (true) {
+          if (!iterator->first_)
+            iterator->Next();
+          else
+            iterator->first_ = false;
+
+          if (!iterator->Valid() || !iterator->Increment())
+            break;
+
+          if (iterator->keys_ && iterator->values_) {
+            auto k = iterator->CurrentKey();
+            auto v = iterator->CurrentValue();
+            bytesRead += k.size() + v.size();
+            state.cache.push_back(k.ToString());
+            state.cache.push_back(v.ToString());
+          } else if (iterator->keys_) {
+            auto k = iterator->CurrentKey();
+            bytesRead += k.size();
+            state.cache.push_back(k.ToString());
+            state.cache.push_back(std::nullopt);
+          } else if (iterator->values_) {
+            auto v = iterator->CurrentValue();
+            bytesRead += v.size();
+            state.cache.push_back(std::nullopt);
+            state.cache.push_back(v.ToString());
+          }
+
+          if (bytesRead > iterator->highWaterMarkBytes_ || state.cache.size() / 2 >= size) {
+            state.finished = false;
+            return rocksdb::Status::OK();
+          }
+        }
+
+        state.finished = true;
+
+        return iterator->Status();
+      },
+      [=](auto& state, napi_env env, napi_value callback) -> napi_status {
+        napi_value argv[3];
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, state.cache.size(), &argv[1]));
+
+        for (size_t n = 0; n < state.cache.size(); n += 2) {
+          napi_value key;
+          napi_value val;
+
+          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 0], iterator->keyAsBuffer_, key));
+          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 1], iterator->valueAsBuffer_, val));
+
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 0), key));
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 1), val));
+        }
+
+        NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &argv[2]));
+
+        return CallFunction(env, callback, 3, argv);
+      });
   worker->Queue(env);
 
   return 0;
