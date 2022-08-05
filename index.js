@@ -309,10 +309,6 @@ class RocksLevel extends AbstractLevel {
       signal: options?.signal ?? null
     }
 
-    if (options.column) {
-      throw new TypeError("'column' not implemented")
-    }
-
     if (typeof options.since !== 'number') {
       throw new TypeError("'since' must be nully or a number")
     }
@@ -337,6 +333,10 @@ class RocksLevel extends AbstractLevel {
       throw new TypeError("'live' must be nully or a boolean")
     }
 
+    if (options.column == null) {
+      delete options.column
+    }
+
     const ac = new AbortController()
     const onAbort = () => {
       ac.abort()
@@ -356,11 +356,12 @@ class RocksLevel extends AbstractLevel {
           readableHighWaterMark: 1024,
           construct (callback) {
             this._next = (batch, sequence) => {
-              const rows = []
-              for (const { type, key, value } of batch) {
-                rows.push(type, key, value, null)
-              }
-              if (!this.push({ rows, sequence, count: batch.length })) {
+              if (!this.push({
+                rows: batch.toArray(options),
+                count: batch.length,
+                sequence,
+                batch
+              })) {
                 this.push(null)
                 db.off('write', this._next)
               }
