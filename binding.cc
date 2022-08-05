@@ -1939,88 +1939,12 @@ NAPI_METHOD(batch_iterate) {
   rocksdb::ColumnFamilyHandle* column = nullptr;
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
 
-  napi_value result;
   BatchIterator iterator(nullptr, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
+  napi_value result;
   NAPI_STATUS_THROWS(iterator.Iterate(env, *batch, &result));
 
   return result;
-}
-
-NAPI_METHOD(db_flush_wal) {
-  NAPI_ARGV(2);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  const auto sync = BooleanProperty(env, argv[1], "sync").value_or(false);
-
-  ROCKS_STATUS_THROWS(database->db_->FlushWAL(sync));
-
-  return 0;
-}
-
-template <typename T>
-napi_status FromLogFile(napi_env env, const T& file, napi_value* obj) {
-  NAPI_STATUS_RETURN(napi_create_object(env, obj));
-
-  napi_value pathName;
-  NAPI_STATUS_RETURN(napi_create_string_utf8(env, file->PathName().c_str(), NAPI_AUTO_LENGTH, &pathName));
-  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "pathName", pathName));
-
-  napi_value logNumber;
-  NAPI_STATUS_RETURN(napi_create_int64(env, file->LogNumber(), &logNumber));
-  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "logNumber", logNumber));
-
-  napi_value type;
-  NAPI_STATUS_RETURN(napi_create_int64(env, file->Type(), &type));
-  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "type", type));
-
-  napi_value startSequence;
-  NAPI_STATUS_RETURN(napi_create_int64(env, file->StartSequence(), &startSequence));
-  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "startSequence", startSequence));
-
-  napi_value sizeFileBytes;
-  NAPI_STATUS_RETURN(napi_create_int64(env, file->SizeFileBytes(), &sizeFileBytes));
-  NAPI_STATUS_RETURN(napi_set_named_property(env, *obj, "sizeFileBytes", sizeFileBytes));
-
-  return napi_ok;
-}
-
-NAPI_METHOD(db_get_sorted_wal_files) {
-  NAPI_ARGV(1);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  rocksdb::VectorLogPtr files;
-  ROCKS_STATUS_THROWS(database->db_->GetSortedWalFiles(files));
-
-  napi_value ret;
-  NAPI_STATUS_THROWS(napi_create_array_with_length(env, files.size(), &ret));
-
-  for (size_t n = 0; n < files.size(); ++n) {
-    napi_value obj;
-    NAPI_STATUS_THROWS(FromLogFile(env, files[n], &obj));
-    NAPI_STATUS_THROWS(napi_set_element(env, ret, n, obj));
-  }
-
-  return ret;
-}
-
-NAPI_METHOD(db_get_current_wal_file) {
-  NAPI_ARGV(1);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  std::unique_ptr<rocksdb::LogFile> file;
-  ROCKS_STATUS_THROWS(database->db_->GetCurrentWalFile(&file));
-
-  napi_value ret;
-  NAPI_STATUS_THROWS(FromLogFile(env, file, &ret));
-
-  return ret;
 }
 
 NAPI_INIT() {
@@ -2041,10 +1965,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(updates_init);
   NAPI_EXPORT_FUNCTION(updates_close);
   NAPI_EXPORT_FUNCTION(updates_next);
-
-  NAPI_EXPORT_FUNCTION(db_flush_wal);
-  NAPI_EXPORT_FUNCTION(db_get_sorted_wal_files);
-  NAPI_EXPORT_FUNCTION(db_get_current_wal_file);
 
   NAPI_EXPORT_FUNCTION(batch_do);
   NAPI_EXPORT_FUNCTION(batch_init);

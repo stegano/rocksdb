@@ -222,36 +222,6 @@ class RocksLevel extends AbstractLevel {
     return binding.db_get_property(this[kContext], property)
   }
 
-  async getCurrentWALFile () {
-    if (this.status !== 'open') {
-      throw new ModuleError('Database is not open', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      })
-    }
-
-    return binding.db_get_current_wal_file(this[kContext])
-  }
-
-  async getSortedWALFiles () {
-    if (this.status !== 'open') {
-      throw new ModuleError('Database is not open', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      })
-    }
-
-    return binding.db_get_sorted_wal_files(this[kContext])
-  }
-
-  async flushWAL (options) {
-    if (this.status !== 'open') {
-      throw new ModuleError('Database is not open', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      })
-    }
-
-    binding.db_flush_wal(this[kContext], options ?? {})
-  }
-
   async query (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
