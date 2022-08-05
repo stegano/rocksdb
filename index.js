@@ -333,10 +333,6 @@ class RocksLevel extends AbstractLevel {
       throw new TypeError("'live' must be nully or a boolean")
     }
 
-    if (options.column == null) {
-      delete options.column
-    }
-
     const ac = new AbortController()
     const onAbort = () => {
       ac.abort()
