@@ -1953,9 +1953,9 @@ NAPI_METHOD(db_flush_wal) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto flush = BooleanProperty(env, argv[1], "flush").value_or(false);
+  const auto sync = BooleanProperty(env, argv[1], "sync").value_or(false);
 
-  ROCKS_STATUS_THROWS(database->db_->FlushWAL(flush));
+  ROCKS_STATUS_THROWS(database->db_->FlushWAL(sync));
 
   return 0;
 }
