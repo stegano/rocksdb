@@ -11,7 +11,6 @@ const { Iterator } = require('./iterator')
 const { Readable } = require('readable-stream')
 const os = require('os')
 const AbortController = require('abort-controller')
-const assert = require('assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -348,7 +347,6 @@ class RocksLevel extends AbstractLevel {
 
     const db = this
 
-    // HACK: https://github.com/facebook/rocksdb/issues/10476
     async function * _updates (options) {
       let first = true
       for await (const update of db[kUpdates]({ ...options, since: Math.max(0, options.since - 1024) })) {
@@ -374,9 +372,7 @@ class RocksLevel extends AbstractLevel {
 
     try {
       let since = options.since
-      for (let retryCount = 0; true; retryCount++) {
-        assert(retryCount < 8)
-
+      while (true) {
         const buffer = new Readable({
           signal: ac.signal,
           objectMode: true,
@@ -404,15 +400,26 @@ class RocksLevel extends AbstractLevel {
 
         try {
           if (since <= db.sequence) {
-            for await (const update of _updates(options)) {
+            let first = true
+            for await (const update of _updates({
+              ...options,
+              // HACK: https://github.com/facebook/rocksdb/issues/10476
+              since: Math.max(0, options.since - 2048)
+            })) {
               if (ac.signal.aborted) {
                 throw new AbortError()
+              }
+
+              if (first) {
+                if (update.sequence > since) {
+                  db.emit('warning', `Invalid updates sequence ${update.sequence} > ${options.since}.`)
+                }
+                first = false
               }
 
               if (update.sequence >= since) {
                 yield update
                 since = update.sequence + update.count
-                retryCount = 0
               }
             }
           }
@@ -428,18 +435,19 @@ class RocksLevel extends AbstractLevel {
 
         let first = true
         for await (const update of buffer) {
+          if (ac.signal.aborted) {
+            throw new AbortError()
+          }
+
           if (first) {
             if (update.sequence > since) {
-              // HACK
-              db.emit('warning', `Invalid batch sequence ${update.sequence} > ${options.since}. Starting from ${since}.`)
-              break
+              db.emit('warning', `Invalid batch sequence ${update.sequence} > ${options.since}.`)
             }
             first = false
           }
           if (update.sequence >= since) {
             yield update
             since = update.sequence + update.count
-            retryCount = 0
           }
         }
       }
