@@ -359,8 +359,7 @@ class RocksLevel extends AbstractLevel {
               if (!this.push({
                 rows: batch.toArray(options),
                 count: batch.length,
-                sequence,
-                batch
+                sequence
               })) {
                 this.push(null)
                 db.off('write', this._next)
