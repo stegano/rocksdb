@@ -366,13 +366,10 @@ class RocksLevel extends AbstractLevel {
             let first = true
             for await (const update of db[kUpdates]({
               ...options,
+              signal: ac.signal,
               // HACK: https://github.com/facebook/rocksdb/issues/10476
               since: Math.max(0, options.since - 2048)
             })) {
-              if (ac.signal.aborted) {
-                throw new AbortError()
-              }
-
               if (first) {
                 if (update.sequence > since) {
                   db.emit('warning', `Invalid updates sequence ${update.sequence} > ${options.since}.`)
@@ -398,10 +395,6 @@ class RocksLevel extends AbstractLevel {
 
         let first = true
         for await (const update of buffer) {
-          if (ac.signal.aborted) {
-            throw new AbortError()
-          }
-
           if (first) {
             if (update.sequence > since) {
               db.emit('warning', `Invalid batch sequence ${update.sequence} > ${options.since}.`)
@@ -420,72 +413,32 @@ class RocksLevel extends AbstractLevel {
     }
   }
 
-  async * [kUpdates] (options) {
-    class Updates {
-      constructor (db, options) {
-        this.context = binding.updates_init(db[kContext], options)
-        this.closed = false
-        this.promise = null
-        this.db = db
-        this.db.attachResource(this)
-      }
-
-      async next () {
-        if (this.closed) {
-          return {}
+  async * [kUpdates] ({ signal, ...options }) {
+    const context = binding.updates_init(this[kContext], options)
+    this[kRef]()
+    try {
+      while (true) {
+        if (signal?.aborted) {
+          throw new AbortError()
         }
 
-        this.promise = new Promise(resolve => binding.updates_next(this.context, (err, rows, sequence, count) => {
-          this.promise = null
+        const entry = await new Promise((resolve, reject) => binding.updates_next(context, (err, rows, sequence, count) => {
           if (err) {
-            resolve(Promise.reject(err))
+            reject(err)
           } else {
             resolve({ rows, sequence, count })
           }
         }))
 
-        return this.promise
-      }
-
-      async close (callback) {
-        try {
-          await this.promise
-        } catch {
-          // Do nothing...
-        }
-
-        try {
-          if (!this.closed) {
-            this.closed = true
-            binding.updates_close(this.context)
-          }
-
-          if (callback) {
-            process.nextTick(callback)
-          }
-        } catch (err) {
-          if (callback) {
-            process.nextTick(callback, err)
-          } else {
-            throw err
-          }
-        } finally {
-          this.db.detachResource(this)
-        }
-      }
-    }
-
-    const updates = new Updates(this, options)
-    try {
-      while (true) {
-        const entry = await updates.next()
         if (!entry.rows) {
           return
         }
+
         yield entry
       }
     } finally {
-      await updates.close()
+      binding.updates_close(context)
+      this[kUnref]()
     }
   }
 }
