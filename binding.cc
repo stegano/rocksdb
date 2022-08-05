@@ -257,25 +257,28 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   }
 }
 
-/**
- * Base worker class. Handles the async work. Derived classes can override the
- * following virtual methods (listed in the order in which they're called):
- *
- * - Execute (abstract, worker pool thread): main work
- * - OnOk (main thread): call JS callback on success
- * - OnError (main thread): call JS callback on error
- * - Destroy (main thread): do cleanup regardless of success
- */
-struct Worker {
-  Worker(napi_env env, Database* database, napi_value callback, const std::string& resourceName) : database_(database) {
+template <typename State,
+          typename ExecuteType = std::function<rocksdb::Status(State& state, Database& database)>,
+          typename OnOkType = std::function<napi_status(State& state, napi_env env, napi_value callback)>>
+struct Worker final {
+  template <typename T1, typename T2>
+  Worker(const std::string& resourceName,
+         napi_env env,
+         napi_value callback,
+         Database* database,
+         T1&& execute,
+         T2&& onOK)
+      : database_(database)
+      , execute_(std::forward<T1>(execute))
+      , onOk_(std::forward<T2>(onOK)) {
     NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
     napi_value asyncResourceName;
     NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), resourceName.size(), &asyncResourceName));
     NAPI_STATUS_THROWS_VOID(
         napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, this, &asyncWork_));
-  }
 
-  virtual ~Worker() {}
+    NAPI_STATUS_THROWS_VOID(napi_queue_async_work(env, asyncWork_));
+  }
 
   static void Execute(napi_env env, void* data) {
     auto self = reinterpret_cast<Worker*>(data);
@@ -296,38 +299,35 @@ struct Worker {
       self->OnError(env, callback, ToError(env, self->status_));
     }
 
-    self->Destroy(env);
-
     napi_delete_reference(env, self->callbackRef_);
     napi_delete_async_work(env, self->asyncWork_);
 
     delete self;
   }
 
-  virtual rocksdb::Status Execute(Database& database) = 0;
+  rocksdb::Status Execute(Database& database) { return execute_(state_, database); }
 
-  virtual napi_status OnOk(napi_env env, napi_value callback) {
-    napi_value argv[1];
-    NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-    return CallFunction(env, callback, 1, &argv[0]);
-  }
+  napi_status OnOk(napi_env env, napi_value callback) { return onOk_(state_, env, callback); }
 
   virtual napi_status OnError(napi_env env, napi_value callback, napi_value err) {
     return CallFunction(env, callback, 1, &err);
   }
 
-  virtual void Destroy(napi_env env) {}
-
-  void Queue(napi_env env) { napi_queue_async_work(env, asyncWork_); }
-
-  Database* database_;
-
  private:
+  Database* database_;
   napi_ref callbackRef_;
   napi_async_work asyncWork_;
   rocksdb::Status status_;
+  State state_;
+  ExecuteType execute_;
+  OnOkType onOk_;
 };
+
+template <typename State, typename T1, typename T2>
+void runAsync(const std::string& name, napi_env env, napi_value callback, Database* database, T1&& execute, T2&& onOk) {
+  new Worker<State, typename std::decay<T1>::type, typename std::decay<T2>::type>(
+      name, env, callback, database, std::forward<T1>(execute), std::forward<T2>(onOk));
+}
 
 struct ColumnFamily {
   napi_ref ref;
@@ -337,40 +337,18 @@ struct ColumnFamily {
 };
 
 struct Database {
-  void AttachIterator(napi_env env, Iterator* iterator) {
-    iterators_.insert(iterator);
-    IncrementPriorityWork(env);
-  }
+  void AttachIterator(napi_env env, Iterator* iterator) { iterators_.insert(iterator); }
 
-  void DetachIterator(napi_env env, Iterator* iterator) {
-    iterators_.erase(iterator);
-    DecrementPriorityWork(env);
-  }
+  void DetachIterator(napi_env env, Iterator* iterator) { iterators_.erase(iterator); }
 
-  void AttachUpdates(napi_env env, Updates* update) {
-    updates_.insert(update);
-    IncrementPriorityWork(env);
-  }
+  void AttachUpdates(napi_env env, Updates* update) { updates_.insert(update); }
 
-  void DetachUpdates(napi_env env, Updates* update) {
-    updates_.erase(update);
-    DecrementPriorityWork(env);
-  }
-
-  void IncrementPriorityWork(napi_env env) { napi_reference_ref(env, priorityRef_, &priorityWork_); }
-
-  void DecrementPriorityWork(napi_env env) { napi_reference_unref(env, priorityRef_, &priorityWork_); }
-
-  bool HasPriorityWork() const { return priorityWork_ > 0; }
+  void DetachUpdates(napi_env env, Updates* update) { updates_.erase(update); }
 
   std::unique_ptr<rocksdb::DB> db_;
   std::set<Iterator*> iterators_;
   std::set<Updates*> updates_;
   std::map<int32_t, ColumnFamily> columns_;
-  napi_ref priorityRef_;
-
- private:
-  uint32_t priorityWork_ = 0;
 };
 
 enum BatchOp { Empty, Put, Delete, Merge, Data };
@@ -816,58 +794,6 @@ static napi_status GetColumnFamily(Database* database,
   return napi_ok;
 }
 
-template <typename State,
-          typename ExecuteType = std::function<rocksdb::Status(State& state, Database& database)>,
-          typename OnOkType = std::function<napi_status(State& state, napi_env env, napi_value callback)>>
-struct GenericWorker final : public Worker {
-  template <typename T1, typename T2>
-  GenericWorker(const std::string& name,
-                napi_env env,
-                napi_value callback,
-                Database* database,
-                bool priority,
-                T1&& execute,
-                T2&& onOK)
-      : Worker(env, database, callback, name),
-        priority_(priority),
-        execute_(std::forward<T1>(execute)),
-        onOk_(std::forward<T2>(onOK)) {
-    if (priority_) {
-      database_->IncrementPriorityWork(env);
-    }
-  }
-
-  rocksdb::Status Execute(Database& database) override { return execute_(state_, database); }
-
-  napi_status OnOk(napi_env env, napi_value callback) override { return onOk_(state_, env, callback); }
-
-  void Destroy(napi_env env) override {
-    if (priority_) {
-      database_->DecrementPriorityWork(env);
-    }
-    Worker::Destroy(env);
-  }
-
- private:
-  State state_;
-  bool priority_ = false;
-  ExecuteType execute_;
-  OnOkType onOk_;
-};
-
-template <typename State, typename T1, typename T2>
-void runAsync(const std::string& name,
-               napi_env env,
-               napi_value callback,
-               Database* database,
-               bool priority,
-               T1&& execute,
-               T2&& onOk) {
-  auto worker = new GenericWorker<State, typename std::decay<T1>::type, typename std::decay<T2>::type>(
-      name, env, callback, database, priority, std::forward<T1>(execute), std::forward<T2>(onOk));
-  worker->Queue(env);
-}
-
 /**
  * Hook for when the environment exits. This hook will be called after
  * already-scheduled napi_async_work items have finished, which gives us
@@ -907,8 +833,6 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   if (data) {
     auto database = reinterpret_cast<Database*>(data);
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    if (database->priorityRef_)
-      napi_delete_reference(env, database->priorityRef_);
     for (auto& it : database->columns_) {
       napi_delete_reference(env, it.second.ref);
     }
@@ -922,8 +846,6 @@ NAPI_METHOD(db_init) {
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
-
-  NAPI_STATUS_THROWS(napi_create_reference(env, result, 0, &database->priorityRef_));
 
   return result;
 }
@@ -1136,7 +1058,7 @@ NAPI_METHOD(db_open) {
   auto callback = argv[3];
 
   runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
-      "leveldown.open", env, callback, database, false,
+      "leveldown.open", env, callback, database,
       [=](auto& handles, auto& database) -> rocksdb::Status {
         rocksdb::DB* db = nullptr;
         const auto status = descriptors.empty() ? rocksdb::DB::Open(dbOptions, location, &db)
@@ -1181,28 +1103,23 @@ NAPI_METHOD(db_close) {
 
   auto callback = argv[1];
 
-  if (database->HasPriorityWork()) {
-    auto err = CreateError(env, "LEVEL_TRY_AGAIN", "database has pending operations");
-    CallFunction(env, callback, 1, &err);
-  } else {
-    struct State {};
-    runAsync<State>(
-        "leveldown.close", env, callback, database, false,
-        [=](auto& state, auto& database) -> rocksdb::Status {
-          for (auto& it : database.columns_) {
-            database.db_->DestroyColumnFamilyHandle(it.second.handle);
-          }
-          database.columns_.clear();
+  struct State {};
+  runAsync<State>(
+      "leveldown.close", env, callback, database,
+      [=](auto& state, auto& database) -> rocksdb::Status {
+        for (auto& it : database.columns_) {
+          database.db_->DestroyColumnFamilyHandle(it.second.handle);
+        }
+        database.columns_.clear();
 
-          return database.db_->Close();
-        },
-        [](auto& state, napi_env env, napi_value callback) -> napi_status {
-          napi_value argv[1];
-          NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+        return database.db_->Close();
+      },
+      [](auto& state, napi_env env, napi_value callback) -> napi_status {
+        napi_value argv[1];
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
-          return CallFunction(env, callback, 1, &argv[0]);
-        });
-  }
+        return CallFunction(env, callback, 1, &argv[0]);
+      });
 
   return 0;
 }
@@ -1260,7 +1177,7 @@ NAPI_METHOD(updates_next) {
   auto callback = argv[1];
 
   runAsync<rocksdb::BatchResult>(
-      "leveldown.updates.next", env, callback, updates->database_, true,
+      "leveldown.updates.next", env, callback, updates->database_,
       [=](auto& batchResult, auto& database) -> rocksdb::Status {
         if (!updates->iterator_) {
           rocksdb::TransactionLogIterator::ReadOptions options;
@@ -1345,7 +1262,7 @@ NAPI_METHOD(db_get_many) {
       database->db_->GetSnapshot(), [database](auto ptr) { database->db_->ReleaseSnapshot(ptr); });
 
   runAsync<std::vector<rocksdb::PinnableSlice>>(
-      "leveldown.get.many", env, callback, database, true,
+      "leveldown.get.many", env, callback, database,
       [=, keys = std::move(keys)](auto& values, Database& db) -> rocksdb::Status {
         rocksdb::ReadOptions readOptions;
         readOptions.fill_cache = fillCache;
@@ -1618,7 +1535,7 @@ NAPI_METHOD(iterator_nextv) {
   };
 
   runAsync<State>(
-      std::string("leveldown.iterator.next"), env, callback, iterator->database_, true,
+      std::string("leveldown.iterator.next"), env, callback, iterator->database_,
       [=](auto& state, Database& db) -> rocksdb::Status {
         if (!iterator->DidSeek()) {
           iterator->SeekToRange();
