@@ -67,7 +67,7 @@ class RocksLevel extends AbstractLevel {
     this[kContext] = binding.db_init()
     this[kColumns] = {}
 
-    // .updates(...) uses 'write' listener.
+    // .updates(...) uses 'update' listener.
     this.setMaxListeners(100)
   }
 
@@ -179,7 +179,11 @@ class RocksLevel extends AbstractLevel {
       try {
         const seq = this.sequence
         binding.batch_write(this[kContext], context, options)
-        this.emit('write', batch, seq + 1)
+        this.emit('update', {
+          rows: batch.toArray(),
+          count: batch.length,
+          sequence: seq + 1
+        })
         process.nextTick(callback, null)
       } catch (err) {
         process.nextTick(callback, err)
@@ -344,12 +348,13 @@ class RocksLevel extends AbstractLevel {
 
     const db = this
 
-    async function* _updates (options) {
+    // HACK: https://github.com/facebook/rocksdb/issues/10476
+    async function * _updates (options) {
       let first = true
       for await (const update of db[kUpdates](options)) {
         if (first) {
           if (update.sequence > options.since) {
-            // HACK: https://github.com/facebook/rocksdb/issues/10476
+            // HACK
             db.emit('warning', `Invalid update sequence ${update.sequence} > ${options.since}. Starting from 0.`)
             for await (const update of db[kUpdates]({ ...options, since: 0 })) {
               yield update
@@ -373,22 +378,18 @@ class RocksLevel extends AbstractLevel {
           objectMode: true,
           readableHighWaterMark: 1024,
           construct (callback) {
-            this._next = (batch, sequence) => {
-              if (!this.push({
-                rows: batch.toArray(options),
-                count: batch.length,
-                sequence
-              })) {
+            this._next = (update) => {
+              if (!this.push(update)) {
                 this.push(null)
-                db.off('write', this._next)
+                db.off('update', this._next)
               }
             }
-            db.on('write', this._next)
+            db.on('update', this._next)
             callback()
           },
           read () {},
           destroy (err, callback) {
-            db.off('write', this._next)
+            db.off('update', this._next)
             callback(err)
           }
         })
@@ -426,7 +427,7 @@ class RocksLevel extends AbstractLevel {
           if (first) {
             if (update.sequence > since) {
               // HACK
-              db.emit('warning', `Invalid batch sequence. Restarting.`)
+              db.emit('warning', `Invalid batch sequence ${update.sequence} > ${options.since}. Starting from ${since}.`)
               break
             }
             first = false
