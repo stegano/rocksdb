@@ -249,7 +249,7 @@ class RocksLevel extends AbstractLevel {
       })
     }
 
-    binding.db_flush_wal(this[kContext], options)
+    binding.db_flush_wal(this[kContext], options ?? {})
   }
 
   async query (options) {
@@ -259,7 +259,7 @@ class RocksLevel extends AbstractLevel {
       })
     }
 
-    const context = binding.iterator_init(this[kContext], options)
+    const context = binding.iterator_init(this[kContext], options ?? {})
     const resource = {
       callback: null,
       close (callback) {
