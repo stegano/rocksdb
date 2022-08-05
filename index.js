@@ -11,6 +11,7 @@ const { Iterator } = require('./iterator')
 const { Readable } = require('readable-stream')
 const os = require('os')
 const AbortController = require('abort-controller')
+const assert = require('assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -365,7 +366,9 @@ class RocksLevel extends AbstractLevel {
 
     try {
       let since = options.since
-      while (true) {
+      for (let retryCount = 0; true; retryCount++) {
+        assert(retryCount < 8)
+
         const buffer = new Readable({
           signal: ac.signal,
           objectMode: true,
@@ -405,6 +408,7 @@ class RocksLevel extends AbstractLevel {
               if (update.sequence >= since) {
                 yield update
                 since = update.sequence + update.count
+                retryCount = 0
               }
             }
           }
@@ -431,6 +435,7 @@ class RocksLevel extends AbstractLevel {
           if (update.sequence >= since) {
             yield update
             since = update.sequence + update.count
+            retryCount = 0
           }
         }
       }
