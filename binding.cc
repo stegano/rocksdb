@@ -407,8 +407,10 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
         valueAsBuffer_(valueAsBuffer) {}
 
   napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
+    cache_.clear();
     cache_.reserve(batch.Count());
-    batch.Iterate(this);  // TODO (fix): Error?
+
+    batch.Iterate(this);  // TODO (fix): Handle error?
 
     napi_value putStr;
     NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
@@ -1156,9 +1158,8 @@ NAPI_METHOD(db_open) {
       "leveldown.open", env, callback, database, false,
       [=](auto& handles, auto& database) -> rocksdb::Status {
         rocksdb::DB* db = nullptr;
-        const auto status = descriptors.empty()
-                                ? rocksdb::DB::Open(dbOptions, location, &db)
-                                : rocksdb::DB::Open(dbOptions, location, descriptors, &handles, &db);
+        const auto status = descriptors.empty() ? rocksdb::DB::Open(dbOptions, location, &db)
+                                                : rocksdb::DB::Open(dbOptions, location, descriptors, &handles, &db);
         database.db_.reset(db);
         return status;
       },
@@ -1378,7 +1379,7 @@ NAPI_METHOD(db_get_many) {
           keys2.emplace_back(key);
         }
         std::vector<rocksdb::Status> statuses;
-        
+
         statuses.resize(keys2.size());
         values.resize(keys2.size());
 

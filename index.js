@@ -351,20 +351,24 @@ class RocksLevel extends AbstractLevel {
     // HACK: https://github.com/facebook/rocksdb/issues/10476
     async function * _updates (options) {
       let first = true
-      for await (const update of db[kUpdates](options)) {
+      for await (const update of db[kUpdates]({ ...options, since: Math.max(0, options.since - 1024) })) {
         if (first) {
           if (update.sequence > options.since) {
             // HACK
             db.emit('warning', `Invalid update sequence ${update.sequence} > ${options.since}. Starting from 0.`)
-            for await (const update of db[kUpdates]({ ...options, since: 0 })) {
-              yield update
-            }
+            first = null
             break
           } else {
             first = false
           }
         }
         yield update
+      }
+
+      if (first === null) {
+        for await (const update of db[kUpdates]({ ...options, since: 0 })) {
+          yield update
+        }
       }
     }
 
