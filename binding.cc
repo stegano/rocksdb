@@ -358,18 +358,18 @@ struct Database : public Closable {
       return rocksdb::Status::OK();
     }
 
-    for (auto& it : iterators_) {
-      it->Close();
+    for (auto& iterator : iterators_) {
+      iterator->Close();
     }
     iterators_.clear();
 
-    for (auto& it : updates_) {
-      it->Close();
+    for (auto& update : updates_) {
+      update->Close();
     }
     updates_.clear();
 
-    for (auto& it : columns_) {
-      db_->DestroyColumnFamilyHandle(it.second.handle);
+    for (auto& [id, column] : columns_) {
+      db_->DestroyColumnFamilyHandle(column.handle);
     }
     columns_.clear();
 
@@ -844,8 +844,8 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
     auto database = reinterpret_cast<Database*>(data);
     database->Close();
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    for (auto& it : database->columns_) {
-      napi_delete_reference(env, it.second.ref);
+    for (auto& [id, column] : database->columns_) {
+      napi_delete_reference(env, column.ref);
     }
     delete database;
   }
