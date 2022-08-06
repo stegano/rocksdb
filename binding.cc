@@ -1078,7 +1078,7 @@ NAPI_METHOD(db_open) {
         return status;
       },
       [=](auto& handles, napi_env env, napi_value callback) -> napi_status {
-        napi_value argv[2];
+        napi_value argv[2] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
         const auto size = handles.size();
@@ -1119,7 +1119,7 @@ NAPI_METHOD(db_close) {
       "leveldown.close", env, callback, database,
       [=](auto& state, auto& database) -> rocksdb::Status { return database.Close(); },
       [](auto& state, napi_env env, napi_value callback) -> napi_status {
-        napi_value argv[1];
+        napi_value argv[1] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
         return CallFunction(env, callback, 1, &argv[0]);
@@ -1202,7 +1202,7 @@ NAPI_METHOD(updates_next) {
         return rocksdb::Status::OK();
       },
       [=](auto& batchResult, napi_env env, napi_value callback) -> napi_status {
-        napi_value argv[5];
+        napi_value argv[5] = {};
 
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
@@ -1297,7 +1297,7 @@ NAPI_METHOD(db_get_many) {
         return rocksdb::Status::OK();
       },
       [=](auto& values, napi_env env, napi_value callback) -> napi_status {
-        napi_value argv[2];
+        napi_value argv[2] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
         NAPI_STATUS_RETURN(napi_create_array_with_length(env, values.size(), &argv[1]));
@@ -1586,7 +1586,7 @@ NAPI_METHOD(iterator_nextv) {
         return iterator->Status();
       },
       [=](auto& state, napi_env env, napi_value callback) -> napi_status {
-        napi_value argv[3];
+        napi_value argv[3] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
         NAPI_STATUS_RETURN(napi_create_array_with_length(env, state.cache.size(), &argv[1]));
