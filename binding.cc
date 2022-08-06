@@ -1070,14 +1070,14 @@ NAPI_METHOD(db_open) {
 
   runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
       "leveldown.open", env, callback, database,
-      [=](auto& handles, auto& database) -> rocksdb::Status {
+      [=](auto& handles, auto& database) {
         rocksdb::DB* db = nullptr;
         const auto status = descriptors.empty() ? rocksdb::DB::Open(dbOptions, location, &db)
                                                 : rocksdb::DB::Open(dbOptions, location, descriptors, &handles, &db);
         database.db_.reset(db);
         return status;
       },
-      [=](auto& handles, napi_env env, napi_value callback) -> napi_status {
+      [=](auto& handles, auto env, auto callback) {
         napi_value argv[2] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
@@ -1117,8 +1117,8 @@ NAPI_METHOD(db_close) {
   struct State {};
   runAsync<State>(
       "leveldown.close", env, callback, database,
-      [=](auto& state, auto& database) -> rocksdb::Status { return database.Close(); },
-      [](auto& state, napi_env env, napi_value callback) -> napi_status {
+      [=](auto& state, auto& database) { return database.Close(); },
+      [](auto& state, auto env, auto callback) {
         napi_value argv[1] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
@@ -1182,7 +1182,7 @@ NAPI_METHOD(updates_next) {
 
   runAsync<rocksdb::BatchResult>(
       "leveldown.updates.next", env, callback, updates->database_,
-      [=](auto& batchResult, auto& database) -> rocksdb::Status {
+      [=](auto& batchResult, auto& database) {
         if (!updates->iterator_) {
           rocksdb::TransactionLogIterator::ReadOptions options;
           const auto status = database.db_->GetUpdatesSince(updates->start_, &updates->iterator_, options);
@@ -1201,7 +1201,7 @@ NAPI_METHOD(updates_next) {
 
         return rocksdb::Status::OK();
       },
-      [=](auto& batchResult, napi_env env, napi_value callback) -> napi_status {
+      [=](auto& batchResult, auto env, auto callback) {
         napi_value argv[5] = {};
 
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
@@ -1267,7 +1267,7 @@ NAPI_METHOD(db_get_many) {
 
   runAsync<std::vector<rocksdb::PinnableSlice>>(
       "leveldown.get.many", env, callback, database,
-      [=, keys = std::move(keys)](auto& values, Database& db) -> rocksdb::Status {
+      [=, keys = std::move(keys)](auto& values, auto& db) {
         rocksdb::ReadOptions readOptions;
         readOptions.fill_cache = fillCache;
         readOptions.snapshot = snapshot.get();
@@ -1296,7 +1296,7 @@ NAPI_METHOD(db_get_many) {
 
         return rocksdb::Status::OK();
       },
-      [=](auto& values, napi_env env, napi_value callback) -> napi_status {
+      [=](auto& values, auto env, auto callback) {
         napi_value argv[2] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
@@ -1540,7 +1540,7 @@ NAPI_METHOD(iterator_nextv) {
 
   runAsync<State>(
       std::string("leveldown.iterator.next"), env, callback, iterator->database_,
-      [=](auto& state, Database& db) -> rocksdb::Status {
+      [=](auto& state, auto& db) {
         if (!iterator->DidSeek()) {
           iterator->SeekToRange();
         }
@@ -1585,7 +1585,7 @@ NAPI_METHOD(iterator_nextv) {
 
         return iterator->Status();
       },
-      [=](auto& state, napi_env env, napi_value callback) -> napi_status {
+      [=](auto& state, auto env, auto callback) {
         napi_value argv[3] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
 
