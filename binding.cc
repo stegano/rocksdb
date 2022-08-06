@@ -341,32 +341,20 @@ struct Closable {
 };
 
 struct Database : public Closable {
-  void AttachIterator(napi_env env, Closable* iterator) { iterators_.insert(iterator); }
+  void Attach(napi_env env, Closable* closable) { closables_.insert(closable); }
+  void Detach(napi_env env, Closable* closable) { closables_.erase(closable); }
 
-  void DetachIterator(napi_env env, Closable* iterator) { iterators_.erase(iterator); }
-
-  void AttachUpdates(napi_env env, Closable* update) { updates_.insert(update); }
-
-  void DetachUpdates(napi_env env, Closable* update) { updates_.erase(update); }
-
-  virtual ~Database () {
-    assert(!db_);
-  }
+  virtual ~Database() { assert(!db_); }
 
   rocksdb::Status Close() {
     if (!db_) {
       return rocksdb::Status::OK();
     }
 
-    for (auto& iterator : iterators_) {
-      iterator->Close();
+    for (auto closable : closables_) {
+      closable->Close();
     }
-    iterators_.clear();
-
-    for (auto& update : updates_) {
-      update->Close();
-    }
-    updates_.clear();
+    closables_.clear();
 
     for (auto& [id, column] : columns_) {
       db_->DestroyColumnFamilyHandle(column.handle);
@@ -378,8 +366,7 @@ struct Database : public Closable {
   }
 
   std::unique_ptr<rocksdb::DB> db_;
-  std::set<Closable*> iterators_;
-  std::set<Closable*> updates_;
+  std::set<Closable*> closables_;
   std::map<int32_t, ColumnFamily> columns_;
 };
 
@@ -586,11 +573,11 @@ struct Updates : public BatchIterator, public Closable {
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
-    database_->AttachUpdates(env, this);
+    database_->Attach(env, this);
   }
 
   void Detach(napi_env env) {
-    database_->DetachUpdates(env, this);
+    database_->Detach(env, this);
     if (ref_) {
       napi_delete_reference(env, ref_);
     }
@@ -772,11 +759,11 @@ struct Iterator final : public BaseIterator {
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
-    database_->AttachIterator(env, this);
+    database_->Attach(env, this);
   }
 
   void Detach(napi_env env) {
-    database_->DetachIterator(env, this);
+    database_->Detach(env, this);
     if (ref_) {
       napi_delete_reference(env, ref_);
     }
@@ -1116,8 +1103,7 @@ NAPI_METHOD(db_close) {
 
   struct State {};
   runAsync<State>(
-      "leveldown.close", env, callback, database,
-      [=](auto& state, auto& database) { return database.Close(); },
+      "leveldown.close", env, callback, database, [=](auto& state, auto& database) { return database.Close(); },
       [](auto& state, auto env, auto callback) {
         napi_value argv[1] = {};
         NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
@@ -1160,14 +1146,14 @@ NAPI_METHOD(updates_init) {
   rocksdb::ColumnFamilyHandle* column = nullptr;
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[1], &column));
 
-  auto updates = std::make_unique<Updates>(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
+  auto updates = new Updates(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, updates, Finalize<Updates>, updates, &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  updates.release()->Attach(env, result);
+  updates->Attach(env, result);
 
   return result;
 }
@@ -1468,15 +1454,15 @@ NAPI_METHOD(iterator_init) {
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
                                                     [=](const auto ptr) { database->db_->ReleaseSnapshot(ptr); });
 
-  auto iterator = std::make_unique<Iterator>(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
-                                             fillCache, keyAsBuffer, valueAsBuffer, highWaterMarkBytes, snapshot);
+  auto iterator = new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
+                               valueAsBuffer, highWaterMarkBytes, snapshot);
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, iterator, Finalize<Iterator>, iterator, &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  iterator.release()->Attach(env, result);
+  iterator->Attach(env, result);
 
   return result;
 }
@@ -1692,7 +1678,7 @@ NAPI_METHOD(batch_put) {
   NAPI_ARGV(4);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice key;
   NAPI_STATUS_THROWS(ToString(env, argv[1], key));
