@@ -257,74 +257,63 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   }
 }
 
-template <typename State,
-          typename ExecuteType = std::function<rocksdb::Status(State& state, Database& database)>,
-          typename OnOkType = std::function<napi_status(State& state, napi_env env, napi_value callback)>>
-struct Worker final {
-  template <typename T1, typename T2>
-  Worker(const std::string& resourceName,
-         napi_env env,
-         napi_value callback,
-         Database* database,
-         T1&& execute,
-         T2&& onOK)
-      : database_(database), execute_(std::forward<T1>(execute)), onOk_(std::forward<T2>(onOK)) {
-    NAPI_STATUS_THROWS_VOID(napi_create_reference(env, callback, 1, &callbackRef_));
-    napi_value asyncResourceName;
-    NAPI_STATUS_THROWS_VOID(napi_create_string_utf8(env, resourceName.data(), resourceName.size(), &asyncResourceName));
-    NAPI_STATUS_THROWS_VOID(
-        napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, this, &asyncWork_));
-
-    NAPI_STATUS_THROWS_VOID(napi_queue_async_work(env, asyncWork_));
-  }
-
-  static void Execute(napi_env env, void* data) {
-    auto self = reinterpret_cast<Worker*>(data);
-    self->status_ = self->Execute(*self->database_);
-  }
-
-  static void Complete(napi_env env, napi_status status, void* data) {
-    auto self = reinterpret_cast<Worker*>(data);
-
-    // TODO (fix): napi status handling...
-
-    napi_value callback;
-    napi_get_reference_value(env, self->callbackRef_, &callback);
-
-    if (self->status_.ok()) {
-      self->OnOk(env, callback);
-    } else {
-      self->OnError(env, callback, ToError(env, self->status_));
+template <typename State, typename T1, typename T2>
+napi_status runAsync(const std::string& name,
+                     napi_env env,
+                     napi_value callback,
+                     Database* database,
+                     T1&& execute,
+                     T2&& then) {
+  struct Worker final {
+    static void Execute(napi_env env, void* data) {
+      auto worker = reinterpret_cast<Worker*>(data);
+      worker->status = worker->execute(worker->state, *worker->database);
     }
 
-    napi_delete_reference(env, self->callbackRef_);
-    napi_delete_async_work(env, self->asyncWork_);
+    static void Complete(napi_env env, napi_status status, void* data) {
+      // TODO (fix): Error handling? e.g. what about status?
+      // TODO (fix): Worker will leak if error below...
 
-    delete self;
-  }
+      auto worker = reinterpret_cast<Worker*>(data);
 
-  rocksdb::Status Execute(Database& database) { return execute_(state_, database); }
+      napi_value callback;
+      NAPI_STATUS_THROWS_VOID(napi_get_reference_value(env, worker->callbackRef, &callback));
 
-  napi_status OnOk(napi_env env, napi_value callback) { return onOk_(state_, env, callback); }
+      if (worker->status.ok()) {
+        worker->then(worker->state, env, callback);
+      } else {
+        auto err = ToError(env, worker->status);
+        NAPI_STATUS_THROWS_VOID(CallFunction(env, callback, 1, &err));
+      }
 
-  virtual napi_status OnError(napi_env env, napi_value callback, napi_value err) {
-    return CallFunction(env, callback, 1, &err);
-  }
+      NAPI_STATUS_THROWS_VOID(napi_delete_reference(env, worker->callbackRef));
+      NAPI_STATUS_THROWS_VOID(napi_delete_async_work(env, worker->asyncWork));
 
- private:
-  Database* database_;
-  napi_ref callbackRef_;
-  napi_async_work asyncWork_;
-  rocksdb::Status status_;
-  State state_;
-  ExecuteType execute_;
-  OnOkType onOk_;
-};
+      delete worker;
+    }
 
-template <typename State, typename T1, typename T2>
-void runAsync(const std::string& name, napi_env env, napi_value callback, Database* database, T1&& execute, T2&& onOk) {
-  new Worker<State, typename std::decay<T1>::type, typename std::decay<T2>::type>(
-      name, env, callback, database, std::forward<T1>(execute), std::forward<T2>(onOk));
+    Database* database = nullptr;
+    typename std::decay<T1>::type execute;
+    typename std::decay<T2>::type then;
+
+    napi_ref callbackRef = nullptr;
+    napi_async_work asyncWork = nullptr;
+    rocksdb::Status status;
+    State state;
+  };
+
+  // TODO (fix): Worker will leak if error below...
+  auto worker = new Worker{database, std::forward<T1>(execute), std::forward<T2>(then)};
+
+  NAPI_STATUS_RETURN(napi_create_reference(env, callback, 1, &worker->callbackRef));
+  napi_value asyncResourceName;
+  NAPI_STATUS_RETURN(napi_create_string_utf8(env, name.data(), name.size(), &asyncResourceName));
+  NAPI_STATUS_RETURN(napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, worker,
+                                            &worker->asyncWork));
+
+  NAPI_STATUS_RETURN(napi_queue_async_work(env, worker->asyncWork));
+
+  return napi_ok;
 }
 
 struct ColumnFamily {
