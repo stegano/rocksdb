@@ -200,15 +200,6 @@ static std::optional<std::string> StringProperty(napi_env env, napi_value opts, 
   return {};
 }
 
-static napi_status CallFunction(napi_env env, napi_value callback, const int argc, napi_value* argv) {
-  napi_value global;
-
-  NAPI_STATUS_RETURN(napi_get_global(env, &global));
-  NAPI_STATUS_RETURN(napi_call_function(env, global, callback, argc, argv, nullptr));
-
-  return napi_ok;
-}
-
 static napi_value ToError(napi_env env, const rocksdb::Status& status) {
   if (status.ok()) {
     return 0;
@@ -279,11 +270,27 @@ napi_status runAsync(const std::string& name,
       napi_value callback;
       NAPI_STATUS_THROWS_VOID(napi_get_reference_value(env, worker->callbackRef, &callback));
 
+      napi_value global;
+      NAPI_STATUS_THROWS_VOID(napi_get_global(env, &global));
+
       if (worker->status.ok()) {
-        worker->then(worker->state, env, callback);
+        std::vector<napi_value> argv;
+
+        argv.resize(1);
+        NAPI_STATUS_THROWS_VOID(napi_get_null(env, &argv[0]));
+
+        const auto ret = worker->then(worker->state, env, argv);
+
+        if (ret == napi_ok) {
+          NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, argv.size(), argv.data(), nullptr));
+        } else {
+          // TODO (fix): Better error?
+          auto err = CreateError(env, std::nullopt, "call failed");
+          NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
+        }
       } else {
         auto err = ToError(env, worker->status);
-        NAPI_STATUS_THROWS_VOID(CallFunction(env, callback, 1, &err));
+        NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
       }
 
       NAPI_STATUS_THROWS_VOID(napi_delete_reference(env, worker->callbackRef));
@@ -298,8 +305,8 @@ napi_status runAsync(const std::string& name,
 
     napi_ref callbackRef = nullptr;
     napi_async_work asyncWork = nullptr;
-    rocksdb::Status status;
-    State state;
+    rocksdb::Status status = rocksdb::Status::OK();
+    State state = State();
   };
 
   // TODO (fix): Worker will leak if error below...
@@ -1055,9 +1062,8 @@ NAPI_METHOD(db_open) {
         database.db_.reset(db);
         return status;
       },
-      [=](auto& handles, auto env, auto callback) {
-        napi_value argv[2] = {};
-        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+      [=](auto& handles, auto env, auto& argv) {
+        argv.resize(2);
 
         const auto size = handles.size();
         NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
@@ -1074,7 +1080,7 @@ NAPI_METHOD(db_open) {
           database->columns_[column.handle->GetID()] = column;
         }
 
-        return CallFunction(env, callback, 2, argv);
+        return napi_ok;
       });
 
   return 0;
@@ -1095,12 +1101,7 @@ NAPI_METHOD(db_close) {
   struct State {};
   runAsync<State>(
       "leveldown.close", env, callback, database, [=](auto& state, auto& database) { return database.Close(); },
-      [](auto& state, auto env, auto callback) {
-        napi_value argv[1] = {};
-        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
-        return CallFunction(env, callback, 1, &argv[0]);
-      });
+      [](auto& state, auto env, auto& argv) { return napi_ok; });
 
   return 0;
 }
@@ -1178,22 +1179,18 @@ NAPI_METHOD(updates_next) {
 
         return rocksdb::Status::OK();
       },
-      [=](auto& batchResult, auto env, auto callback) {
-        napi_value argv[5] = {};
-
-        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
-
+      [=](auto& batchResult, auto env, auto& argv) {
         if (!batchResult.writeBatchPtr) {
-          return CallFunction(env, callback, 1, argv);
+          return napi_ok;
         }
 
+        argv.resize(5);
         NAPI_STATUS_RETURN(updates->Iterate(env, *batchResult.writeBatchPtr, &argv[1]));
-
         NAPI_STATUS_RETURN(napi_create_int64(env, batchResult.sequence, &argv[2]));
         NAPI_STATUS_RETURN(napi_create_int64(env, batchResult.writeBatchPtr->Count(), &argv[3]));
         NAPI_STATUS_RETURN(napi_create_int64(env, updates->start_, &argv[4]));
 
-        return CallFunction(env, callback, 5, argv);
+        return napi_ok;
       });
 
   return 0;
@@ -1273,9 +1270,8 @@ NAPI_METHOD(db_get_many) {
 
         return rocksdb::Status::OK();
       },
-      [=](auto& values, auto env, auto callback) {
-        napi_value argv[2] = {};
-        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+      [=](auto& values, auto env, auto& argv) {
+        argv.resize(2);
 
         NAPI_STATUS_RETURN(napi_create_array_with_length(env, values.size(), &argv[1]));
 
@@ -1289,7 +1285,7 @@ NAPI_METHOD(db_get_many) {
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
         }
 
-        return CallFunction(env, callback, 2, argv);
+        return napi_ok;
       });
 
   return 0;
@@ -1562,9 +1558,8 @@ NAPI_METHOD(iterator_nextv) {
 
         return iterator->Status();
       },
-      [=](auto& state, auto env, auto callback) {
-        napi_value argv[3] = {};
-        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0]));
+      [=](auto& state, auto env, auto& argv) {
+        argv.resize(3);
 
         NAPI_STATUS_RETURN(napi_create_array_with_length(env, state.cache.size(), &argv[1]));
 
@@ -1581,7 +1576,7 @@ NAPI_METHOD(iterator_nextv) {
 
         NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &argv[2]));
 
-        return CallFunction(env, callback, 3, argv);
+        return napi_ok;
       });
 
   return 0;
