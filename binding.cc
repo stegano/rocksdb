@@ -361,6 +361,8 @@ struct Database : public Closable {
     }
     columns_.clear();
 
+    db_->FlushWAL(true);
+
     auto db = std::move(db_);
     return db->Close();
   }
