@@ -249,15 +249,11 @@ template <typename State, typename T1, typename T2>
 napi_status runAsync(const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
   struct Worker final {
     static void Execute(napi_env env, void* data) {
-      // TODO (fix): Error handling? e.g. what if execute throws?
-
       auto worker = reinterpret_cast<Worker*>(data);
       worker->status = worker->execute(worker->state);
     }
 
     static void Complete(napi_env env, napi_status status, void* data) {
-      // TODO (fix): Error handling? e.g. what about status? what if std::vector or then throws?
-
       auto worker = std::unique_ptr<Worker>(reinterpret_cast<Worker*>(data));
 
       napi_value callback;
