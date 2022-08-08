@@ -7,9 +7,9 @@
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 
+#include <array>
 #include <optional>
 #include <string>
-#include <array>
 
 #define NAPI_STATUS_RETURN(call) \
   {                              \
@@ -246,22 +246,19 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
 }
 
 template <typename State, typename T1, typename T2>
-napi_status runAsync(const std::string& name,
-                     napi_env env,
-                     napi_value callback,
-                     T1&& execute,
-                     T2&& then) {
+napi_status runAsync(const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
   struct Worker final {
     static void Execute(napi_env env, void* data) {
+      // TODO (fix): Error handling? e.g. what if execute throws?
+
       auto worker = reinterpret_cast<Worker*>(data);
       worker->status = worker->execute(worker->state);
     }
 
     static void Complete(napi_env env, napi_status status, void* data) {
-      // TODO (fix): Error handling? e.g. what about status?
-      // TODO (fix): Worker will leak if error below...
+      // TODO (fix): Error handling? e.g. what about status? what if std::vector or then throws?
 
-      auto worker = reinterpret_cast<Worker*>(data);
+      auto worker = std::unique_ptr<Worker>(reinterpret_cast<Worker*>(data));
 
       napi_value callback;
       NAPI_STATUS_THROWS_VOID(napi_get_reference_value(env, worker->callbackRef, &callback));
@@ -288,12 +285,20 @@ napi_status runAsync(const std::string& name,
         auto err = ToError(env, worker->status);
         NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
       }
-
-      NAPI_STATUS_THROWS_VOID(napi_delete_reference(env, worker->callbackRef));
-      NAPI_STATUS_THROWS_VOID(napi_delete_async_work(env, worker->asyncWork));
-
-      delete worker;
     }
+
+    ~Worker() {
+      if (callbackRef) {
+        napi_delete_reference(env, callbackRef);
+        callbackRef = nullptr;
+      }
+      if (asyncWork) {
+        napi_delete_async_work(env, asyncWork);
+        asyncWork = nullptr;
+      }
+    }
+
+    napi_env env = nullptr;
 
     typename std::decay<T1>::type execute;
     typename std::decay<T2>::type then;
@@ -304,16 +309,17 @@ napi_status runAsync(const std::string& name,
     State state = State();
   };
 
-  // TODO (fix): Worker will leak if error below...
-  auto worker = new Worker{std::forward<T1>(execute), std::forward<T2>(then)};
+  auto worker = std::unique_ptr<Worker>(new Worker{env, std::forward<T1>(execute), std::forward<T2>(then)});
 
   NAPI_STATUS_RETURN(napi_create_reference(env, callback, 1, &worker->callbackRef));
   napi_value asyncResourceName;
   NAPI_STATUS_RETURN(napi_create_string_utf8(env, name.data(), name.size(), &asyncResourceName));
-  NAPI_STATUS_RETURN(napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, worker,
-                                            &worker->asyncWork));
+  NAPI_STATUS_RETURN(napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete,
+                                            worker.get(), &worker->asyncWork));
 
   NAPI_STATUS_RETURN(napi_queue_async_work(env, worker->asyncWork));
+
+  worker.release();
 
   return napi_ok;
 }
