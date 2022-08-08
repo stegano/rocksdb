@@ -237,9 +237,9 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   if (!s) {
     return napi_get_null(env, &result);
   } else if (asBuffer) {
-    using Y = typename std::decay<decltype(*s)>::type;
-    auto ptr = new Y(std::move(*s));
-    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<Y>, ptr, &result);
+    // napi_create_external_buffer would be nice but is unsafe since node
+    // buffers are not read-only.
+    return napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
   } else {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
   }
