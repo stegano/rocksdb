@@ -273,8 +273,10 @@ napi_status runAsync(const std::string& name, napi_env env, napi_value callback,
         if (ret == napi_ok) {
           NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, argv.size(), argv.data(), nullptr));
         } else {
-          // TODO (fix): Better error?
-          auto err = CreateError(env, std::nullopt, "call failed");
+          const napi_extended_error_info* errInfo = nullptr;
+          NAPI_STATUS_THROWS_VOID(napi_get_last_error_info(env, &errInfo));
+          auto err = CreateError(env, std::nullopt,
+                                 !errInfo || !errInfo->error_message ? "empty error message" : errInfo->error_message);
           NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
         }
       } else {
