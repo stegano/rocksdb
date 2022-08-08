@@ -1027,7 +1027,7 @@ NAPI_METHOD(db_get_many) {
 
   runAsync<std::vector<rocksdb::PinnableSlice>>(
       "leveldown.get.many", env, callback,
-      [=, keys = std::move(keys)](auto& values) {
+      [=, keys = std::move(keys), snapshot = std::move(snapshot)](auto& values) {
         rocksdb::ReadOptions readOptions;
         readOptions.fill_cache = fillCache;
         readOptions.snapshot = snapshot.get();
