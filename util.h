@@ -2,9 +2,14 @@
 
 #include <assert.h>
 #include <napi-macros.h>
+#include <node_api.h>
+
+#include <rocksdb/slice.h>
+#include <rocksdb/status.h>
 
 #include <optional>
 #include <string>
+#include <array>
 
 #define NAPI_STATUS_RETURN(call) \
   {                              \
@@ -234,4 +239,77 @@ napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
   } else {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
   }
+}
+
+template <typename State, typename T1, typename T2>
+napi_status runAsync(const std::string& name,
+                     napi_env env,
+                     napi_value callback,
+                     T1&& execute,
+                     T2&& then) {
+  struct Worker final {
+    static void Execute(napi_env env, void* data) {
+      auto worker = reinterpret_cast<Worker*>(data);
+      worker->status = worker->execute(worker->state);
+    }
+
+    static void Complete(napi_env env, napi_status status, void* data) {
+      // TODO (fix): Error handling? e.g. what about status?
+      // TODO (fix): Worker will leak if error below...
+
+      auto worker = reinterpret_cast<Worker*>(data);
+
+      napi_value callback;
+      NAPI_STATUS_THROWS_VOID(napi_get_reference_value(env, worker->callbackRef, &callback));
+
+      napi_value global;
+      NAPI_STATUS_THROWS_VOID(napi_get_global(env, &global));
+
+      if (worker->status.ok()) {
+        std::vector<napi_value> argv;
+
+        argv.resize(1);
+        NAPI_STATUS_THROWS_VOID(napi_get_null(env, &argv[0]));
+
+        const auto ret = worker->then(worker->state, env, argv);
+
+        if (ret == napi_ok) {
+          NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, argv.size(), argv.data(), nullptr));
+        } else {
+          // TODO (fix): Better error?
+          auto err = CreateError(env, std::nullopt, "call failed");
+          NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
+        }
+      } else {
+        auto err = ToError(env, worker->status);
+        NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
+      }
+
+      NAPI_STATUS_THROWS_VOID(napi_delete_reference(env, worker->callbackRef));
+      NAPI_STATUS_THROWS_VOID(napi_delete_async_work(env, worker->asyncWork));
+
+      delete worker;
+    }
+
+    typename std::decay<T1>::type execute;
+    typename std::decay<T2>::type then;
+
+    napi_ref callbackRef = nullptr;
+    napi_async_work asyncWork = nullptr;
+    rocksdb::Status status = rocksdb::Status::OK();
+    State state = State();
+  };
+
+  // TODO (fix): Worker will leak if error below...
+  auto worker = new Worker{std::forward<T1>(execute), std::forward<T2>(then)};
+
+  NAPI_STATUS_RETURN(napi_create_reference(env, callback, 1, &worker->callbackRef));
+  napi_value asyncResourceName;
+  NAPI_STATUS_RETURN(napi_create_string_utf8(env, name.data(), name.size(), &asyncResourceName));
+  NAPI_STATUS_RETURN(napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, worker,
+                                            &worker->asyncWork));
+
+  NAPI_STATUS_RETURN(napi_queue_async_work(env, worker->asyncWork));
+
+  return napi_ok;
 }

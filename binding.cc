@@ -4,6 +4,8 @@
 #include <napi-macros.h>
 #include <node_api.h>
 
+#include <rocksdb/slice.h>
+#include <rocksdb/status.h>
 #include <rocksdb/cache.h>
 #include <rocksdb/comparator.h>
 #include <rocksdb/convenience.h>
@@ -16,7 +18,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
-#include <array>
 #include <memory>
 #include <optional>
 #include <set>
@@ -81,81 +82,6 @@ struct Database final {
   std::set<Closable*> closables_;
   std::map<int32_t, ColumnFamily> columns_;
 };
-
-template <typename State, typename T1, typename T2>
-napi_status runAsync(const std::string& name,
-                     napi_env env,
-                     napi_value callback,
-                     Database* database,
-                     T1&& execute,
-                     T2&& then) {
-  struct Worker final {
-    static void Execute(napi_env env, void* data) {
-      auto worker = reinterpret_cast<Worker*>(data);
-      worker->status = worker->execute(worker->state, *worker->database);
-    }
-
-    static void Complete(napi_env env, napi_status status, void* data) {
-      // TODO (fix): Error handling? e.g. what about status?
-      // TODO (fix): Worker will leak if error below...
-
-      auto worker = reinterpret_cast<Worker*>(data);
-
-      napi_value callback;
-      NAPI_STATUS_THROWS_VOID(napi_get_reference_value(env, worker->callbackRef, &callback));
-
-      napi_value global;
-      NAPI_STATUS_THROWS_VOID(napi_get_global(env, &global));
-
-      if (worker->status.ok()) {
-        std::vector<napi_value> argv;
-
-        argv.resize(1);
-        NAPI_STATUS_THROWS_VOID(napi_get_null(env, &argv[0]));
-
-        const auto ret = worker->then(worker->state, env, argv);
-
-        if (ret == napi_ok) {
-          NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, argv.size(), argv.data(), nullptr));
-        } else {
-          // TODO (fix): Better error?
-          auto err = CreateError(env, std::nullopt, "call failed");
-          NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
-        }
-      } else {
-        auto err = ToError(env, worker->status);
-        NAPI_STATUS_THROWS_VOID(napi_call_function(env, global, callback, 1, &err, nullptr));
-      }
-
-      NAPI_STATUS_THROWS_VOID(napi_delete_reference(env, worker->callbackRef));
-      NAPI_STATUS_THROWS_VOID(napi_delete_async_work(env, worker->asyncWork));
-
-      delete worker;
-    }
-
-    Database* database = nullptr;
-    typename std::decay<T1>::type execute;
-    typename std::decay<T2>::type then;
-
-    napi_ref callbackRef = nullptr;
-    napi_async_work asyncWork = nullptr;
-    rocksdb::Status status = rocksdb::Status::OK();
-    State state = State();
-  };
-
-  // TODO (fix): Worker will leak if error below...
-  auto worker = new Worker{database, std::forward<T1>(execute), std::forward<T2>(then)};
-
-  NAPI_STATUS_RETURN(napi_create_reference(env, callback, 1, &worker->callbackRef));
-  napi_value asyncResourceName;
-  NAPI_STATUS_RETURN(napi_create_string_utf8(env, name.data(), name.size(), &asyncResourceName));
-  NAPI_STATUS_RETURN(napi_create_async_work(env, callback, asyncResourceName, Worker::Execute, Worker::Complete, worker,
-                                            &worker->asyncWork));
-
-  NAPI_STATUS_RETURN(napi_queue_async_work(env, worker->asyncWork));
-
-  return napi_ok;
-}
 
 enum BatchOp { Empty, Put, Delete, Merge, Data };
 
@@ -906,12 +832,12 @@ NAPI_METHOD(db_open) {
   auto callback = argv[3];
 
   runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
-      "leveldown.open", env, callback, database,
-      [=](auto& handles, auto& database) {
+      "leveldown.open", env, callback,
+      [=](auto& handles) {
         rocksdb::DB* db = nullptr;
         const auto status = descriptors.empty() ? rocksdb::DB::Open(dbOptions, location, &db)
                                                 : rocksdb::DB::Open(dbOptions, location, descriptors, &handles, &db);
-        database.db_.reset(db);
+        database->db_.reset(db);
         return status;
       },
       [=](auto& handles, auto env, auto& argv) {
@@ -952,7 +878,7 @@ NAPI_METHOD(db_close) {
 
   struct State {};
   runAsync<State>(
-      "leveldown.close", env, callback, database, [=](auto& state, auto& database) { return database.Close(); },
+      "leveldown.close", env, callback, [=](auto& state) { return database->Close(); },
       [](auto& state, auto env, auto& argv) { return napi_ok; });
 
   return 0;
@@ -1014,11 +940,11 @@ NAPI_METHOD(updates_next) {
   auto callback = argv[1];
 
   runAsync<rocksdb::BatchResult>(
-      "leveldown.updates.next", env, callback, updates->database_,
-      [=](auto& batchResult, auto& database) {
+      "leveldown.updates.next", env, callback,
+      [=](auto& batchResult) {
         if (!updates->iterator_) {
           rocksdb::TransactionLogIterator::ReadOptions options;
-          const auto status = database.db_->GetUpdatesSince(updates->start_, &updates->iterator_, options);
+          const auto status = updates->database_->db_->GetUpdatesSince(updates->start_, &updates->iterator_, options);
           if (!status.ok()) {
             return status;
           }
@@ -1100,8 +1026,8 @@ NAPI_METHOD(db_get_many) {
       database->db_->GetSnapshot(), [database](auto ptr) { database->db_->ReleaseSnapshot(ptr); });
 
   runAsync<std::vector<rocksdb::PinnableSlice>>(
-      "leveldown.get.many", env, callback, database,
-      [=, keys = std::move(keys)](auto& values, auto& db) {
+      "leveldown.get.many", env, callback,
+      [=, keys = std::move(keys)](auto& values) {
         rocksdb::ReadOptions readOptions;
         readOptions.fill_cache = fillCache;
         readOptions.snapshot = snapshot.get();
@@ -1118,7 +1044,7 @@ NAPI_METHOD(db_get_many) {
         statuses.resize(keys2.size());
         values.resize(keys2.size());
 
-        db.db_->MultiGet(readOptions, column, keys2.size(), keys2.data(), values.data(), statuses.data());
+        database->db_->MultiGet(readOptions, column, keys2.size(), keys2.data(), values.data(), statuses.data());
 
         for (size_t idx = 0; idx < keys2.size(); idx++) {
           if (statuses[idx].IsNotFound()) {
@@ -1405,8 +1331,8 @@ NAPI_METHOD(iterator_nextv) {
   };
 
   runAsync<State>(
-      std::string("leveldown.iterator.next"), env, callback, iterator->database_,
-      [=](auto& state, auto& db) {
+      std::string("leveldown.iterator.next"), env, callback,
+      [=](auto& state) {
         if (!iterator->DidSeek()) {
           iterator->SeekToRange();
         }
