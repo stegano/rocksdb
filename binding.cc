@@ -52,35 +52,32 @@ struct Closable {
 };
 
 struct Database final {
-  void Attach(napi_env env, Closable* closable) { closables_.insert(closable); }
-  void Detach(napi_env env, Closable* closable) { closables_.erase(closable); }
-
-  ~Database() { assert(!db_); }
+  ~Database() { assert(!db); }
 
   rocksdb::Status Close() {
-    if (!db_) {
+    if (!db) {
       return rocksdb::Status::OK();
     }
 
-    for (auto closable : closables_) {
+    for (auto closable : closables) {
       closable->Close();
     }
-    closables_.clear();
+    closables.clear();
 
-    for (auto& [id, column] : columns_) {
-      db_->DestroyColumnFamilyHandle(column.handle);
+    for (auto& [id, column] : columns) {
+      db->DestroyColumnFamilyHandle(column.handle);
     }
-    columns_.clear();
+    columns.clear();
 
-    db_->FlushWAL(true);
+    db->FlushWAL(true);
 
-    auto db = std::move(db_);
-    return db->Close();
+    auto db2 = std::move(db);
+    return db2->Close();
   }
 
-  std::unique_ptr<rocksdb::DB> db_;
-  std::set<Closable*> closables_;
-  std::map<int32_t, ColumnFamily> columns_;
+  std::unique_ptr<rocksdb::DB> db;
+  std::set<Closable*> closables;
+  std::map<int32_t, ColumnFamily> columns;
 };
 
 enum BatchOp { Empty, Put, Delete, Merge, Data };
@@ -180,8 +177,8 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       entry.val = value.ToStringView();
     }
 
-    // if (database_ && database_->columns_.find(column_family_id) != database_->columns_.end()) {
-    //   entry.column = database_->columns_[column_family_id];
+    // if (database_ && database_->columns.find(column_family_id) != database_->columns.end()) {
+    //   entry.column = database_->columns[column_family_id];
     // }
 
     cache_.push_back(entry);
@@ -202,8 +199,8 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       entry.key = key.ToStringView();
     }
 
-    // if (database_ && database_->columns_.find(column_family_id) != database_->columns_.end()) {
-    //   entry.column = database_->columns_[column_family_id];
+    // if (database_ && database_->columns.find(column_family_id) != database_->columns.end()) {
+    //   entry.column = database_->columns[column_family_id];
     // }
 
     cache_.push_back(entry);
@@ -228,8 +225,8 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       entry.val = value.ToStringView();
     }
 
-    // if (database_ && database_->columns_.find(column_family_id) != database_->columns_.end()) {
-    //   entry.column = database_->columns_[column_family_id];
+    // if (database_ && database_->columns.find(column_family_id) != database_->columns.end()) {
+    //   entry.column = database_->columns[column_family_id];
     // }
 
     cache_.push_back(entry);
@@ -286,11 +283,11 @@ struct Updates : public BatchIterator, public Closable {
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
-    database_->Attach(env, this);
+    database_->closables.insert(this);
   }
 
   void Detach(napi_env env) {
-    database_->Detach(env, this);
+    database_->closables.erase(this);
     if (ref_) {
       napi_delete_reference(env, ref_);
     }
@@ -435,7 +432,7 @@ struct BaseIterator : public Closable {
     readOptions.async_io = true;
     readOptions.adaptive_readahead = true;
 
-    iterator_.reset(database_->db_->NewIterator(readOptions, column_));
+    iterator_.reset(database_->db->NewIterator(readOptions, column_));
   }
 
   int count_ = 0;
@@ -472,11 +469,11 @@ struct Iterator final : public BaseIterator {
 
   void Attach(napi_env env, napi_value context) {
     napi_create_reference(env, context, 1, &ref_);
-    database_->Attach(env, this);
+    database_->closables.insert(this);
   }
 
   void Detach(napi_env env) {
-    database_->Detach(env, this);
+    database_->closables.erase(this);
     if (ref_) {
       napi_delete_reference(env, ref_);
     }
@@ -524,7 +521,7 @@ static napi_status GetColumnFamily(Database* database,
 
     NAPI_STATUS_RETURN(napi_get_value_external(env, value, reinterpret_cast<void**>(column)));
   } else if (database) {
-    *column = database->db_->DefaultColumnFamily();
+    *column = database->db->DefaultColumnFamily();
   } else {
     *column = nullptr;
   }
@@ -544,7 +541,7 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
     auto database = reinterpret_cast<Database*>(data);
     database->Close();
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    for (auto& [id, column] : database->columns_) {
+    for (auto& [id, column] : database->columns) {
       napi_delete_reference(env, column.ref);
     }
     delete database;
@@ -837,7 +834,7 @@ NAPI_METHOD(db_open) {
         rocksdb::DB* db = nullptr;
         const auto status = descriptors.empty() ? rocksdb::DB::Open(dbOptions, location, &db)
                                                 : rocksdb::DB::Open(dbOptions, location, descriptors, &handles, &db);
-        database->db_.reset(db);
+        database->db.reset(db);
         return status;
       },
       [=](auto& handles, auto env, auto& argv) {
@@ -855,7 +852,7 @@ NAPI_METHOD(db_open) {
 
           NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors[n].name.c_str(), column.val));
 
-          database->columns_[column.handle->GetID()] = column;
+          database->columns[column.handle->GetID()] = column;
         }
 
         return napi_ok;
@@ -944,7 +941,7 @@ NAPI_METHOD(updates_next) {
       [=](auto& batchResult) {
         if (!updates->iterator_) {
           rocksdb::TransactionLogIterator::ReadOptions options;
-          const auto status = updates->database_->db_->GetUpdatesSince(updates->start_, &updates->iterator_, options);
+          const auto status = updates->database_->db->GetUpdatesSince(updates->start_, &updates->iterator_, options);
           if (!status.ok()) {
             return status;
           }
@@ -1023,7 +1020,7 @@ NAPI_METHOD(db_get_many) {
   auto callback = argv[3];
 
   auto snapshot = std::shared_ptr<const rocksdb::Snapshot>(
-      database->db_->GetSnapshot(), [database](auto ptr) { database->db_->ReleaseSnapshot(ptr); });
+      database->db->GetSnapshot(), [database](auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
   runAsync<std::vector<rocksdb::PinnableSlice>>(
       "leveldown.get.many", env, callback,
@@ -1046,7 +1043,7 @@ NAPI_METHOD(db_get_many) {
         statuses.resize(size);
         values.resize(size);
 
-        database->db_->MultiGet(readOptions, column, size, keys2.data(), values.data(), statuses.data());
+        database->db->MultiGet(readOptions, column, size, keys2.data(), values.data(), statuses.data());
 
         for (size_t idx = 0; idx < size; idx++) {
           if (statuses[idx].IsNotFound()) {
@@ -1129,7 +1126,7 @@ NAPI_METHOD(db_clear) {
 
     if (begin.compare(end) < 0) {
       rocksdb::WriteOptions writeOptions;
-      ROCKS_STATUS_THROWS(database->db_->DeleteRange(writeOptions, column, begin, end));
+      ROCKS_STATUS_THROWS(database->db->DeleteRange(writeOptions, column, begin, end));
     }
 
     return 0;
@@ -1137,8 +1134,8 @@ NAPI_METHOD(db_clear) {
     // TODO (fix): Error handling.
     // TODO (fix): This should be async...
 
-    std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
-                                                      [=](const auto ptr) { database->db_->ReleaseSnapshot(ptr); });
+    std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
+                                                      [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
     BaseIterator it(database, column, reverse, lt, lte, gt, gte, limit, false, snapshot);
 
     it.SeekToRange();
@@ -1162,7 +1159,7 @@ NAPI_METHOD(db_clear) {
         break;
       }
 
-      status = database->db_->Write(writeOptions, &batch);
+      status = database->db->Write(writeOptions, &batch);
       if (!status.ok()) {
         break;
       }
@@ -1190,7 +1187,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(ToString(env, argv[1], property));
 
   std::string value;
-  database->db_->GetProperty(property, &value);
+  database->db->GetProperty(property, &value);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_string_utf8(env, value.data(), value.size(), &result));
@@ -1204,7 +1201,7 @@ NAPI_METHOD(db_get_latest_sequence) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto seq = database->db_->GetLatestSequenceNumber();
+  const auto seq = database->db->GetLatestSequenceNumber();
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result));
@@ -1259,8 +1256,8 @@ NAPI_METHOD(iterator_init) {
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, &column));
 
-  std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db_->GetSnapshot(),
-                                                    [=](const auto ptr) { database->db_->ReleaseSnapshot(ptr); });
+  std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
+                                                    [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
   auto iterator = new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
                                valueAsBuffer, highWaterMarkBytes, snapshot);
@@ -1467,7 +1464,7 @@ NAPI_METHOD(batch_do) {
   }
 
   rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db_->Write(writeOptions, &batch));
+  ROCKS_STATUS_THROWS(database->db->Write(writeOptions, &batch));
 
   return 0;
 }
@@ -1571,7 +1568,7 @@ NAPI_METHOD(batch_write) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
   rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db_->Write(writeOptions, batch));
+  ROCKS_STATUS_THROWS(database->db->Write(writeOptions, batch));
 
   return 0;
 }
