@@ -112,26 +112,30 @@ static bool EncodingIsBuffer(napi_env env, napi_value obj, const std::string_vie
   return false;
 }
 
-static std::optional<uint32_t> Uint32Property(napi_env env, napi_value obj, const std::string_view& key) {
-  if (HasProperty(env, obj, key.data())) {
-    const auto value = GetProperty(env, obj, key.data());
-    uint32_t result;
-    napi_get_value_uint32(env, value, &result);
-    return result;
+static napi_status Uint32Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_uint32(env, value, &result));
   }
 
-  return {};
+  return napi_ok;
 }
 
-static std::optional<int> Int32Property(napi_env env, napi_value obj, const std::string_view& key) {
-  if (HasProperty(env, obj, key.data())) {
-    const auto value = GetProperty(env, obj, key.data());
-    int result;
-    napi_get_value_int32(env, value, &result);
-    return result;
+static napi_status Int32Property(napi_env env, napi_value obj, const std::string_view& key, int32_t& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_int32(env, value, &result));
   }
 
-  return {};
+  return napi_ok;
 }
 
 static napi_status ToString(napi_env env, napi_value from, std::string& to) {
@@ -852,7 +856,10 @@ template <typename T, typename U>
 rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::ConfigOptions configOptions;
 
-  const auto memtable_memory_budget = Uint32Property(env, options, "memtableMemoryBudget").value_or(256 * 1024 * 1024);
+  uint32_t memtable_memory_budget = 256 * 1024 * 1024;
+  if (Uint32Property(env, options, "memtableMemoryBudget", memtable_memory_budget) != napi_ok) {
+    return rocksdb::Status::InvalidArgument("memtableMemoryBudget");
+  }
 
   const auto compaction = StringProperty(env, options, "compaction").value_or("level");
 
@@ -921,7 +928,10 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
     }
   }
 
-  const auto cacheSize = Uint32Property(env, options, "cacheSize").value_or(8 << 20);
+  uint32_t cacheSize = 8 << 20;
+  if (Uint32Property(env, options, "cacheSize", cacheSize) != napi_ok) {
+    return rocksdb::Status::InvalidArgument("cacheSize");
+  }
 
   rocksdb::BlockBasedTableOptions tableOptions;
 
@@ -959,8 +969,18 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
         rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
   }
 
-  tableOptions.block_size = Uint32Property(env, options, "blockSize").value_or(4096);
-  tableOptions.block_restart_interval = Uint32Property(env, options, "blockRestartInterval").value_or(16);
+  uint32_t blockSize = 4096;
+  if (Uint32Property(env, options, "blockSize", blockSize) != napi_ok) {
+    return rocksdb::Status::InvalidArgument("blockSize");
+  }
+  tableOptions.block_size = blockSize;
+
+  uint32_t blockRestartInterval = 16;
+  if (Uint32Property(env, options, "blockRestartInterval", blockRestartInterval) != napi_ok) {
+    return rocksdb::Status::InvalidArgument("blockRestartInterval");
+  }
+  tableOptions.block_restart_interval = blockRestartInterval;
+
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
 
@@ -985,8 +1005,10 @@ NAPI_METHOD(db_open) {
 
   rocksdb::Options dbOptions;
 
-  dbOptions.IncreaseParallelism(Uint32Property(env, argv[2], "parallelism")
-                                    .value_or(std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2)));
+  uint32_t parallelism = std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2);
+  NAPI_STATUS_THROWS(Uint32Property(env, argv[2], "parallelism", parallelism));
+
+  dbOptions.IncreaseParallelism(parallelism);
 
   dbOptions.create_if_missing = true;
   NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "createIfMissing", dbOptions.create_if_missing));
@@ -994,11 +1016,20 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "errorIfExists", dbOptions.error_if_exists));
 
   dbOptions.avoid_unnecessary_blocking_io = true;
+
   dbOptions.write_dbid_to_manifest = true;
-  dbOptions.use_adaptive_mutex = true;       // We don't have soo many threads in the libuv thread pool...
+
+  dbOptions.use_adaptive_mutex = true;  // We don't have soo many threads in the libuv thread pool...
+
   dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
-  dbOptions.WAL_ttl_seconds = Uint32Property(env, argv[2], "walTTL").value_or(0) / 1e3;
-  dbOptions.WAL_size_limit_MB = Uint32Property(env, argv[2], "walSizeLimit").value_or(0) / 1e6;
+
+  uint32_t walTTL;
+  NAPI_STATUS_THROWS(Uint32Property(env, argv[2], "walTTL", walTTL));
+  dbOptions.WAL_ttl_seconds = walTTL / 1e3;
+
+  uint32_t walSizeLimit;
+  NAPI_STATUS_THROWS(Uint32Property(env, argv[2], "walSizeLimit", walSizeLimit));
+  dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
 
   bool wal_compression = false;
   NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "walCompression", wal_compression));
@@ -1006,9 +1037,12 @@ NAPI_METHOD(db_open) {
       wal_compression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
 
   dbOptions.create_missing_column_families = true;
+
   dbOptions.unordered_write = false;
+
   NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "unorderedWrite", dbOptions.unordered_write));
   dbOptions.fail_if_options_file_error = true;
+
   dbOptions.manual_wal_flush = false;
   NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "manualWalFlush", dbOptions.manual_wal_flush));
 
@@ -1325,7 +1359,8 @@ NAPI_METHOD(db_clear) {
   bool reverse = false;
   NAPI_STATUS_THROWS(BooleanProperty(env, argv[1], "reverse", reverse));
 
-  const auto limit = Int32Property(env, argv[1], "limit").value_or(-1);
+  int32_t limit = -1;
+  NAPI_STATUS_THROWS(Int32Property(env, argv[1], "limit", limit));
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column));
@@ -1462,13 +1497,21 @@ NAPI_METHOD(iterator_init) {
   NAPI_STATUS_THROWS(BooleanProperty(env, options, "fillCache", fillCache));
 
   const bool keyAsBuffer = EncodingIsBuffer(env, options, "keyEncoding");
+
   const bool valueAsBuffer = EncodingIsBuffer(env, options, "valueEncoding");
-  const auto limit = Int32Property(env, options, "limit").value_or(-1);
-  const auto highWaterMarkBytes = Uint32Property(env, options, "highWaterMarkBytes").value_or(64 * 1024);
+
+  int32_t limit = -1;
+  NAPI_STATUS_THROWS(Int32Property(env, options, "limit", limit));
+
+  int32_t highWaterMarkBytes = 64 * 1024;
+  NAPI_STATUS_THROWS(Int32Property(env, options, "highWaterMarkBytes", highWaterMarkBytes));
 
   const auto lt = StringProperty(env, options, "lt");
+
   const auto lte = StringProperty(env, options, "lte");
+
   const auto gt = StringProperty(env, options, "gt");
+
   const auto gte = StringProperty(env, options, "gte");
 
   rocksdb::ColumnFamilyHandle* column;
