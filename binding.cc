@@ -1215,46 +1215,44 @@ NAPI_METHOD(iterator_init) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  const auto options = argv[1];
-
   bool reverse = false;
-  NAPI_STATUS_THROWS(BooleanProperty(env, options, "reverse", reverse));
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[1], "reverse", reverse));
 
   bool keys = true;
-  NAPI_STATUS_THROWS(BooleanProperty(env, options, "keys", keys));
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[1], "keys", keys));
 
   bool values = true;
-  NAPI_STATUS_THROWS(BooleanProperty(env, options, "values", values));
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[1], "values", values));
 
   bool fillCache = false;
-  NAPI_STATUS_THROWS(BooleanProperty(env, options, "fillCache", fillCache));
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[1], "fillCache", fillCache));
 
   bool keyAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
+  NAPI_STATUS_THROWS(EncodingIsBuffer(env, argv[1], "keyEncoding", keyAsBuffer));
 
   bool valueAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
+  NAPI_STATUS_THROWS(EncodingIsBuffer(env, argv[1], "valueEncoding", valueAsBuffer));
 
   int32_t limit = -1;
-  NAPI_STATUS_THROWS(Int32Property(env, options, "limit", limit));
+  NAPI_STATUS_THROWS(Int32Property(env, argv[1], "limit", limit));
 
   int32_t highWaterMarkBytes = 64 * 1024;
-  NAPI_STATUS_THROWS(Int32Property(env, options, "highWaterMarkBytes", highWaterMarkBytes));
+  NAPI_STATUS_THROWS(Int32Property(env, argv[1], "highWaterMarkBytes", highWaterMarkBytes));
 
   std::optional<std::string> lt;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "lt", lt));
+  NAPI_STATUS_THROWS(StringProperty(env, argv[1], "lt", lt));
 
   std::optional<std::string> lte;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "lte", lte));
+  NAPI_STATUS_THROWS(StringProperty(env, argv[1], "lte", lte));
 
   std::optional<std::string> gt;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "gt", gt));
+  NAPI_STATUS_THROWS(StringProperty(env, argv[1], "gt", gt));
 
   std::optional<std::string> gte;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "gte", gte));
+  NAPI_STATUS_THROWS(StringProperty(env, argv[1], "gte", gte));
 
   rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, &column));
+  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column));
 
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
                                                     [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
