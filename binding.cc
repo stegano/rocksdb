@@ -1034,19 +1034,21 @@ NAPI_METHOD(db_get_many) {
         readOptions.async_io = true;
         readOptions.ignore_range_deletions = ignoreRangeDeletions;
 
+        const auto size = keys.size();
+
         std::vector<rocksdb::Slice> keys2;
-        keys2.reserve(keys.size());
+        keys2.reserve(size);
         for (const auto& key : keys) {
           keys2.emplace_back(key);
         }
         std::vector<rocksdb::Status> statuses;
 
-        statuses.resize(keys2.size());
-        values.resize(keys2.size());
+        statuses.resize(size);
+        values.resize(size);
 
-        database->db_->MultiGet(readOptions, column, keys2.size(), keys2.data(), values.data(), statuses.data());
+        database->db_->MultiGet(readOptions, column, size, keys2.data(), values.data(), statuses.data());
 
-        for (size_t idx = 0; idx < keys2.size(); idx++) {
+        for (size_t idx = 0; idx < size; idx++) {
           if (statuses[idx].IsNotFound()) {
             values[idx] = rocksdb::PinnableSlice(nullptr);
           } else if (!statuses[idx].ok()) {
