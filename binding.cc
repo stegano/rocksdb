@@ -4,8 +4,6 @@
 #include <napi-macros.h>
 #include <node_api.h>
 
-#include <rocksdb/slice.h>
-#include <rocksdb/status.h>
 #include <rocksdb/cache.h>
 #include <rocksdb/comparator.h>
 #include <rocksdb/convenience.h>
@@ -14,7 +12,9 @@
 #include <rocksdb/filter_policy.h>
 #include <rocksdb/merge_operator.h>
 #include <rocksdb/options.h>
+#include <rocksdb/slice.h>
 #include <rocksdb/slice_transform.h>
+#include <rocksdb/status.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
@@ -1410,54 +1410,53 @@ NAPI_METHOD(batch_do) {
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
 
   for (uint32_t i = 0; i < length; i++) {
-    rocksdb::PinnableSlice type;
-    rocksdb::PinnableSlice key;
-    rocksdb::PinnableSlice value;
+    std::optional<std::string> type;
+    std::optional<std::string> key;
+    std::optional<std::string> value;
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-
-    napi_value typeProperty;
-    NAPI_STATUS_THROWS(napi_get_named_property(env, element, "type", &typeProperty));
-    NAPI_STATUS_THROWS(ToString(env, typeProperty, type));
+    NAPI_STATUS_THROWS(StringProperty(env, element, "type", type));
 
     rocksdb::ColumnFamilyHandle* column;
     NAPI_STATUS_THROWS(GetColumnFamily(database, env, element, &column));
 
-    if (type == "del") {
-      napi_value keyProperty;
-      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "key", &keyProperty));
-      NAPI_STATUS_THROWS(ToString(env, keyProperty, key));
-
-      ROCKS_STATUS_THROWS(batch.Delete(column, key));
-    } else if (type == "put") {
-      napi_value keyProperty;
-      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "key", &keyProperty));
-      NAPI_STATUS_THROWS(ToString(env, keyProperty, key));
-
-      napi_value valueProperty;
-      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "value", &valueProperty));
-      NAPI_STATUS_THROWS(ToString(env, valueProperty, value));
-
-      ROCKS_STATUS_THROWS(batch.Put(column, key, value));
-    } else if (type == "data") {
-      napi_value valueProperty;
-      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "value", &valueProperty));
-      NAPI_STATUS_THROWS(ToString(env, valueProperty, value));
-
-      ROCKS_STATUS_THROWS(batch.PutLogData(value));
-    } else if (type == "merge") {
-      napi_value keyProperty;
-      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "key", &keyProperty));
-      NAPI_STATUS_THROWS(ToString(env, keyProperty, key));
-
-      napi_value valueProperty;
-      NAPI_STATUS_THROWS(napi_get_named_property(env, element, "value", &valueProperty));
-      NAPI_STATUS_THROWS(ToString(env, valueProperty, value));
-
-      ROCKS_STATUS_THROWS(batch.Merge(column, key, value));
+    if (!type) {
+      ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("type"));
+    } else if (*type == "del") {
+      NAPI_STATUS_THROWS(StringProperty(env, element, "key", key));
+      if (!key) {
+        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
+      }
+      ROCKS_STATUS_THROWS(batch.Delete(column, *key));
+    } else if (*type == "put") {
+      NAPI_STATUS_THROWS(StringProperty(env, element, "key", key));
+      if (!key) {
+        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
+      }
+      NAPI_STATUS_THROWS(StringProperty(env, element, "value", value));
+      if (!value) {
+        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
+      }
+      ROCKS_STATUS_THROWS(batch.Put(column, *key, *value));
+    } else if (*type == "data") {
+      NAPI_STATUS_THROWS(StringProperty(env, element, "value", value));
+      if (!value) {
+        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
+      }
+      ROCKS_STATUS_THROWS(batch.PutLogData(*value));
+    } else if (*type == "merge") {
+      NAPI_STATUS_THROWS(StringProperty(env, element, "key", key));
+      if (!key) {
+        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
+      }
+      NAPI_STATUS_THROWS(StringProperty(env, element, "value", value));
+      if (!value) {
+        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
+      }
+      ROCKS_STATUS_THROWS(batch.Merge(column, *key, *value));
     } else {
-      ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument());
+      ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("type"));
     }
   }
 

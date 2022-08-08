@@ -184,10 +184,10 @@ static napi_status StringProperty(napi_env env, napi_value obj, const std::strin
     napi_value value;
     NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
 
-    std::string str;
-    NAPI_STATUS_RETURN(ToString(env, value, str));
+    std::string to;
+    NAPI_STATUS_RETURN(ToString(env, value, to));
 
-    result = std::move(str);
+    result = std::move(to);
   }
 
   return napi_ok;
