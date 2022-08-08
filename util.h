@@ -143,9 +143,12 @@ static napi_status ToString(napi_env env, napi_value from, std::string& to) {
   return napi_ok;
 }
 
-void noop(void* arg1, void* arg2) {}
+void DestroyReference(void* arg1, void* arg2) {
+  auto env = reinterpret_cast<napi_env>(arg1);
+  auto ref = reinterpret_cast<napi_ref>(arg2);
+  napi_delete_reference(env, ref);
+}
 
-// TODO (fix): Should use rocksdb::Slice since "to" cannot outlive "from".
 static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlice& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
@@ -165,8 +168,9 @@ static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlic
       size_t length = 0;
       NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
 
-      // TODO (fix): Should extend life of "from". Or "to" should be a non-pinnable slice.
-      to.PinSlice(rocksdb::Slice(buf, length), noop, nullptr, nullptr);
+      napi_ref ref;
+      NAPI_STATUS_RETURN(napi_create_reference(env, from, 1, &ref));
+      to.PinSlice(rocksdb::Slice(buf, length), DestroyReference, env, ref);
     } else {
       return napi_invalid_arg;
     }
