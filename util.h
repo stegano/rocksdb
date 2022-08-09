@@ -83,8 +83,7 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
   return CreateError(env, {}, msg);
 }
 
-
-static napi_status ToString(napi_env env, napi_value from, std::string& to) {
+static napi_status GetString(napi_env env, napi_value from, std::string& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
 
@@ -116,7 +115,7 @@ void DestroyReference(void* arg1, void* arg2) {
   napi_delete_reference(env, ref);
 }
 
-static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlice& to) {
+static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSlice& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
 
@@ -146,58 +145,6 @@ static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlic
   return napi_ok;
 }
 
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_bool(env, value, &result));
-  }
-
-  return napi_ok;
-}
-
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_uint32(env, value, &result));
-  }
-
-  return napi_ok;
-}
-
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int32_t& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_int32(env, value, &result));
-  }
-
-  return napi_ok;
-}
-
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int64_t& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result));
-  }
-
-  return napi_ok;
-}
-
 static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
@@ -216,10 +163,46 @@ static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::str
   return napi_ok;
 }
 
-template<typename T>
-concept Stringable = requires (T x) { ToString(nullptr, nullptr, x); };
+static napi_status GetValue(napi_env env, napi_value value, bool& result) {
+  return napi_get_value_bool(env, value, &result);
+}
 
-template <typename T> requires Stringable<T>
+static napi_status GetValue(napi_env env, napi_value value, uint32_t& result) {
+  return napi_get_value_uint32(env, value, &result);
+}
+
+static napi_status GetValue(napi_env env, napi_value value, int32_t& result) {
+  return napi_get_value_int32(env, value, &result);
+}
+
+static napi_status GetValue(napi_env env, napi_value value, int64_t& result) {
+  return napi_get_value_int64(env, value, &result);
+}
+
+static napi_status GetValue(napi_env env, napi_value value, std::string& result) {
+  return GetString(env, value, result);
+}
+
+static napi_status GetValue(napi_env env, napi_value value, rocksdb::PinnableSlice& result) {
+  return GetString(env, value, result);
+}
+
+template <typename T>
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, std::optional<T>& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    result = T{};
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(GetValue(env, value, *result));
+  }
+
+  return napi_ok;
+}
+
+template <typename T>
 static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, T& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
@@ -227,23 +210,7 @@ static napi_status Property(napi_env env, napi_value obj, const std::string_view
   if (has) {
     napi_value value;
     NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(ToString(env, value, result));
-  }
-
-  return napi_ok;
-}
-
-template <typename T> requires Stringable<T>
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, std::optional<T>& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-
-    result = T{};
-    NAPI_STATUS_RETURN(ToString(env, value, *result));
+    NAPI_STATUS_RETURN(GetValue(env, value, result));
   }
 
   return napi_ok;

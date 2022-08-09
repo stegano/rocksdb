@@ -719,7 +719,7 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   std::string location;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], location));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], location));
 
   rocksdb::Options dbOptions;
 
@@ -827,7 +827,7 @@ NAPI_METHOD(db_open) {
 
       ROCKS_STATUS_THROWS(InitOptions(env, descriptors[n].options, column));
 
-      NAPI_STATUS_THROWS(ToString(env, key, descriptors[n].name));
+      NAPI_STATUS_THROWS(GetString(env, key, descriptors[n].name));
     }
   }
 
@@ -1000,7 +1000,7 @@ NAPI_METHOD(db_get_many) {
     for (uint32_t n = 0; n < length; n++) {
       napi_value element;
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-      NAPI_STATUS_THROWS(ToString(env, element, keys[n]));
+      NAPI_STATUS_THROWS(GetString(env, element, keys[n]));
     }
   }
 
@@ -1187,7 +1187,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::PinnableSlice property;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], property));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], property));
 
   std::string value;
   database->db->GetProperty(property, &value);
@@ -1282,7 +1282,7 @@ NAPI_METHOD(iterator_seek) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   rocksdb::PinnableSlice target;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], target));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], target));
 
   iterator->first_ = true;
   iterator->Seek(target);  // TODO: Does seek causing blocking IO?
@@ -1487,10 +1487,10 @@ NAPI_METHOD(batch_put) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], key));
 
   rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], val));
+  NAPI_STATUS_THROWS(GetString(env, argv[2], val));
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
@@ -1511,7 +1511,7 @@ NAPI_METHOD(batch_del) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], key));
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
@@ -1532,10 +1532,10 @@ NAPI_METHOD(batch_merge) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], key));
 
   rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(ToString(env, argv[2], val));
+  NAPI_STATUS_THROWS(GetString(env, argv[2], val));
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
@@ -1582,7 +1582,7 @@ NAPI_METHOD(batch_put_log_data) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice logData;
-  NAPI_STATUS_THROWS(ToString(env, argv[1], logData));
+  NAPI_STATUS_THROWS(GetString(env, argv[1], logData));
 
   ROCKS_STATUS_THROWS(batch->PutLogData(logData));
 
