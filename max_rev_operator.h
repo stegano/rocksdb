@@ -1,5 +1,8 @@
 #pragma once
 
+#include <rocksdb/slice.h>
+#include <rocksdb/merge_operator.h>
+
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   auto indexA = 0UL;
   auto indexB = 0UL;

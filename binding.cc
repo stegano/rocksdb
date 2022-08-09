@@ -18,6 +18,7 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <set>
@@ -594,8 +595,12 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   std::optional<std::string> mergeOperatorOpt;
   NAPI_STATUS_RETURN(GetProperty(env, options, "mergeOperator", mergeOperatorOpt));
   if (mergeOperatorOpt) {
-    ROCKS_STATUS_RETURN_NAPI(
-        rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
+    if (*mergeOperatorOpt == "maxRev") {
+      columnOptions.merge_operator = std::make_shared<MaxRevOperator>();
+    } else {
+      ROCKS_STATUS_RETURN_NAPI(
+          rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
+    }
   }
 
   uint32_t cacheSize = 8 << 20;
