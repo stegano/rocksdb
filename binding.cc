@@ -84,9 +84,9 @@ enum BatchOp { Empty, Put, Delete, Merge, Data };
 
 struct BatchEntry {
   BatchOp op = BatchOp::Empty;
-  std::optional<std::string> key;
-  std::optional<std::string> val;
-  std::optional<ColumnFamily> column;
+  std::optional<std::string> key = std::nullopt;
+  std::optional<std::string> val = std::nullopt;
+  std::optional<ColumnFamily> column = std::nullopt;
 };
 
 struct BatchIterator : public rocksdb::WriteBatch::Handler {
@@ -165,9 +165,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return rocksdb::Status::OK();
     }
 
-    BatchEntry entry;
-
-    entry.op = BatchOp::Put;
+    BatchEntry entry = { BatchOp::Put };
 
     if (keys_) {
       entry.key = key.ToStringView();
@@ -191,9 +189,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return rocksdb::Status::OK();
     }
 
-    BatchEntry entry;
-
-    entry.op = BatchOp::Delete;
+    BatchEntry entry = { BatchOp::Delete };
 
     if (keys_) {
       entry.key = key.ToStringView();
@@ -213,9 +209,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return rocksdb::Status::OK();
     }
 
-    BatchEntry entry;
-
-    entry.op = BatchOp::Merge;
+    BatchEntry entry = { BatchOp::Merge };
 
     if (keys_) {
       entry.key = key.ToStringView();
@@ -239,9 +233,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return;
     }
 
-    BatchEntry entry;
-
-    entry.op = BatchOp::Data;
+    BatchEntry entry = { BatchOp::Data };
 
     entry.val = data.ToStringView();
 
