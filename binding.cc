@@ -686,7 +686,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   } else if (optimize == "range-lookup") {
     // TODO?
   } else {
-    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10));
+    tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
   }
 
   std::optional<std::string> filterPolicyOpt;
