@@ -108,7 +108,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
   napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
     cache_.reserve(batch.Count());
 
-    ROCKS_STATUS_RETURNS_NAPI(batch.Iterate(this));
+    ROCKS_STATUS_RETURN_NAPI(batch.Iterate(this));
 
     napi_value putStr;
     NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
@@ -520,18 +520,14 @@ NAPI_METHOD(db_init) {
 }
 
 template <typename T, typename U>
-rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
+napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::ConfigOptions configOptions;
 
   size_t memtable_memory_budget = 256 * 1024 * 1024;
-  if (GetProperty(env, options, "memtableMemoryBudget", memtable_memory_budget) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("memtableMemoryBudget");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "memtableMemoryBudget", memtable_memory_budget));
 
   std::optional<std::string> compactionOpt;
-  if (GetProperty(env, options, "compaction", compactionOpt) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("compaction");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "compaction", compactionOpt));
   if (compactionOpt) {
     if (*compactionOpt == "universal") {
       columnOptions.write_buffer_size = memtable_memory_budget / 4;
@@ -571,14 +567,12 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
         }
       }
     } else {
-      return rocksdb::Status::InvalidArgument("compaction");
+      return napi_invalid_arg;
     }
   }
 
   bool compression = true;
-  if (GetProperty(env, options, "compression", compression) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("compression");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "compression", compression));
 
   if (compression) {
     columnOptions.compression = rocksdb::kZSTD;
@@ -588,54 +582,43 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> prefixExtractorOpt;
-  if (GetProperty(env, options, "prefixExtractor", prefixExtractorOpt) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("prefixExtractor");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "prefixExtractor", prefixExtractorOpt));
   if (prefixExtractorOpt) {
-    ROCKS_STATUS_RETURN(
+    ROCKS_STATUS_RETURN_NAPI(
         rocksdb::SliceTransform::CreateFromString(configOptions, *prefixExtractorOpt, &columnOptions.prefix_extractor));
   }
 
   std::optional<std::string> comparatorOpt;
-  if (GetProperty(env, options, "comparator", comparatorOpt) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("comparator");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "comparator", comparatorOpt));
   if (comparatorOpt) {
-    ROCKS_STATUS_RETURN(
+    ROCKS_STATUS_RETURN_NAPI(
         rocksdb::Comparator::CreateFromString(configOptions, *comparatorOpt, &columnOptions.comparator));
   }
 
   std::optional<std::string> mergeOperatorOpt;
-  if (GetProperty(env, options, "mergeOperator", mergeOperatorOpt) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("mergeOperator");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "mergeOperator", mergeOperatorOpt));
   if (mergeOperatorOpt) {
-    ROCKS_STATUS_RETURN(
+    ROCKS_STATUS_RETURN_NAPI(
         rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
   }
 
   uint32_t cacheSize = 8 << 20;
-  if (GetProperty(env, options, "cacheSize", cacheSize) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("cacheSize");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
 
   rocksdb::BlockBasedTableOptions tableOptions;
 
   if (cacheSize) {
     tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
     tableOptions.cache_index_and_filter_blocks = true;
-    if (GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks) != napi_ok) {
-      return rocksdb::Status::InvalidArgument("compression");
-    }
+    NAPI_STATUS_RETURN(
+        GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks));
   } else {
     tableOptions.no_block_cache = true;
     tableOptions.cache_index_and_filter_blocks = false;
   }
 
   std::string optimize = "";
-  if (GetProperty(env, options, "optimize", optimize) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("optimize");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "optimize", optimize));
 
   if (optimize == "point-lookup") {
     tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
@@ -651,33 +634,25 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> filterPolicyOpt;
-  if (GetProperty(env, options, "filterPolicy", filterPolicyOpt) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("filterPolicy");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "filterPolicy", filterPolicyOpt));
   if (filterPolicyOpt) {
-    ROCKS_STATUS_RETURN(
+    ROCKS_STATUS_RETURN_NAPI(
         rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
   }
 
-  if (GetProperty(env, options, "blockSize", tableOptions.block_size) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("blockSize");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blockSize", tableOptions.block_size));
 
-  if (GetProperty(env, options, "blockRestartInterval", tableOptions.block_restart_interval) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("blockRestartInterval");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blockRestartInterval", tableOptions.block_restart_interval));
 
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
 
   tableOptions.optimize_filters_for_memory = true;
-  if (GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory) != napi_ok) {
-    return rocksdb::Status::InvalidArgument("optimizeFiltersForMemory");
-  }
+  NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory));
 
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
-  return rocksdb::Status::OK();
+  return napi_ok;
 }
 
 NAPI_METHOD(db_open) {
@@ -751,7 +726,7 @@ NAPI_METHOD(db_open) {
     dbOptions.info_log.reset(new NullLogger());
   }
 
-  ROCKS_STATUS_THROWS_NAPI(InitOptions(env, dbOptions, options));
+  NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
 
   std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
 
@@ -776,7 +751,7 @@ NAPI_METHOD(db_open) {
       napi_value column;
       NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
-      ROCKS_STATUS_THROWS_NAPI(InitOptions(env, descriptors[n].options, column));
+      NAPI_STATUS_THROWS(InitOptions(env, descriptors[n].options, column));
 
       NAPI_STATUS_THROWS(GetValue(env, key, descriptors[n].name));
     }
@@ -805,9 +780,7 @@ NAPI_METHOD(db_open) {
           column.descriptor = descriptors[n];
           NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &column.val));
           NAPI_STATUS_RETURN(napi_create_reference(env, column.val, 1, &column.ref));
-
           NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors[n].name.c_str(), column.val));
-
           database->columns[column.handle->GetID()] = column;
         }
 
@@ -1392,7 +1365,7 @@ NAPI_METHOD(batch_do) {
       NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
       ROCKS_STATUS_THROWS_NAPI(batch.Merge(column, key, value));
     } else {
-      return napi_invalid_arg;
+      NAPI_STATUS_THROWS(napi_invalid_arg);
     }
   }
 
@@ -1473,7 +1446,7 @@ NAPI_METHOD(batch_merge) {
   NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
- 
+
   rocksdb::ColumnFamilyHandle* column = nullptr;
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 

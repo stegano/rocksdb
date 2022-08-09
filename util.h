@@ -20,15 +20,7 @@
     }                            \
   }
 
-#define ROCKS_STATUS_RETURN(call) \
-  {                               \
-    auto _status = (call);        \
-    if (!_status.ok()) {          \
-      return _status;             \
-    }                             \
-  }
-
-#define ROCKS_STATUS_THROWS_NAPI(call)        \
+#define ROCKS_STATUS_THROWS_NAPI(call)         \
   {                                           \
     auto _status = (call);                    \
     if (!_status.ok()) {                      \
@@ -37,7 +29,7 @@
     }                                         \
   }
 
-#define ROCKS_STATUS_RETURNS_NAPI(call)       \
+#define ROCKS_STATUS_RETURN_NAPI(call)        \
   {                                           \
     auto _status = (call);                    \
     if (!_status.ok()) {                      \
@@ -228,7 +220,11 @@ static napi_status GetValue(napi_env env, napi_value value, std::optional<T>& re
 }
 
 template <typename T>
-static napi_status GetProperty(napi_env env, napi_value obj, const std::string_view& key, T& result, bool required = false) {
+static napi_status GetProperty(napi_env env,
+                               napi_value obj,
+                               const std::string_view& key,
+                               T& result,
+                               bool required = false) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
