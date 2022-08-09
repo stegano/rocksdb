@@ -5,38 +5,10 @@
       "target_name": "leveldown",
       "conditions": [
         [
-          "OS == 'win'",
-          {
-            "defines": ["_HAS_EXCEPTIONS=1", "OS_WIN=1"],
-            "msvs_settings": {
-              "VCCLCompilerTool": {
-                "RuntimeTypeInfo": "false",
-                "EnableFunctionLevelLinking": "true",
-                "ExceptionHandling": "2",
-                "DisableSpecificWarnings": [
-                  "4355",
-                  "4530",
-                  "4267",
-                  "4244",
-                  "4506"
-                ]
-              },
-              "VCLinkerTool": {
-                "AdditionalDependencies": ["Shlwapi.lib", "rpcrt4.lib"]
-              }
-            }
-          },
-          {
-            "cflags": ["-std=c++20"],
-            "cflags!": ["-fno-rtti"],
-            "cflags_cc!": ["-fno-rtti"],
-            "cflags_cc+": ["-frtti"]
-          }
-        ],
-        [
           "OS == 'linux'",
           {
             "cflags": [
+              "-std=c++2a",
               "-msse4.2",
               "-mpclmul",
               "-mavx",
@@ -62,7 +34,7 @@
               ],
               "OTHER_CPLUSPLUSFLAGS": [
                 "-mmacosx-version-min=12.2.1",
-                "-std=c++20",
+                "-std=c++2b",
                 "-fno-omit-frame-pointer",
                 "-momit-leaf-frame-pointer",
                 "-arch x86_64",
