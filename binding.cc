@@ -664,11 +664,11 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(GetProperty(env, options, "parallelism", parallelism));
   dbOptions.IncreaseParallelism(parallelism);
 
-  uint32_t walTTL;
+  uint32_t walTTL = 0;
   NAPI_STATUS_THROWS(GetProperty(env, options, "walTTL", walTTL));
   dbOptions.WAL_ttl_seconds = walTTL / 1e3;
 
-  uint32_t walSizeLimit;
+  uint32_t walSizeLimit = 0;
   NAPI_STATUS_THROWS(GetProperty(env, options, "walSizeLimit", walSizeLimit));
   dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
 
@@ -810,16 +810,16 @@ NAPI_METHOD(updates_init) {
 
   const auto options = argv[1];
 
-  int64_t since;
+  int64_t since = 0;
   NAPI_STATUS_THROWS(GetProperty(env, options, "since", since));
 
-  bool keys;
+  bool keys = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
 
-  bool values;
+  bool values = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
 
-  bool data;
+  bool data = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
 
   Encoding keyEncoding = Encoding::String;
