@@ -276,6 +276,7 @@ struct Updates : public BatchIterator, public Closable {
   napi_status Attach(napi_env env, napi_value context) {
     NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
     database_->closables.insert(this);
+    return napi_ok;
   }
 
   napi_status Detach(napi_env env) {
@@ -463,6 +464,7 @@ struct Iterator final : public BaseIterator {
   napi_status Attach(napi_env env, napi_value context) {
     NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
     database_->closables.insert(this);
+    return napi_ok;
   }
 
   napi_status Detach(napi_env env) {
