@@ -490,45 +490,6 @@ struct Iterator final : public BaseIterator {
   napi_ref ref_ = nullptr;
 };
 
-static napi_status GetColumnFamily(Database* database,
-                                   napi_env env,
-                                   napi_value options,
-                                   rocksdb::ColumnFamilyHandle** column) {
-  bool hasColumn = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, options, "column", &hasColumn));
-
-  if (hasColumn) {
-    napi_value value = nullptr;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, options, "column", &value));
-
-    bool nully = false;
-
-    napi_value nullVal;
-    NAPI_STATUS_RETURN(napi_get_null(env, &nullVal));
-    NAPI_STATUS_RETURN(napi_strict_equals(env, nullVal, value, &nully));
-    if (nully) {
-      *column = nullptr;
-      return napi_ok;
-    }
-
-    napi_value undefinedVal;
-    NAPI_STATUS_RETURN(napi_get_undefined(env, &undefinedVal));
-    NAPI_STATUS_RETURN(napi_strict_equals(env, undefinedVal, value, &nully));
-    if (nully) {
-      *column = nullptr;
-      return napi_ok;
-    }
-
-    NAPI_STATUS_RETURN(napi_get_value_external(env, value, reinterpret_cast<void**>(column)));
-  } else if (database) {
-    *column = database->db->DefaultColumnFamily();
-  } else {
-    *column = nullptr;
-  }
-
-  return napi_ok;
-}
-
 static void env_cleanup_hook(void* arg) {
   auto database = reinterpret_cast<Database*>(arg);
   if (database) {
@@ -563,12 +524,12 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::ConfigOptions configOptions;
 
   size_t memtable_memory_budget = 256 * 1024 * 1024;
-  if (Property(env, options, "memtableMemoryBudget", memtable_memory_budget) != napi_ok) {
+  if (GetProperty(env, options, "memtableMemoryBudget", memtable_memory_budget) != napi_ok) {
     return rocksdb::Status::InvalidArgument("memtableMemoryBudget");
   }
 
   std::optional<std::string> compactionOpt;
-  if (Property(env, options, "compaction", compactionOpt) != napi_ok) {
+  if (GetProperty(env, options, "compaction", compactionOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("compaction");
   }
   if (compactionOpt) {
@@ -615,7 +576,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   bool compression = true;
-  if (Property(env, options, "compression", compression) != napi_ok) {
+  if (GetProperty(env, options, "compression", compression) != napi_ok) {
     return rocksdb::Status::InvalidArgument("compression");
   }
 
@@ -627,7 +588,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> prefixExtractorOpt;
-  if (Property(env, options, "prefixExtractor", prefixExtractorOpt) != napi_ok) {
+  if (GetProperty(env, options, "prefixExtractor", prefixExtractorOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("prefixExtractor");
   }
   if (prefixExtractorOpt) {
@@ -636,7 +597,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> comparatorOpt;
-  if (Property(env, options, "comparator", comparatorOpt) != napi_ok) {
+  if (GetProperty(env, options, "comparator", comparatorOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("comparator");
   }
   if (comparatorOpt) {
@@ -645,7 +606,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> mergeOperatorOpt;
-  if (Property(env, options, "mergeOperator", mergeOperatorOpt) != napi_ok) {
+  if (GetProperty(env, options, "mergeOperator", mergeOperatorOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("mergeOperator");
   }
   if (mergeOperatorOpt) {
@@ -654,7 +615,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   uint32_t cacheSize = 8 << 20;
-  if (Property(env, options, "cacheSize", cacheSize) != napi_ok) {
+  if (GetProperty(env, options, "cacheSize", cacheSize) != napi_ok) {
     return rocksdb::Status::InvalidArgument("cacheSize");
   }
 
@@ -663,7 +624,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   if (cacheSize) {
     tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
     tableOptions.cache_index_and_filter_blocks = true;
-    if (Property(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks) != napi_ok) {
+    if (GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks) != napi_ok) {
       return rocksdb::Status::InvalidArgument("compression");
     }
   } else {
@@ -672,7 +633,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::string optimize = "";
-  if (Property(env, options, "optimize", optimize) != napi_ok) {
+  if (GetProperty(env, options, "optimize", optimize) != napi_ok) {
     return rocksdb::Status::InvalidArgument("optimize");
   }
 
@@ -690,7 +651,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> filterPolicyOpt;
-  if (Property(env, options, "filterPolicy", filterPolicyOpt) != napi_ok) {
+  if (GetProperty(env, options, "filterPolicy", filterPolicyOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("filterPolicy");
   }
   if (filterPolicyOpt) {
@@ -698,11 +659,11 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
         rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
   }
 
-  if (Property(env, options, "blockSize", tableOptions.block_size) != napi_ok) {
+  if (GetProperty(env, options, "blockSize", tableOptions.block_size) != napi_ok) {
     return rocksdb::Status::InvalidArgument("blockSize");
   }
 
-  if (Property(env, options, "blockRestartInterval", tableOptions.block_restart_interval) != napi_ok) {
+  if (GetProperty(env, options, "blockRestartInterval", tableOptions.block_restart_interval) != napi_ok) {
     return rocksdb::Status::InvalidArgument("blockRestartInterval");
   }
 
@@ -710,7 +671,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.checksum = rocksdb::kXXH3;
 
   tableOptions.optimize_filters_for_memory = true;
-  if (Property(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory) != napi_ok) {
+  if (GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory) != napi_ok) {
     return rocksdb::Status::InvalidArgument("optimizeFiltersForMemory");
   }
 
@@ -726,26 +687,26 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   std::string location;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], location));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], location));
 
   rocksdb::Options dbOptions;
 
   const auto options = argv[2];
 
   int parallelism = std::max<int>(1, std::thread::hardware_concurrency() / 2);
-  NAPI_STATUS_THROWS(Property(env, options, "parallelism", parallelism));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "parallelism", parallelism));
   dbOptions.IncreaseParallelism(parallelism);
 
   uint32_t walTTL;
-  NAPI_STATUS_THROWS(Property(env, options, "walTTL", walTTL));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "walTTL", walTTL));
   dbOptions.WAL_ttl_seconds = walTTL / 1e3;
 
   uint32_t walSizeLimit;
-  NAPI_STATUS_THROWS(Property(env, options, "walSizeLimit", walSizeLimit));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "walSizeLimit", walSizeLimit));
   dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
 
   bool walCompression = false;
-  NAPI_STATUS_THROWS(Property(env, options, "walCompression", walCompression));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "walCompression", walCompression));
   dbOptions.wal_compression =
       walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
 
@@ -756,14 +717,14 @@ NAPI_METHOD(db_open) {
   dbOptions.create_missing_column_families = true;
   dbOptions.fail_if_options_file_error = true;
 
-  NAPI_STATUS_THROWS(Property(env, options, "createIfMissing", dbOptions.create_if_missing));
-  NAPI_STATUS_THROWS(Property(env, options, "errorIfExists", dbOptions.error_if_exists));
-  NAPI_STATUS_THROWS(Property(env, options, "unorderedWrite", dbOptions.unordered_write));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "unorderedWrite", dbOptions.unordered_write));
 
   // TODO (feat): dbOptions.listeners
 
   std::string infoLogLevel;
-  NAPI_STATUS_THROWS(Property(env, options, "infoLogLevel", infoLogLevel));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "infoLogLevel", infoLogLevel));
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
 
@@ -817,7 +778,7 @@ NAPI_METHOD(db_open) {
 
       ROCKS_STATUS_THROWS_NAPI(InitOptions(env, descriptors[n].options, column));
 
-      NAPI_STATUS_THROWS(GetString(env, key, descriptors[n].name));
+      NAPI_STATUS_THROWS(GetValue(env, key, descriptors[n].name));
     }
   }
 
@@ -885,16 +846,16 @@ NAPI_METHOD(updates_init) {
   const auto options = argv[1];
 
   int64_t since;
-  NAPI_STATUS_THROWS(Property(env, options, "since", since));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "since", since));
 
   bool keys;
-  NAPI_STATUS_THROWS(Property(env, options, "keys", keys));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
 
   bool values;
-  NAPI_STATUS_THROWS(Property(env, options, "values", values));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
 
   bool data;
-  NAPI_STATUS_THROWS(Property(env, options, "data", data));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
 
   bool keyAsBuffer = false;
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
@@ -903,7 +864,7 @@ NAPI_METHOD(updates_init) {
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
 
   rocksdb::ColumnFamilyHandle* column = nullptr;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, options, &column));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   auto updates = new Updates(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 
@@ -990,7 +951,7 @@ NAPI_METHOD(db_get_many) {
     for (uint32_t n = 0; n < length; n++) {
       napi_value element;
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-      NAPI_STATUS_THROWS(GetString(env, element, keys[n]));
+      NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
     }
   }
 
@@ -1000,13 +961,13 @@ NAPI_METHOD(db_get_many) {
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
 
   bool fillCache = true;
-  NAPI_STATUS_THROWS(Property(env, options, "fillCache", fillCache));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
   bool ignoreRangeDeletions = false;
-  NAPI_STATUS_THROWS(Property(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, &column));
+  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   auto callback = argv[3];
 
@@ -1076,25 +1037,25 @@ NAPI_METHOD(db_clear) {
   const auto options = argv[1];
 
   bool reverse = false;
-  NAPI_STATUS_THROWS(Property(env, options, "reverse", reverse));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "reverse", reverse));
 
   int32_t limit = -1;
-  NAPI_STATUS_THROWS(Property(env, options, "limit", limit));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, &column));
+  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   std::optional<std::string> lt;
-  NAPI_STATUS_THROWS(Property(env, options, "lt", lt));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "lt", lt));
 
   std::optional<std::string> lte;
-  NAPI_STATUS_THROWS(Property(env, options, "lte", lte));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "lte", lte));
 
   std::optional<std::string> gt;
-  NAPI_STATUS_THROWS(Property(env, options, "gt", gt));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "gt", gt));
 
   std::optional<std::string> gte;
-  NAPI_STATUS_THROWS(Property(env, options, "gte", gte));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "gte", gte));
 
   if (limit == -1) {
     rocksdb::PinnableSlice begin;
@@ -1177,7 +1138,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::PinnableSlice property;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], property));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], property));
 
   std::string value;
   database->db->GetProperty(property, &value);
@@ -1211,16 +1172,16 @@ NAPI_METHOD(iterator_init) {
   const auto options = argv[1];
 
   bool reverse = false;
-  NAPI_STATUS_THROWS(Property(env, options, "reverse", reverse));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "reverse", reverse));
 
   bool keys = true;
-  NAPI_STATUS_THROWS(Property(env, options, "keys", keys));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
 
   bool values = true;
-  NAPI_STATUS_THROWS(Property(env, options, "values", values));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
 
   bool fillCache = false;
-  NAPI_STATUS_THROWS(Property(env, options, "fillCache", fillCache));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
   bool keyAsBuffer = false;
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
@@ -1229,25 +1190,25 @@ NAPI_METHOD(iterator_init) {
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
 
   int32_t limit = -1;
-  NAPI_STATUS_THROWS(Property(env, options, "limit", limit));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
 
   int32_t highWaterMarkBytes = 64 * 1024;
-  NAPI_STATUS_THROWS(Property(env, options, "highWaterMarkBytes", highWaterMarkBytes));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "highWaterMarkBytes", highWaterMarkBytes));
 
   std::optional<std::string> lt;
-  NAPI_STATUS_THROWS(Property(env, options, "lt", lt));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "lt", lt));
 
   std::optional<std::string> lte;
-  NAPI_STATUS_THROWS(Property(env, options, "lte", lte));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "lte", lte));
 
   std::optional<std::string> gt;
-  NAPI_STATUS_THROWS(Property(env, options, "gt", gt));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "gt", gt));
 
   std::optional<std::string> gte;
-  NAPI_STATUS_THROWS(Property(env, options, "gte", gte));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "gte", gte));
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column));
+  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
                                                     [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
@@ -1272,7 +1233,7 @@ NAPI_METHOD(iterator_seek) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   rocksdb::PinnableSlice target;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], target));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
   iterator->first_ = true;
   iterator->Seek(target);  // TODO: Does seek causing blocking IO?
@@ -1411,41 +1372,41 @@ NAPI_METHOD(batch_do) {
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-    NAPI_STATUS_THROWS(Property(env, element, "type", type));
+    NAPI_STATUS_THROWS(GetProperty(env, element, "type", type));
 
-    rocksdb::ColumnFamilyHandle* column;
-    NAPI_STATUS_THROWS(GetColumnFamily(database, env, element, &column));
+    rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+    NAPI_STATUS_THROWS(GetProperty(env, element, "column", column));
 
     if (!type) {
       ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("type"));
     } else if (*type == "del") {
-      NAPI_STATUS_THROWS(Property(env, element, "key", key));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key));
       if (!key) {
         ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
       }
       ROCKS_STATUS_THROWS_NAPI(batch.Delete(column, *key));
     } else if (*type == "put") {
-      NAPI_STATUS_THROWS(Property(env, element, "key", key));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key));
       if (!key) {
         ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
       }
-      NAPI_STATUS_THROWS(Property(env, element, "value", value));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value));
       if (!value) {
         ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
       }
       ROCKS_STATUS_THROWS_NAPI(batch.Put(column, *key, *value));
     } else if (*type == "data") {
-      NAPI_STATUS_THROWS(Property(env, element, "value", value));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value));
       if (!value) {
         ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
       }
       ROCKS_STATUS_THROWS_NAPI(batch.PutLogData(*value));
     } else if (*type == "merge") {
-      NAPI_STATUS_THROWS(Property(env, element, "key", key));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key));
       if (!key) {
         ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
       }
-      NAPI_STATUS_THROWS(Property(env, element, "value", value));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value));
       if (!value) {
         ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
       }
@@ -1477,13 +1438,15 @@ NAPI_METHOD(batch_put) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(GetString(env, argv[2], val));
+  NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
+  const auto options = argv[3];
+
+  rocksdb::ColumnFamilyHandle* column = nullptr;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   if (column) {
     ROCKS_STATUS_THROWS_NAPI(batch->Put(column, key, val));
@@ -1501,10 +1464,12 @@ NAPI_METHOD(batch_del) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
+  const auto options = argv[2];
+
+  rocksdb::ColumnFamilyHandle* column = nullptr;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   if (column) {
     ROCKS_STATUS_THROWS_NAPI(batch->Delete(column, key));
@@ -1522,13 +1487,15 @@ NAPI_METHOD(batch_merge) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
 
   rocksdb::PinnableSlice key;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   rocksdb::PinnableSlice val;
-  NAPI_STATUS_THROWS(GetString(env, argv[2], val));
+  NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
-  rocksdb::ColumnFamilyHandle* column;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
+  const auto options = argv[3];
+ 
+  rocksdb::ColumnFamilyHandle* column = nullptr;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   if (column) {
     ROCKS_STATUS_THROWS_NAPI(batch->Merge(column, key, val));
@@ -1572,7 +1539,7 @@ NAPI_METHOD(batch_put_log_data) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::PinnableSlice logData;
-  NAPI_STATUS_THROWS(GetString(env, argv[1], logData));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], logData));
 
   ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(logData));
 
@@ -1603,13 +1570,13 @@ NAPI_METHOD(batch_iterate) {
   const auto options = argv[2];
 
   bool keys = true;
-  NAPI_STATUS_THROWS(Property(env, options, "keys", keys));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
 
   bool values = true;
-  NAPI_STATUS_THROWS(Property(env, options, "values", values));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
 
   bool data = true;
-  NAPI_STATUS_THROWS(Property(env, options, "data", data));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
 
   bool keyAsBuffer = false;
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
@@ -1618,7 +1585,7 @@ NAPI_METHOD(batch_iterate) {
   NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
 
   rocksdb::ColumnFamilyHandle* column = nullptr;
-  NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, options, &column));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   BatchIterator iterator(nullptr, keys, values, data, column, keyAsBuffer, valueAsBuffer);
 

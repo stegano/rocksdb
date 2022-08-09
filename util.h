@@ -4,6 +4,7 @@
 #include <napi-macros.h>
 #include <node_api.h>
 
+#include <rocksdb/db.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/status.h>
 
@@ -216,33 +217,45 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::PinnableSli
   return GetString(env, value, result);
 }
 
-template <typename T>
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, std::optional<T>& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    result = T{};
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(GetValue(env, value, *result));
-  }
-
-  return napi_ok;
+static napi_status GetValue(napi_env env, napi_value value, rocksdb::ColumnFamilyHandle*& result) {
+  return napi_get_value_external(env, value, reinterpret_cast<void**>(&result));
 }
 
 template <typename T>
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, T& result) {
+static napi_status GetValue(napi_env env, napi_value value, std::optional<T>& result) {
+  result = T{};
+  return GetValue(env, value, *result);
+}
+
+template <typename T>
+static napi_status GetProperty(napi_env env, napi_value obj, const std::string_view& key, T& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(GetValue(env, value, result));
+  if (!has) {
+    return napi_ok;
   }
 
-  return napi_ok;
+  napi_value value;
+  NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+
+  bool nully = false;
+
+  napi_value nullVal;
+  NAPI_STATUS_RETURN(napi_get_null(env, &nullVal));
+  NAPI_STATUS_RETURN(napi_strict_equals(env, nullVal, value, &nully));
+  if (nully) {
+    return napi_ok;
+  }
+
+  napi_value undefinedVal;
+  NAPI_STATUS_RETURN(napi_get_undefined(env, &undefinedVal));
+  NAPI_STATUS_RETURN(napi_strict_equals(env, undefinedVal, value, &nully));
+  if (nully) {
+    return napi_ok;
+  }
+
+  return GetValue(env, value, result);
 }
 
 template <typename T>
