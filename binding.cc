@@ -273,16 +273,17 @@ struct Updates : public BatchIterator, public Closable {
     return rocksdb::Status::OK();
   }
 
-  void Attach(napi_env env, napi_value context) {
-    napi_create_reference(env, context, 1, &ref_);
+  napi_status Attach(napi_env env, napi_value context) {
+    NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
     database_->closables.insert(this);
   }
 
-  void Detach(napi_env env) {
+  napi_status Detach(napi_env env) {
     database_->closables.erase(this);
     if (ref_) {
-      napi_delete_reference(env, ref_);
+      NAPI_STATUS_RETURN(napi_delete_reference(env, ref_));
     }
+    return napi_ok;
   }
 
   Database* database_;
@@ -459,16 +460,17 @@ struct Iterator final : public BaseIterator {
         valueEncoding_(valueEncoding),
         highWaterMarkBytes_(highWaterMarkBytes) {}
 
-  void Attach(napi_env env, napi_value context) {
-    napi_create_reference(env, context, 1, &ref_);
+  napi_status Attach(napi_env env, napi_value context) {
+    NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
     database_->closables.insert(this);
   }
 
-  void Detach(napi_env env) {
+  napi_status Detach(napi_env env) {
     database_->closables.erase(this);
     if (ref_) {
-      napi_delete_reference(env, ref_);
+      NAPI_STATUS_RETURN(napi_delete_reference(env, ref_));
     }
+    return napi_ok;
   }
 
   const bool keys_;
@@ -839,7 +841,7 @@ NAPI_METHOD(updates_init) {
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  updates.release()->Attach(env, result);
+  NAPI_STATUS_THROWS(updates.release()->Attach(env, result));
 
   return result;
 }
@@ -896,8 +898,8 @@ NAPI_METHOD(updates_close) {
   Updates* updates;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
 
-  updates->Detach(env);
-  updates->Close();
+  ROCKS_STATUS_THROWS_NAPI(updates->Close());
+  NAPI_STATUS_THROWS(updates->Detach(env));
 
   return 0;
 }
@@ -1188,7 +1190,7 @@ NAPI_METHOD(iterator_init) {
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  iterator.release()->Attach(env, result);
+  NAPI_STATUS_THROWS(iterator.release()->Attach(env, result));
 
   return result;
 }
@@ -1214,8 +1216,8 @@ NAPI_METHOD(iterator_close) {
   Iterator* iterator;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
-  iterator->Detach(env);
-  iterator->Close();
+  ROCKS_STATUS_THROWS_NAPI(iterator->Close());
+  NAPI_STATUS_THROWS(iterator->Detach(env));
 
   return 0;
 }
