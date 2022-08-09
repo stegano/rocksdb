@@ -245,23 +245,18 @@ static napi_status GetProperty(napi_env env,
   return GetValue(env, value, result);
 }
 
-static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
-  Encoding encoding;
-  NAPI_STATUS_RETURN(GetProperty(env, obj, key, encoding));
-  result = encoding == Encoding::Buffer;
-  return napi_ok;
-}
-
 template <typename T>
-napi_status Convert(napi_env env, T&& s, bool asBuffer, napi_value& result) {
+napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) {
   if (!s) {
     return napi_get_null(env, &result);
-  } else if (asBuffer) {
+  } else if (encoding == Encoding::Buffer) {
     // napi_create_external_buffer would be nice but is unsafe since node
     // buffers are not read-only.
     return napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
-  } else {
+  } else if (encoding == Encoding::String) {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
+  } else {
+    return napi_invalid_arg;
   }
 }
 

@@ -91,19 +91,19 @@ struct BatchEntry {
 
 struct BatchIterator : public rocksdb::WriteBatch::Handler {
   BatchIterator(Database* database,
-                bool keys = true,
-                bool values = true,
-                bool data = true,
-                const rocksdb::ColumnFamilyHandle* column = nullptr,
-                bool keyAsBuffer = false,
-                bool valueAsBuffer = false)
+                const bool keys,
+                const bool values,
+                const bool data,
+                const rocksdb::ColumnFamilyHandle* column,
+                const Encoding keyEncoding,
+                const Encoding valueEncoding)
       : database_(database),
         keys_(keys),
         values_(values),
         data_(data),
         column_(column),
-        keyAsBuffer_(keyAsBuffer),
-        valueAsBuffer_(valueAsBuffer) {}
+        keyEncoding_(keyEncoding),
+        valueEncoding_(valueEncoding) {}
 
   napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
     cache_.reserve(batch.Count());
@@ -143,11 +143,11 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 0, op));
 
       napi_value key;
-      NAPI_STATUS_RETURN(Convert(env, cache_[n].key, keyAsBuffer_, key));
+      NAPI_STATUS_RETURN(Convert(env, cache_[n].key, keyEncoding_, key));
       NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 1, key));
 
       napi_value val;
-      NAPI_STATUS_RETURN(Convert(env, cache_[n].val, valueAsBuffer_, val));
+      NAPI_STATUS_RETURN(Convert(env, cache_[n].val, valueEncoding_, val));
       NAPI_STATUS_RETURN(napi_set_element(env, *result, n * 4 + 2, val));
 
       // TODO (fix)
@@ -244,25 +244,25 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
 
  private:
   Database* database_;
-  bool keys_;
-  bool values_;
-  bool data_;
+  const bool keys_;
+  const bool values_;
+  const bool data_;
   const rocksdb::ColumnFamilyHandle* column_;
-  bool keyAsBuffer_;
-  bool valueAsBuffer_;
+  const Encoding keyEncoding_;
+  const Encoding valueEncoding_;
   std::vector<BatchEntry> cache_;
 };
 
 struct Updates : public BatchIterator, public Closable {
   Updates(Database* database,
-          int64_t seqNumber,
-          bool keys,
-          bool values,
-          bool data,
+          const int64_t seqNumber,
+          const bool keys,
+          const bool values,
+          const bool data,
           const rocksdb::ColumnFamilyHandle* column,
-          bool keyAsBuffer,
-          bool valueAsBuffer)
-      : BatchIterator(database, keys, values, data, column, keyAsBuffer, valueAsBuffer),
+          const Encoding keyEncoding,
+          const Encoding valueEncoding)
+      : BatchIterator(database, keys, values, data, column, keyEncoding, valueEncoding),
         database_(database),
         start_(seqNumber) {}
 
@@ -448,15 +448,15 @@ struct Iterator final : public BaseIterator {
            const std::optional<std::string>& gt,
            const std::optional<std::string>& gte,
            const bool fillCache,
-           const bool keyAsBuffer,
-           const bool valueAsBuffer,
+           const Encoding keyEncoding,
+           const Encoding valueEncoding,
            const size_t highWaterMarkBytes,
            std::shared_ptr<const rocksdb::Snapshot> snapshot)
       : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot),
         keys_(keys),
         values_(values),
-        keyAsBuffer_(keyAsBuffer),
-        valueAsBuffer_(valueAsBuffer),
+        keyEncoding_(keyEncoding),
+        valueEncoding_(valueEncoding),
         highWaterMarkBytes_(highWaterMarkBytes) {}
 
   void Attach(napi_env env, napi_value context) {
@@ -473,8 +473,8 @@ struct Iterator final : public BaseIterator {
 
   const bool keys_;
   const bool values_;
-  const bool keyAsBuffer_;
-  const bool valueAsBuffer_;
+  const Encoding keyEncoding_;
+  const Encoding valueEncoding_;
   const size_t highWaterMarkBytes_;
   bool first_ = true;
 
@@ -822,16 +822,16 @@ NAPI_METHOD(updates_init) {
   bool data;
   NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
 
-  bool keyAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
+  Encoding keyEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
 
-  bool valueAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
   rocksdb::ColumnFamilyHandle* column = nullptr;
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
-  auto updates = new Updates(database, since, keys, values, data, column, keyAsBuffer, valueAsBuffer);
+  auto updates = new Updates(database, since, keys, values, data, column, keyEncoding, valueEncoding);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, updates, Finalize<Updates>, updates, &result));
@@ -922,8 +922,8 @@ NAPI_METHOD(db_get_many) {
 
   const auto options = argv[2];
 
-  bool valueAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
   bool fillCache = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
@@ -980,7 +980,7 @@ NAPI_METHOD(db_get_many) {
         for (size_t idx = 0; idx < values.size(); idx++) {
           napi_value element;
           if (values[idx].GetSelf()) {
-            NAPI_STATUS_RETURN(Convert(env, &values[idx], valueAsBuffer, element));
+            NAPI_STATUS_RETURN(Convert(env, &values[idx], valueEncoding, element));
           } else {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           }
@@ -1148,11 +1148,11 @@ NAPI_METHOD(iterator_init) {
   bool fillCache = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
-  bool keyAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
+  Encoding keyEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
 
-  bool valueAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
   int32_t limit = -1;
   NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
@@ -1178,8 +1178,8 @@ NAPI_METHOD(iterator_init) {
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
                                                     [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
-  auto iterator = new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyAsBuffer,
-                               valueAsBuffer, highWaterMarkBytes, snapshot);
+  auto iterator = new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyEncoding,
+                               valueEncoding, highWaterMarkBytes, snapshot);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator, Finalize<Iterator>, iterator, &result));
@@ -1304,8 +1304,8 @@ NAPI_METHOD(iterator_nextv) {
           napi_value key;
           napi_value val;
 
-          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 0], iterator->keyAsBuffer_, key));
-          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 1], iterator->valueAsBuffer_, val));
+          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 0], iterator->keyEncoding_, key));
+          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 1], iterator->valueEncoding_, val));
 
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 0), key));
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 1), val));
@@ -1523,16 +1523,16 @@ NAPI_METHOD(batch_iterate) {
   bool data = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
 
-  bool keyAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "keyEncoding", keyAsBuffer));
+  Encoding keyEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
 
-  bool valueAsBuffer = false;
-  NAPI_STATUS_THROWS(EncodingIsBuffer(env, options, "valueEncoding", valueAsBuffer));
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
   rocksdb::ColumnFamilyHandle* column = nullptr;
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
-  BatchIterator iterator(nullptr, keys, values, data, column, keyAsBuffer, valueAsBuffer);
+  BatchIterator iterator(nullptr, keys, values, data, column, keyEncoding, valueEncoding);
 
   napi_value result;
   NAPI_STATUS_THROWS(iterator.Iterate(env, *batch, &result));
