@@ -519,7 +519,7 @@ template <typename T, typename U>
 napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::ConfigOptions configOptions;
 
-  size_t memtable_memory_budget = 256 * 1024 * 1024;
+  uint64_t memtable_memory_budget = 256 * 1024 * 1024;
   NAPI_STATUS_RETURN(GetProperty(env, options, "memtableMemoryBudget", memtable_memory_budget));
 
   std::optional<std::string> compactionOpt;
