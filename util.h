@@ -60,7 +60,7 @@ static napi_value GetProperty(napi_env env, napi_value obj, const std::string_vi
   return value;
 }
 
-static napi_status BooleanProperty(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
@@ -91,7 +91,7 @@ static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::str
   return napi_ok;
 }
 
-static napi_status Uint32Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t& result) {
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
@@ -104,7 +104,7 @@ static napi_status Uint32Property(napi_env env, napi_value obj, const std::strin
   return napi_ok;
 }
 
-static napi_status Int32Property(napi_env env, napi_value obj, const std::string_view& key, int32_t& result) {
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int32_t& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
@@ -112,6 +112,19 @@ static napi_status Int32Property(napi_env env, napi_value obj, const std::string
     napi_value value;
     NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
     NAPI_STATUS_RETURN(napi_get_value_int32(env, value, &result));
+  }
+
+  return napi_ok;
+}
+
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int64_t& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result));
   }
 
   return napi_ok;
