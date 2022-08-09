@@ -165,7 +165,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return rocksdb::Status::OK();
     }
 
-    BatchEntry entry = { BatchOp::Put };
+    BatchEntry entry = {BatchOp::Put};
 
     if (keys_) {
       entry.key = key.ToStringView();
@@ -189,7 +189,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return rocksdb::Status::OK();
     }
 
-    BatchEntry entry = { BatchOp::Delete };
+    BatchEntry entry = {BatchOp::Delete};
 
     if (keys_) {
       entry.key = key.ToStringView();
@@ -209,7 +209,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return rocksdb::Status::OK();
     }
 
-    BatchEntry entry = { BatchOp::Merge };
+    BatchEntry entry = {BatchOp::Merge};
 
     if (keys_) {
       entry.key = key.ToStringView();
@@ -233,7 +233,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
       return;
     }
 
-    BatchEntry entry = { BatchOp::Data };
+    BatchEntry entry = {BatchOp::Data};
 
     entry.val = data.ToStringView();
 

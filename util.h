@@ -20,7 +20,7 @@
     }                            \
   }
 
-#define ROCKS_STATUS_THROWS_NAPI(call)         \
+#define ROCKS_STATUS_THROWS_NAPI(call)        \
   {                                           \
     auto _status = (call);                    \
     if (!_status.ok()) {                      \
@@ -147,23 +147,7 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSli
   return napi_ok;
 }
 
-static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-
-    size_t size;
-    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, value, nullptr, 0, &size));
-
-    // Value is either "buffer" or "utf8" so we can tell them apart just by size
-    result = size == 6;
-  }
-
-  return napi_ok;
-}
+enum class Encoding { Invalid, Buffer, String };
 
 static napi_status GetValue(napi_env env, napi_value value, bool& result) {
   return napi_get_value_bool(env, value, &result);
@@ -184,9 +168,6 @@ static napi_status GetValue(napi_env env, napi_value value, int64_t& result) {
 static napi_status GetValue(napi_env env, napi_value value, uint64_t& result) {
   int64_t result2;
   NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
-  if (result2 < 0) {
-    return napi_generic_failure;
-  }
   result = static_cast<uint64_t>(result2);
   return napi_ok;
 }
@@ -194,10 +175,7 @@ static napi_status GetValue(napi_env env, napi_value value, uint64_t& result) {
 static napi_status GetValue(napi_env env, napi_value value, unsigned long& result) {
   int64_t result2;
   NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
-  if (result2 < 0) {
-    return napi_generic_failure;
-  }
-  result = static_cast<uint64_t>(result2);
+  result = static_cast<unsigned long>(result2);
   return napi_ok;
 }
 
@@ -211,6 +189,19 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::PinnableSli
 
 static napi_status GetValue(napi_env env, napi_value value, rocksdb::ColumnFamilyHandle*& result) {
   return napi_get_value_external(env, value, reinterpret_cast<void**>(&result));
+}
+
+static napi_status GetValue(napi_env env, napi_value value, Encoding& result) {
+  size_t size;
+  NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, value, nullptr, 0, &size));
+
+  if (size == 6) {
+    result = Encoding::Buffer;
+  } else {
+    result = Encoding::String;
+  }
+
+  return napi_ok;
 }
 
 template <typename T>
@@ -252,6 +243,13 @@ static napi_status GetProperty(napi_env env,
   }
 
   return GetValue(env, value, result);
+}
+
+static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
+  Encoding encoding;
+  NAPI_STATUS_RETURN(GetProperty(env, obj, key, encoding));
+  result = encoding == Encoding::Buffer;
+  return napi_ok;
 }
 
 template <typename T>
