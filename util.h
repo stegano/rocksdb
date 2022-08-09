@@ -173,17 +173,11 @@ static napi_status GetValue(napi_env env, napi_value value, int64_t& result) {
   return napi_get_value_int64(env, value, &result);
 }
 
-static napi_status GetValue(napi_env env, napi_value value, uint64_t& result) {
+template<typename T> requires std::is_integral<T>::value
+static napi_status GetValue(napi_env env, napi_value value, T& result) {
   int64_t result2;
   NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
-  result = static_cast<uint64_t>(result2);
-  return napi_ok;
-}
-
-static napi_status GetValue(napi_env env, napi_value value, unsigned long& result) {
-  int64_t result2;
-  NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
-  result = static_cast<unsigned long>(result2);
+  result = static_cast<T>(result2);
   return napi_ok;
 }
 
