@@ -555,7 +555,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
       // only compress levels >= 2
       columnOptions.compression_per_level.resize(columnOptions.num_levels);
-      for (int i = 0; i < columnOptions.compression_per_level.size(); ++i) {
+      for (int i = 0; i < columnOptions.num_levels; ++i) {
         if (i < 2) {
           columnOptions.compression_per_level[i] = rocksdb::kNoCompression;
         } else {
