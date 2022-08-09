@@ -568,7 +568,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::string compaction = "level";
-  if (StringProperty(env, options, "compaction", compaction) != napi_ok) {
+  if (Property(env, options, "compaction", compaction) != napi_ok) {
     return rocksdb::Status::InvalidArgument("compaction");
   }
 
@@ -616,7 +616,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> prefixExtractorOpt;
-  if (StringProperty(env, options, "prefixExtractor", prefixExtractorOpt) != napi_ok) {
+  if (Property(env, options, "prefixExtractor", prefixExtractorOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("prefixExtractor");
   }
   if (prefixExtractorOpt) {
@@ -625,7 +625,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> comparatorOpt;
-  if (StringProperty(env, options, "comparator", comparatorOpt) != napi_ok) {
+  if (Property(env, options, "comparator", comparatorOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("comparator");
   }
   if (comparatorOpt) {
@@ -634,7 +634,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> mergeOperatorOpt;
-  if (StringProperty(env, options, "mergeOperator", mergeOperatorOpt) != napi_ok) {
+  if (Property(env, options, "mergeOperator", mergeOperatorOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("mergeOperator");
   }
   if (mergeOperatorOpt) {
@@ -661,7 +661,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::string optimize = "";
-  if (StringProperty(env, options, "optimize", optimize) != napi_ok) {
+  if (Property(env, options, "optimize", optimize) != napi_ok) {
     return rocksdb::Status::InvalidArgument("optimize");
   }
 
@@ -679,7 +679,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   std::optional<std::string> filterPolicyOpt;
-  if (StringProperty(env, options, "filterPolicy", filterPolicyOpt) != napi_ok) {
+  if (Property(env, options, "filterPolicy", filterPolicyOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("filterPolicy");
   }
   if (filterPolicyOpt) {
@@ -773,7 +773,7 @@ NAPI_METHOD(db_open) {
   // TODO (feat): dbOptions.listeners
 
   std::string infoLogLevel;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "infoLogLevel", infoLogLevel));
+  NAPI_STATUS_THROWS(Property(env, options, "infoLogLevel", infoLogLevel));
   if (infoLogLevel.size() > 0) {
     rocksdb::InfoLogLevel lvl = {};
 
@@ -1095,16 +1095,16 @@ NAPI_METHOD(db_clear) {
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, options, &column));
 
   std::optional<std::string> lt;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "lt", lt));
+  NAPI_STATUS_THROWS(Property(env, options, "lt", lt));
 
   std::optional<std::string> lte;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "lte", lte));
+  NAPI_STATUS_THROWS(Property(env, options, "lte", lte));
 
   std::optional<std::string> gt;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "gt", gt));
+  NAPI_STATUS_THROWS(Property(env, options, "gt", gt));
 
   std::optional<std::string> gte;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "gte", gte));
+  NAPI_STATUS_THROWS(Property(env, options, "gte", gte));
 
   if (limit == -1) {
     rocksdb::PinnableSlice begin;
@@ -1245,16 +1245,16 @@ NAPI_METHOD(iterator_init) {
   NAPI_STATUS_THROWS(Property(env, options, "highWaterMarkBytes", highWaterMarkBytes));
 
   std::optional<std::string> lt;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "lt", lt));
+  NAPI_STATUS_THROWS(Property(env, options, "lt", lt));
 
   std::optional<std::string> lte;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "lte", lte));
+  NAPI_STATUS_THROWS(Property(env, options, "lte", lte));
 
   std::optional<std::string> gt;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "gt", gt));
+  NAPI_STATUS_THROWS(Property(env, options, "gt", gt));
 
   std::optional<std::string> gte;
-  NAPI_STATUS_THROWS(StringProperty(env, options, "gte", gte));
+  NAPI_STATUS_THROWS(Property(env, options, "gte", gte));
 
   rocksdb::ColumnFamilyHandle* column;
   NAPI_STATUS_THROWS(GetColumnFamily(database, env, argv[1], &column));
@@ -1421,7 +1421,7 @@ NAPI_METHOD(batch_do) {
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-    NAPI_STATUS_THROWS(StringProperty(env, element, "type", type));
+    NAPI_STATUS_THROWS(Property(env, element, "type", type));
 
     rocksdb::ColumnFamilyHandle* column;
     NAPI_STATUS_THROWS(GetColumnFamily(database, env, element, &column));
@@ -1429,33 +1429,33 @@ NAPI_METHOD(batch_do) {
     if (!type) {
       ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("type"));
     } else if (*type == "del") {
-      NAPI_STATUS_THROWS(StringProperty(env, element, "key", key));
+      NAPI_STATUS_THROWS(Property(env, element, "key", key));
       if (!key) {
         ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
       }
       ROCKS_STATUS_THROWS(batch.Delete(column, *key));
     } else if (*type == "put") {
-      NAPI_STATUS_THROWS(StringProperty(env, element, "key", key));
+      NAPI_STATUS_THROWS(Property(env, element, "key", key));
       if (!key) {
         ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
       }
-      NAPI_STATUS_THROWS(StringProperty(env, element, "value", value));
+      NAPI_STATUS_THROWS(Property(env, element, "value", value));
       if (!value) {
         ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
       }
       ROCKS_STATUS_THROWS(batch.Put(column, *key, *value));
     } else if (*type == "data") {
-      NAPI_STATUS_THROWS(StringProperty(env, element, "value", value));
+      NAPI_STATUS_THROWS(Property(env, element, "value", value));
       if (!value) {
         ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
       }
       ROCKS_STATUS_THROWS(batch.PutLogData(*value));
     } else if (*type == "merge") {
-      NAPI_STATUS_THROWS(StringProperty(env, element, "key", key));
+      NAPI_STATUS_THROWS(Property(env, element, "key", key));
       if (!key) {
         ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
       }
-      NAPI_STATUS_THROWS(StringProperty(env, element, "value", value));
+      NAPI_STATUS_THROWS(Property(env, element, "value", value));
       if (!value) {
         ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
       }

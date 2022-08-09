@@ -36,6 +36,13 @@
     }                                         \
   }
 
+template <typename T>
+static void Finalize(napi_env env, void* data, void* hint) {
+  if (hint) {
+    delete reinterpret_cast<T*>(hint);
+  }
+}
+
 static napi_value CreateError(napi_env env, const std::optional<std::string_view>& code, const std::string_view& msg) {
   napi_value codeValue = nullptr;
   if (code) {
@@ -48,87 +55,34 @@ static napi_value CreateError(napi_env env, const std::optional<std::string_view
   return error;
 }
 
-static bool HasProperty(napi_env env, napi_value obj, const std::string_view& key) {
-  bool has = false;
-  napi_has_named_property(env, obj, key.data(), &has);
-  return has;
-}
-
-static napi_value GetProperty(napi_env env, napi_value obj, const std::string_view& key) {
-  napi_value value = nullptr;
-  napi_get_named_property(env, obj, key.data(), &value);
-  return value;
-}
-
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_bool(env, value, &result));
+static napi_value ToError(napi_env env, const rocksdb::Status& status) {
+  if (status.ok()) {
+    return 0;
   }
 
-  return napi_ok;
-}
+  const auto msg = status.ToString();
 
-static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-
-    size_t size;
-    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, value, nullptr, 0, &size));
-
-    // Value is either "buffer" or "utf8" so we can tell them apart just by size
-    result = size == 6;
+  if (status.IsNotFound()) {
+    return CreateError(env, "LEVEL_NOT_FOUND", msg);
+  } else if (status.IsCorruption()) {
+    return CreateError(env, "LEVEL_CORRUPTION", msg);
+  } else if (status.IsTryAgain()) {
+    return CreateError(env, "LEVEL_TRYAGAIN", msg);
+  } else if (status.IsIOError()) {
+    if (msg.find("IO error: lock ") != std::string::npos) {  // env_posix.cc
+      return CreateError(env, "LEVEL_LOCKED", msg);
+    } else if (msg.find("IO error: LockFile ") != std::string::npos) {  // env_win.cc
+      return CreateError(env, "LEVEL_LOCKED", msg);
+    } else if (msg.find("IO error: While lock file") != std::string::npos) {  // env_mac.cc
+      return CreateError(env, "LEVEL_LOCKED", msg);
+    } else {
+      return CreateError(env, "LEVEL_IO_ERROR", msg);
+    }
   }
 
-  return napi_ok;
+  return CreateError(env, {}, msg);
 }
 
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_uint32(env, value, &result));
-  }
-
-  return napi_ok;
-}
-
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int32_t& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_int32(env, value, &result));
-  }
-
-  return napi_ok;
-}
-
-static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int64_t& result) {
-  bool has = false;
-  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
-
-  if (has) {
-    napi_value value;
-    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
-    NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result));
-  }
-
-  return napi_ok;
-}
 
 static napi_status ToString(napi_env env, napi_value from, std::string& to) {
   napi_valuetype type;
@@ -192,8 +146,59 @@ static napi_status ToString(napi_env env, napi_value from, rocksdb::PinnableSlic
   return napi_ok;
 }
 
-template <typename T>
-static napi_status StringProperty(napi_env env, napi_value obj, const std::string_view& key, T& result) {
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_bool(env, value, &result));
+  }
+
+  return napi_ok;
+}
+
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, uint32_t& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_uint32(env, value, &result));
+  }
+
+  return napi_ok;
+}
+
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int32_t& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_int32(env, value, &result));
+  }
+
+  return napi_ok;
+}
+
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, int64_t& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result));
+  }
+
+  return napi_ok;
+}
+
+static napi_status EncodingIsBuffer(napi_env env, napi_value obj, const std::string_view& key, bool& result) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
@@ -201,48 +206,47 @@ static napi_status StringProperty(napi_env env, napi_value obj, const std::strin
     napi_value value;
     NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
 
-    std::string to;
-    NAPI_STATUS_RETURN(ToString(env, value, to));
+    size_t size;
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, value, nullptr, 0, &size));
 
-    result = std::move(to);
+    // Value is either "buffer" or "utf8" so we can tell them apart just by size
+    result = size == 6;
   }
 
   return napi_ok;
 }
 
-static napi_value ToError(napi_env env, const rocksdb::Status& status) {
-  if (status.ok()) {
-    return 0;
+template<typename T>
+concept Stringable = requires (T x) { ToString(nullptr, nullptr, x); };
+
+template <typename T> requires Stringable<T>
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, T& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+    NAPI_STATUS_RETURN(ToString(env, value, result));
   }
 
-  const auto msg = status.ToString();
-
-  if (status.IsNotFound()) {
-    return CreateError(env, "LEVEL_NOT_FOUND", msg);
-  } else if (status.IsCorruption()) {
-    return CreateError(env, "LEVEL_CORRUPTION", msg);
-  } else if (status.IsTryAgain()) {
-    return CreateError(env, "LEVEL_TRYAGAIN", msg);
-  } else if (status.IsIOError()) {
-    if (msg.find("IO error: lock ") != std::string::npos) {  // env_posix.cc
-      return CreateError(env, "LEVEL_LOCKED", msg);
-    } else if (msg.find("IO error: LockFile ") != std::string::npos) {  // env_win.cc
-      return CreateError(env, "LEVEL_LOCKED", msg);
-    } else if (msg.find("IO error: While lock file") != std::string::npos) {  // env_mac.cc
-      return CreateError(env, "LEVEL_LOCKED", msg);
-    } else {
-      return CreateError(env, "LEVEL_IO_ERROR", msg);
-    }
-  }
-
-  return CreateError(env, {}, msg);
+  return napi_ok;
 }
 
-template <typename T>
-static void Finalize(napi_env env, void* data, void* hint) {
-  if (hint) {
-    delete reinterpret_cast<T*>(hint);
+template <typename T> requires Stringable<T>
+static napi_status Property(napi_env env, napi_value obj, const std::string_view& key, std::optional<T>& result) {
+  bool has = false;
+  NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
+
+  if (has) {
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
+
+    result = T{};
+    NAPI_STATUS_RETURN(ToString(env, value, *result));
   }
+
+  return napi_ok;
 }
 
 template <typename T>
