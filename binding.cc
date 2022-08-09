@@ -1335,13 +1335,13 @@ NAPI_METHOD(batch_do) {
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
 
   for (uint32_t i = 0; i < length; i++) {
-    std::string type;
-    std::string key;
-    std::string value;
+    rocksdb::PinnableSlice type;
+    rocksdb::PinnableSlice key;
+    rocksdb::PinnableSlice value;
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
-    NAPI_STATUS_THROWS(GetProperty(env, element, "type", type));
+    NAPI_STATUS_THROWS(GetProperty(env, element, "type", type, true));
 
     rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
     NAPI_STATUS_THROWS(GetProperty(env, element, "column", column));
