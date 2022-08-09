@@ -27,12 +27,21 @@
     }                             \
   }
 
-#define ROCKS_STATUS_THROWS(call)             \
+#define ROCKS_STATUS_THROWS_NAPI(call)        \
   {                                           \
     auto _status = (call);                    \
     if (!_status.ok()) {                      \
       napi_throw(env, ToError(env, _status)); \
       return NULL;                            \
+    }                                         \
+  }
+
+#define ROCKS_STATUS_RETURNS_NAPI(call)       \
+  {                                           \
+    auto _status = (call);                    \
+    if (!_status.ok()) {                      \
+      napi_throw(env, ToError(env, _status)); \
+      return napi_pending_exception;          \
     }                                         \
   }
 

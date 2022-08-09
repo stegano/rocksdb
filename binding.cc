@@ -108,7 +108,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
   napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
     cache_.reserve(batch.Count());
 
-    batch.Iterate(this);  // TODO (fix): Handle error?
+    ROCKS_STATUS_RETURNS_NAPI(batch.Iterate(this));
 
     napi_value putStr;
     NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
@@ -567,40 +567,51 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
     return rocksdb::Status::InvalidArgument("memtableMemoryBudget");
   }
 
-  std::string compaction = "level";
-  if (Property(env, options, "compaction", compaction) != napi_ok) {
+  std::optional<std::string> compactionOpt;
+  if (Property(env, options, "compaction", compactionOpt) != napi_ok) {
     return rocksdb::Status::InvalidArgument("compaction");
   }
+  if (compactionOpt) {
+    if (*compactionOpt == "universal") {
+      columnOptions.write_buffer_size = memtable_memory_budget / 4;
+      // merge two memtables when flushing to L0
+      columnOptions.min_write_buffer_number_to_merge = 2;
+      // this means we'll use 50% extra memory in the worst case, but will reduce
+      // write stalls.
+      columnOptions.max_write_buffer_number = 6;
+      // universal style compaction
+      columnOptions.compaction_style = rocksdb::kCompactionStyleUniversal;
+      columnOptions.compaction_options_universal.compression_size_percent = 80;
+    } else if (*compactionOpt == "level") {
+      // merge two memtables when flushing to L0
+      columnOptions.min_write_buffer_number_to_merge = 2;
+      // this means we'll use 50% extra memory in the worst case, but will reduce
+      // write stalls.
+      columnOptions.max_write_buffer_number = 6;
+      // start flushing L0->L1 as soon as possible. each file on level0 is
+      // (memtable_memory_budget / 2). This will flush level 0 when it's bigger than
+      // memtable_memory_budget.
+      columnOptions.level0_file_num_compaction_trigger = 2;
+      // doesn't really matter much, but we don't want to create too many files
+      columnOptions.target_file_size_base = memtable_memory_budget / 8;
+      // make Level1 size equal to Level0 size, so that L0->L1 compactions are fast
+      columnOptions.max_bytes_for_level_base = memtable_memory_budget;
 
-  if (compaction == "universal") {
-    columnOptions.write_buffer_size = memtable_memory_budget / 4;
-    // merge two memtables when flushing to L0
-    columnOptions.min_write_buffer_number_to_merge = 2;
-    // this means we'll use 50% extra memory in the worst case, but will reduce
-    // write stalls.
-    columnOptions.max_write_buffer_number = 6;
-    // universal style compaction
-    columnOptions.compaction_style = rocksdb::kCompactionStyleUniversal;
-    columnOptions.compaction_options_universal.compression_size_percent = 80;
-  } else {
-    // merge two memtables when flushing to L0
-    columnOptions.min_write_buffer_number_to_merge = 2;
-    // this means we'll use 50% extra memory in the worst case, but will reduce
-    // write stalls.
-    columnOptions.max_write_buffer_number = 6;
-    // start flushing L0->L1 as soon as possible. each file on level0 is
-    // (memtable_memory_budget / 2). This will flush level 0 when it's bigger than
-    // memtable_memory_budget.
-    columnOptions.level0_file_num_compaction_trigger = 2;
-    // doesn't really matter much, but we don't want to create too many files
-    columnOptions.target_file_size_base = memtable_memory_budget / 8;
-    // make Level1 size equal to Level0 size, so that L0->L1 compactions are fast
-    columnOptions.max_bytes_for_level_base = memtable_memory_budget;
+      // level style compaction
+      columnOptions.compaction_style = rocksdb::kCompactionStyleLevel;
 
-    // level style compaction
-    columnOptions.compaction_style = rocksdb::kCompactionStyleLevel;
-
-    // TODO (perf): only compress levels >= 2
+      // only compress levels >= 2
+      columnOptions.compression_per_level.resize(columnOptions.num_levels);
+      for (int i = 0; i < columnOptions.compression_per_level.size(); ++i) {
+        if (i < 2) {
+          columnOptions.compression_per_level[i] = rocksdb::kNoCompression;
+        } else {
+          columnOptions.compression_per_level[i] = rocksdb::kZSTD;
+        }
+      }
+    } else {
+      return rocksdb::Status::InvalidArgument("compaction");
+    }
   }
 
   bool compression = true;
@@ -691,7 +702,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
     return rocksdb::Status::InvalidArgument("blockSize");
   }
 
-  if (Property(env, options, "blockRestartInterval",  tableOptions.block_restart_interval) != napi_ok) {
+  if (Property(env, options, "blockRestartInterval", tableOptions.block_restart_interval) != napi_ok) {
     return rocksdb::Status::InvalidArgument("blockRestartInterval");
   }
 
@@ -740,7 +751,7 @@ NAPI_METHOD(db_open) {
 
   dbOptions.avoid_unnecessary_blocking_io = true;
   dbOptions.write_dbid_to_manifest = true;
-  dbOptions.use_adaptive_mutex = true;  // We don't have soo many threads in the libuv thread pool...
+  dbOptions.use_adaptive_mutex = true;       // We don't have soo many threads in the libuv thread pool...
   dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
   dbOptions.create_missing_column_families = true;
   dbOptions.fail_if_options_file_error = true;
@@ -779,7 +790,7 @@ NAPI_METHOD(db_open) {
     dbOptions.info_log.reset(new NullLogger());
   }
 
-  ROCKS_STATUS_THROWS(InitOptions(env, dbOptions, options));
+  ROCKS_STATUS_THROWS_NAPI(InitOptions(env, dbOptions, options));
 
   std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
 
@@ -804,7 +815,7 @@ NAPI_METHOD(db_open) {
       napi_value column;
       NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
-      ROCKS_STATUS_THROWS(InitOptions(env, descriptors[n].options, column));
+      ROCKS_STATUS_THROWS_NAPI(InitOptions(env, descriptors[n].options, column));
 
       NAPI_STATUS_THROWS(GetString(env, key, descriptors[n].name));
     }
@@ -1108,7 +1119,7 @@ NAPI_METHOD(db_clear) {
 
     if (begin.compare(end) < 0) {
       rocksdb::WriteOptions writeOptions;
-      ROCKS_STATUS_THROWS(database->db->DeleteRange(writeOptions, column, begin, end));
+      ROCKS_STATUS_THROWS_NAPI(database->db->DeleteRange(writeOptions, column, begin, end));
     }
 
     return 0;
@@ -1152,7 +1163,7 @@ NAPI_METHOD(db_clear) {
     it.Close();
 
     if (!status.ok()) {
-      ROCKS_STATUS_THROWS(status);
+      ROCKS_STATUS_THROWS_NAPI(status);
     }
 
     return 0;
@@ -1406,46 +1417,46 @@ NAPI_METHOD(batch_do) {
     NAPI_STATUS_THROWS(GetColumnFamily(database, env, element, &column));
 
     if (!type) {
-      ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("type"));
+      ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("type"));
     } else if (*type == "del") {
       NAPI_STATUS_THROWS(Property(env, element, "key", key));
       if (!key) {
-        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
+        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
       }
-      ROCKS_STATUS_THROWS(batch.Delete(column, *key));
+      ROCKS_STATUS_THROWS_NAPI(batch.Delete(column, *key));
     } else if (*type == "put") {
       NAPI_STATUS_THROWS(Property(env, element, "key", key));
       if (!key) {
-        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
+        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
       }
       NAPI_STATUS_THROWS(Property(env, element, "value", value));
       if (!value) {
-        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
+        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
       }
-      ROCKS_STATUS_THROWS(batch.Put(column, *key, *value));
+      ROCKS_STATUS_THROWS_NAPI(batch.Put(column, *key, *value));
     } else if (*type == "data") {
       NAPI_STATUS_THROWS(Property(env, element, "value", value));
       if (!value) {
-        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
+        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
       }
-      ROCKS_STATUS_THROWS(batch.PutLogData(*value));
+      ROCKS_STATUS_THROWS_NAPI(batch.PutLogData(*value));
     } else if (*type == "merge") {
       NAPI_STATUS_THROWS(Property(env, element, "key", key));
       if (!key) {
-        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("key"));
+        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
       }
       NAPI_STATUS_THROWS(Property(env, element, "value", value));
       if (!value) {
-        ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("value"));
+        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
       }
-      ROCKS_STATUS_THROWS(batch.Merge(column, *key, *value));
+      ROCKS_STATUS_THROWS_NAPI(batch.Merge(column, *key, *value));
     } else {
-      ROCKS_STATUS_THROWS(rocksdb::Status::InvalidArgument("type"));
+      ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("type"));
     }
   }
 
   rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db->Write(writeOptions, &batch));
+  ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, &batch));
 
   return 0;
 }
@@ -1475,9 +1486,9 @@ NAPI_METHOD(batch_put) {
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
 
   if (column) {
-    ROCKS_STATUS_THROWS(batch->Put(column, key, val));
+    ROCKS_STATUS_THROWS_NAPI(batch->Put(column, key, val));
   } else {
-    ROCKS_STATUS_THROWS(batch->Put(key, val));
+    ROCKS_STATUS_THROWS_NAPI(batch->Put(key, val));
   }
 
   return 0;
@@ -1496,9 +1507,9 @@ NAPI_METHOD(batch_del) {
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[2], &column));
 
   if (column) {
-    ROCKS_STATUS_THROWS(batch->Delete(column, key));
+    ROCKS_STATUS_THROWS_NAPI(batch->Delete(column, key));
   } else {
-    ROCKS_STATUS_THROWS(batch->Delete(key));
+    ROCKS_STATUS_THROWS_NAPI(batch->Delete(key));
   }
 
   return 0;
@@ -1520,9 +1531,9 @@ NAPI_METHOD(batch_merge) {
   NAPI_STATUS_THROWS(GetColumnFamily(nullptr, env, argv[3], &column));
 
   if (column) {
-    ROCKS_STATUS_THROWS(batch->Merge(column, key, val));
+    ROCKS_STATUS_THROWS_NAPI(batch->Merge(column, key, val));
   } else {
-    ROCKS_STATUS_THROWS(batch->Merge(key, val));
+    ROCKS_STATUS_THROWS_NAPI(batch->Merge(key, val));
   }
 
   return 0;
@@ -1549,7 +1560,7 @@ NAPI_METHOD(batch_write) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
   rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS(database->db->Write(writeOptions, batch));
+  ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
 
   return 0;
 }
@@ -1563,7 +1574,7 @@ NAPI_METHOD(batch_put_log_data) {
   rocksdb::PinnableSlice logData;
   NAPI_STATUS_THROWS(GetString(env, argv[1], logData));
 
-  ROCKS_STATUS_THROWS(batch->PutLogData(logData));
+  ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(logData));
 
   return 0;
 }
