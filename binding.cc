@@ -726,13 +726,15 @@ NAPI_METHOD(db_open) {
 
   uint32_t parallelism = std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2);
   NAPI_STATUS_THROWS(Uint32Property(env, argv[2], "parallelism", parallelism));
-
   dbOptions.IncreaseParallelism(parallelism);
 
-  dbOptions.create_if_missing = true;
-  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "createIfMissing", dbOptions.create_if_missing));
-  dbOptions.error_if_exists = false;
-  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "errorIfExists", dbOptions.error_if_exists));
+  bool createIfMissing = true;
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "createIfMissing", createIfMissing));
+  dbOptions.create_if_missing = createIfMissing;
+
+  bool errorIfExists = false;
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "errorIfExists", errorIfExists));
+  dbOptions.error_if_exists = errorIfExists;
 
   dbOptions.avoid_unnecessary_blocking_io = true;
 
@@ -750,20 +752,22 @@ NAPI_METHOD(db_open) {
   NAPI_STATUS_THROWS(Uint32Property(env, argv[2], "walSizeLimit", walSizeLimit));
   dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
 
-  bool wal_compression = false;
-  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "walCompression", wal_compression));
+  bool walCompression = false;
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "walCompression", walCompression));
   dbOptions.wal_compression =
-      wal_compression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
+      walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
 
   dbOptions.create_missing_column_families = true;
 
-  dbOptions.unordered_write = false;
+  bool unorderedWrite = false;
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "unorderedWrite", unorderedWrite));
+  dbOptions.unordered_write = unorderedWrite;
 
-  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "unorderedWrite", dbOptions.unordered_write));
   dbOptions.fail_if_options_file_error = true;
 
-  dbOptions.manual_wal_flush = false;
-  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "manualWalFlush", dbOptions.manual_wal_flush));
+  bool manualWalFlush = false;
+  NAPI_STATUS_THROWS(BooleanProperty(env, argv[2], "manualWalFlush", manualWalFlush));
+  dbOptions.manual_wal_flush = manualWalFlush;
 
   // TODO (feat): dbOptions.listeners
 
