@@ -562,7 +562,7 @@ template <typename T, typename U>
 rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::ConfigOptions configOptions;
 
-  uint32_t memtable_memory_budget = 256 * 1024 * 1024;
+  size_t memtable_memory_budget = 256 * 1024 * 1024;
   if (Property(env, options, "memtableMemoryBudget", memtable_memory_budget) != napi_ok) {
     return rocksdb::Status::InvalidArgument("memtableMemoryBudget");
   }
@@ -573,7 +573,7 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   if (compaction == "universal") {
-    columnOptions.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
+    columnOptions.write_buffer_size = memtable_memory_budget / 4;
     // merge two memtables when flushing to L0
     columnOptions.min_write_buffer_number_to_merge = 2;
     // this means we'll use 50% extra memory in the worst case, but will reduce
@@ -608,8 +608,8 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
     return rocksdb::Status::InvalidArgument("compression");
   }
 
-  columnOptions.compression = compression ? rocksdb::kZSTD : rocksdb::kNoCompression;
-  if (columnOptions.compression == rocksdb::kZSTD) {
+  if (compression) {
+    columnOptions.compression = rocksdb::kZSTD;
     columnOptions.compression_opts.max_dict_bytes = 16 * 1024;
     columnOptions.compression_opts.zstd_max_train_bytes = 16 * 1024 * 100;
     // TODO (perf): compression_opts.parallel_threads
@@ -687,17 +687,13 @@ rocksdb::Status InitOptions(napi_env env, T& columnOptions, const U& options) {
         rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
   }
 
-  uint32_t blockSize = 4096;
-  if (Property(env, options, "blockSize", blockSize) != napi_ok) {
+  if (Property(env, options, "blockSize", tableOptions.block_size) != napi_ok) {
     return rocksdb::Status::InvalidArgument("blockSize");
   }
-  tableOptions.block_size = blockSize;
 
-  uint32_t blockRestartInterval = 16;
-  if (Property(env, options, "blockRestartInterval", blockRestartInterval) != napi_ok) {
+  if (Property(env, options, "blockRestartInterval",  tableOptions.block_restart_interval) != napi_ok) {
     return rocksdb::Status::InvalidArgument("blockRestartInterval");
   }
-  tableOptions.block_restart_interval = blockRestartInterval;
 
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
@@ -725,25 +721,9 @@ NAPI_METHOD(db_open) {
 
   const auto options = argv[2];
 
-  uint32_t parallelism = std::max<uint32_t>(1, std::thread::hardware_concurrency() / 2);
+  int parallelism = std::max<int>(1, std::thread::hardware_concurrency() / 2);
   NAPI_STATUS_THROWS(Property(env, options, "parallelism", parallelism));
   dbOptions.IncreaseParallelism(parallelism);
-
-  bool createIfMissing = true;
-  NAPI_STATUS_THROWS(Property(env, options, "createIfMissing", createIfMissing));
-  dbOptions.create_if_missing = createIfMissing;
-
-  bool errorIfExists = false;
-  NAPI_STATUS_THROWS(Property(env, options, "errorIfExists", errorIfExists));
-  dbOptions.error_if_exists = errorIfExists;
-
-  dbOptions.avoid_unnecessary_blocking_io = true;
-
-  dbOptions.write_dbid_to_manifest = true;
-
-  dbOptions.use_adaptive_mutex = true;  // We don't have soo many threads in the libuv thread pool...
-
-  dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
 
   uint32_t walTTL;
   NAPI_STATUS_THROWS(Property(env, options, "walTTL", walTTL));
@@ -758,17 +738,16 @@ NAPI_METHOD(db_open) {
   dbOptions.wal_compression =
       walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
 
+  dbOptions.avoid_unnecessary_blocking_io = true;
+  dbOptions.write_dbid_to_manifest = true;
+  dbOptions.use_adaptive_mutex = true;  // We don't have soo many threads in the libuv thread pool...
+  dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
   dbOptions.create_missing_column_families = true;
-
-  bool unorderedWrite = false;
-  NAPI_STATUS_THROWS(Property(env, options, "unorderedWrite", unorderedWrite));
-  dbOptions.unordered_write = unorderedWrite;
-
   dbOptions.fail_if_options_file_error = true;
 
-  bool manualWalFlush = false;
-  NAPI_STATUS_THROWS(Property(env, options, "manualWalFlush", manualWalFlush));
-  dbOptions.manual_wal_flush = manualWalFlush;
+  NAPI_STATUS_THROWS(Property(env, options, "createIfMissing", dbOptions.create_if_missing));
+  NAPI_STATUS_THROWS(Property(env, options, "errorIfExists", dbOptions.error_if_exists));
+  NAPI_STATUS_THROWS(Property(env, options, "unorderedWrite", dbOptions.unordered_write));
 
   // TODO (feat): dbOptions.listeners
 
