@@ -111,22 +111,31 @@ static napi_status GetString(napi_env env, napi_value from, std::string& to) {
   return napi_ok;
 }
 
-void DestroyReference(void* arg1, void* arg2) {
-  auto env = reinterpret_cast<napi_env>(arg1);
-  auto ref = reinterpret_cast<napi_ref>(arg2);
-  napi_delete_reference(env, ref);
-}
+class NapiSlice : public rocksdb::Slice {
+ public:
+  NapiSlice() {}
 
-static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSlice& to) {
+  NapiSlice(NapiSlice&& other) = delete;
+  NapiSlice& operator=(NapiSlice&& other) = delete;
+
+  NapiSlice(NapiSlice&) = delete;
+  NapiSlice& operator=(NapiSlice&) = delete;
+
+  std::string self_space_;
+};
+
+static napi_status GetString(napi_env env, napi_value from, NapiSlice& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
 
   if (type == napi_string) {
     size_t length = 0;
     NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &length));
-    to.GetSelf()->resize(length, '\0');
-    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, &(*to.GetSelf())[0], length + 1, &length));
-    to.PinSelf();
+    to.self_space_.resize(length, '\0');
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, &to.self_space_[0], length + 1, &length));
+
+    to.data_ = to.self_space_.data();
+    to.size_ = length;
   } else {
     bool isBuffer;
     NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
@@ -136,9 +145,8 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSli
       size_t length = 0;
       NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
 
-      napi_ref ref;
-      NAPI_STATUS_RETURN(napi_create_reference(env, from, 1, &ref));
-      to.PinSlice(rocksdb::Slice(buf, length), DestroyReference, env, ref);
+      to.data_ = buf;
+      to.size_ = length;
     } else {
       return napi_invalid_arg;
     }
@@ -183,7 +191,7 @@ static napi_status GetValue(napi_env env, napi_value value, std::string& result)
   return GetString(env, value, result);
 }
 
-static napi_status GetValue(napi_env env, napi_value value, rocksdb::PinnableSlice& result) {
+static napi_status GetValue(napi_env env, napi_value value, NapiSlice& result) {
   return GetString(env, value, result);
 }
 

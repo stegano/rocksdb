@@ -1107,7 +1107,7 @@ NAPI_METHOD(db_get_property) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  rocksdb::PinnableSlice property;
+  NapiSlice property;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], property));
 
   std::string value;
@@ -1203,7 +1203,7 @@ NAPI_METHOD(iterator_seek) {
   Iterator* iterator;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
-  rocksdb::PinnableSlice target;
+  NapiSlice target;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
   iterator->first_ = true;
@@ -1338,14 +1338,10 @@ NAPI_METHOD(batch_do) {
   uint32_t length;
   NAPI_STATUS_THROWS(napi_get_array_length(env, elements, &length));
 
-  rocksdb::PinnableSlice type;
-  rocksdb::PinnableSlice key;
-  rocksdb::PinnableSlice value;
-
   for (uint32_t i = 0; i < length; i++) {
-    type.Reset();
-    key.Reset();
-    value.Reset();
+    NapiSlice type;
+    NapiSlice key;
+    NapiSlice value;
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, elements, i, &element));
@@ -1395,10 +1391,10 @@ NAPI_METHOD(batch_put) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
-  rocksdb::PinnableSlice key;
+  NapiSlice key;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
-  rocksdb::PinnableSlice val;
+  NapiSlice val;
   NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
@@ -1421,7 +1417,7 @@ NAPI_METHOD(batch_del) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
-  rocksdb::PinnableSlice key;
+  NapiSlice key;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   const auto options = argv[2];
@@ -1444,10 +1440,10 @@ NAPI_METHOD(batch_merge) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
 
-  rocksdb::PinnableSlice key;
+  NapiSlice key;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
-  rocksdb::PinnableSlice val;
+  NapiSlice val;
   NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
@@ -1496,7 +1492,7 @@ NAPI_METHOD(batch_put_log_data) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
-  rocksdb::PinnableSlice logData;
+  NapiSlice logData;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], logData));
 
   ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(logData));
