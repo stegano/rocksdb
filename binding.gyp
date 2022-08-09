@@ -15,7 +15,7 @@
                             "-mbmi",
                             "-mlzcnt"
                         ],
-                        "ccflags": ["-flto", "-std=c++2a"],
+                        "ccflags": ["-flto"],
                         "cflags!": ["-fno-exceptions"],
                         "cflags_cc!": ["-fno-exceptions"],
                         "ldflags": ["-flto", "-fuse-linker-plugin"]
@@ -33,7 +33,7 @@
                             ],
                             "OTHER_CPLUSPLUSFLAGS": [
                                 "-mmacosx-version-min=12.2.1",
-                                "-std=c++2b",
+                                "-std=c++20",
                                 "-fno-omit-frame-pointer",
                                 "-momit-leaf-frame-pointer",
                                 "-arch x86_64",
