@@ -1336,18 +1336,23 @@ NAPI_METHOD(batch_do) {
   uint32_t length;
   NAPI_STATUS_THROWS(napi_get_array_length(env, elements, &length));
 
+  rocksdb::PinnableSlice type;
+  rocksdb::PinnableSlice key;
+  rocksdb::PinnableSlice value;
+
   for (uint32_t i = 0; i < length; i++) {
+    type.Reset();
+    key.Reset();
+    value.Reset();
+
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, elements, i, &element));
 
-    rocksdb::PinnableSlice type;
     NAPI_STATUS_THROWS(GetProperty(env, element, "type", type, true));
 
     rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
     NAPI_STATUS_THROWS(GetProperty(env, element, "column", column));
 
-    rocksdb::PinnableSlice key;
-    rocksdb::PinnableSlice value;
     if (type == "del") {
       NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
       ROCKS_STATUS_THROWS_NAPI(batch.Delete(column, key));
