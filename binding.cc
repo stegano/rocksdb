@@ -831,14 +831,15 @@ NAPI_METHOD(updates_init) {
   rocksdb::ColumnFamilyHandle* column = nullptr;
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
-  auto updates = new Updates(database, since, keys, values, data, column, keyEncoding, valueEncoding);
+  auto updates =
+      std::unique_ptr<Updates>(new Updates(database, since, keys, values, data, column, keyEncoding, valueEncoding));
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, updates, Finalize<Updates>, updates, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  updates->Attach(env, result);
+  updates.release()->Attach(env, result);
 
   return result;
 }
@@ -1178,15 +1179,16 @@ NAPI_METHOD(iterator_init) {
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
                                                     [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
-  auto iterator = new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache, keyEncoding,
-                               valueEncoding, highWaterMarkBytes, snapshot);
+  auto iterator =
+      std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
+                                             fillCache, keyEncoding, valueEncoding, highWaterMarkBytes, snapshot));
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, iterator, Finalize<Iterator>, iterator, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
 
   // Prevent GC of JS object before the iterator is closed (explicitly or on
   // db close) and keep track of non-closed iterators to end them on db close.
-  iterator->Attach(env, result);
+  iterator.release()->Attach(env, result);
 
   return result;
 }
