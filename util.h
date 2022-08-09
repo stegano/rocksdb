@@ -228,12 +228,12 @@ static napi_status GetValue(napi_env env, napi_value value, std::optional<T>& re
 }
 
 template <typename T>
-static napi_status GetProperty(napi_env env, napi_value obj, const std::string_view& key, T& result) {
+static napi_status GetProperty(napi_env env, napi_value obj, const std::string_view& key, T& result, bool required = false) {
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
   if (!has) {
-    return napi_ok;
+    return required ? napi_invalid_arg : napi_ok;
   }
 
   napi_value value;
@@ -245,14 +245,14 @@ static napi_status GetProperty(napi_env env, napi_value obj, const std::string_v
   NAPI_STATUS_RETURN(napi_get_null(env, &nullVal));
   NAPI_STATUS_RETURN(napi_strict_equals(env, nullVal, value, &nully));
   if (nully) {
-    return napi_ok;
+    return required ? napi_invalid_arg : napi_ok;
   }
 
   napi_value undefinedVal;
   NAPI_STATUS_RETURN(napi_get_undefined(env, &undefinedVal));
   NAPI_STATUS_RETURN(napi_strict_equals(env, undefinedVal, value, &nully));
   if (nully) {
-    return napi_ok;
+    return required ? napi_invalid_arg : napi_ok;
   }
 
   return GetValue(env, value, result);

@@ -1366,9 +1366,9 @@ NAPI_METHOD(batch_do) {
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
 
   for (uint32_t i = 0; i < length; i++) {
-    std::optional<std::string> type;
-    std::optional<std::string> key;
-    std::optional<std::string> value;
+    std::string type;
+    std::string key;
+    std::string value;
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], i, &element));
@@ -1377,42 +1377,22 @@ NAPI_METHOD(batch_do) {
     rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
     NAPI_STATUS_THROWS(GetProperty(env, element, "column", column));
 
-    if (!type) {
-      ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("type"));
-    } else if (*type == "del") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key));
-      if (!key) {
-        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
-      }
-      ROCKS_STATUS_THROWS_NAPI(batch.Delete(column, *key));
-    } else if (*type == "put") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key));
-      if (!key) {
-        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
-      }
-      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value));
-      if (!value) {
-        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
-      }
-      ROCKS_STATUS_THROWS_NAPI(batch.Put(column, *key, *value));
-    } else if (*type == "data") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value));
-      if (!value) {
-        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
-      }
-      ROCKS_STATUS_THROWS_NAPI(batch.PutLogData(*value));
-    } else if (*type == "merge") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key));
-      if (!key) {
-        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("key"));
-      }
-      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value));
-      if (!value) {
-        ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("value"));
-      }
-      ROCKS_STATUS_THROWS_NAPI(batch.Merge(column, *key, *value));
+    if (type == "del") {
+      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
+      ROCKS_STATUS_THROWS_NAPI(batch.Delete(column, key));
+    } else if (type == "put") {
+      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
+      ROCKS_STATUS_THROWS_NAPI(batch.Put(column, key, value));
+    } else if (type == "data") {
+      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
+      ROCKS_STATUS_THROWS_NAPI(batch.PutLogData(value));
+    } else if (type == "merge") {
+      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
+      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
+      ROCKS_STATUS_THROWS_NAPI(batch.Merge(column, key, value));
     } else {
-      ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::InvalidArgument("type"));
+      return napi_invalid_arg;
     }
   }
 
