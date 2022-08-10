@@ -1554,6 +1554,58 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
+NAPI_METHOD(db_get_sorted_wal_files) {
+  NAPI_ARGV(3);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  auto callback = argv[1];
+
+  runAsync<rocksdb::VectorLogPtr>(
+      "leveldown.open", env, callback,
+      [=](auto& files) {
+        return database->db->GetSortedWalFiles(files);
+      },
+      [=](auto& files, auto env, auto& argv) {
+        argv.resize(2);
+
+        const auto size = files.size();
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &argv[1]));
+
+        for (size_t n = 0; n < size; ++n) {
+          napi_value element;
+          NAPI_STATUS_RETURN(napi_create_object(env, &element));
+
+          napi_value pathName;
+          NAPI_STATUS_RETURN(napi_create_string_utf8(env, files[n]->PathName().data(), NAPI_AUTO_LENGTH, &pathName))
+          NAPI_STATUS_RETURN(napi_set_named_property(env, element, "pathName", pathName));
+
+          napi_value logNumber;
+          NAPI_STATUS_RETURN(napi_create_int32(env, files[n]->LogNumber(), &logNumber))
+          NAPI_STATUS_RETURN(napi_set_named_property(env, element, "logNumber", logNumber));
+
+          napi_value type;
+          NAPI_STATUS_RETURN(napi_create_int32(env, files[n]->Type(), &type))
+          NAPI_STATUS_RETURN(napi_set_named_property(env, element, "type", type));
+
+          napi_value startSequence;
+          NAPI_STATUS_RETURN(napi_create_int64(env, files[n]->StartSequence(), &startSequence))
+          NAPI_STATUS_RETURN(napi_set_named_property(env, element, "startSequence", startSequence));
+
+          napi_value sizeFileBytes;
+          NAPI_STATUS_RETURN(napi_create_int64(env, files[n]->SizeFileBytes(), &sizeFileBytes))
+          NAPI_STATUS_RETURN(napi_set_named_property(env, element, "sizeFileBytes", sizeFileBytes));
+
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], n, element));
+        }
+
+        return napi_ok;
+      });
+
+  return 0;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1562,6 +1614,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
+  NAPI_EXPORT_FUNCTION(db_get_sorted_wal_files);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
