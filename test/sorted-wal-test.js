@@ -17,6 +17,7 @@ test('test sorted wal', async function (t) {
   batch._put('1', 'a')
   batch._put('2', 'b')
   await batch.write()
+  await db.flushWal()
   const walFiles = await db.getSortedWalFiles()
   t.ok(Array.isArray(walFiles))
   t.ok(walFiles[0])
