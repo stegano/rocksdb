@@ -121,7 +121,9 @@ class NapiSlice : public rocksdb::Slice {
   NapiSlice(NapiSlice&) = delete;
   NapiSlice& operator=(NapiSlice&) = delete;
 
-  std::string self_space_;
+  std::array<char, 128> stack_;
+  std::unique_ptr<char[]> heap_;
+  size_t heap_size_ = 0;
 };
 
 static napi_status GetString(napi_env env, napi_value from, NapiSlice& to) {
@@ -131,10 +133,22 @@ static napi_status GetString(napi_env env, napi_value from, NapiSlice& to) {
   if (type == napi_string) {
     size_t length = 0;
     NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &length));
-    to.self_space_.resize(length, '\0');
-    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, &to.self_space_[0], length + 1, &length));
 
-    to.data_ = to.self_space_.data();
+    char* data;
+    if (length + 1 > to.stack_.size()) {
+      if (to.heap_size_ < length + 1) {
+        to.heap_size_ = length + 1;
+        to.heap_.reset(new char[to.heap_size_]);
+      }
+      data = to.heap_.get();
+    } else {
+      data = to.stack_.data();
+    }
+    data[length] = 0;
+
+    NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, data, length + 1, &length));
+
+    to.data_ = data;
     to.size_ = length;
   } else {
     bool isBuffer;
