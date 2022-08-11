@@ -368,7 +368,7 @@ class RocksLevel extends AbstractLevel {
               ...options,
               signal: ac.signal,
               // HACK: https://github.com/facebook/rocksdb/issues/10476
-              since: Math.max(0, options.since)
+              since: Math.max(0, options.since - 2048)
             })) {
               if (first) {
                 if (update.sequence > since) {
