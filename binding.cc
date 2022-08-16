@@ -1477,7 +1477,7 @@ NAPI_METHOD(batch_clear) {
 }
 
 NAPI_METHOD(batch_write) {
-  NAPI_ARGV(3);
+  NAPI_ARGV(4);
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
@@ -1485,8 +1485,34 @@ NAPI_METHOD(batch_write) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
-  rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
+  auto options = argv[2];
+  auto callback = argv[3];
+
+  std::optional<bool> sync;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
+
+  if (sync) {
+    napi_ref batchRef;
+    NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
+
+    struct State {};
+    runAsync<State>(
+        "leveldown.batch.write", env, callback,
+        [=](auto& state) {
+          rocksdb::WriteOptions writeOptions;
+          writeOptions.sync = *sync;
+          return database->db->Write(writeOptions, batch);
+        },
+        [=](auto& state, auto env, auto& argv) { return napi_delete_reference(env, batchRef); });
+  } else {
+    rocksdb::WriteOptions writeOptions;
+    ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
+
+    napi_value global;
+    NAPI_STATUS_THROWS(napi_get_global(env, &global));
+
+    NAPI_STATUS_THROWS(napi_call_function(env, global, callback, 0, nullptr, nullptr));
+  }
 
   return 0;
 }
@@ -1563,10 +1589,7 @@ NAPI_METHOD(db_get_sorted_wal_files) {
   auto callback = argv[1];
 
   runAsync<rocksdb::VectorLogPtr>(
-      "leveldown.open", env, callback,
-      [=](auto& files) {
-        return database->db->GetSortedWalFiles(files);
-      },
+      "leveldown.open", env, callback, [=](auto& files) { return database->db->GetSortedWalFiles(files); },
       [=](auto& files, auto env, auto& argv) {
         argv.resize(2);
 
@@ -1620,13 +1643,8 @@ NAPI_METHOD(db_flush_wal) {
   auto callback = argv[2];
 
   runAsync<bool>(
-      "leveldown.open", env, callback,
-      [=](auto& state) {
-        return database->db->FlushWAL(sync);
-      },
-      [=](auto& state, auto env, auto& argv) {
-        return napi_ok;
-      });
+      "leveldown.flushWal", env, callback, [=](auto& state) { return database->db->FlushWAL(sync); },
+      [=](auto& state, auto env, auto& argv) { return napi_ok; });
 
   return 0;
 }
