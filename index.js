@@ -115,7 +115,7 @@ class RocksLevel extends AbstractLevel {
   [kUnref] () {
     this[kRefs]--
     if (this[kRefs] === 0 && this[kPendingClose]) {
-      this[kPendingClose]()
+      process.nextTick(this[kPendingClose])
     }
   }
 
@@ -205,7 +205,10 @@ class RocksLevel extends AbstractLevel {
       try {
         const seq = this.sequence
         let sync = true
+        this[kRef]()
         binding.batch_write(this[kContext], context, options, (err) => {
+          this[kUnref]()
+
           if (!err) {
             this.emit('update', {
               rows: batch.toArray(),
