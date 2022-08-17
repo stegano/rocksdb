@@ -346,7 +346,7 @@ class RocksLevel extends AbstractLevel {
     const db = this
 
     try {
-      let since = options.since
+      let since = (options.since ?? 0) + 1
       while (true) {
         const buffer = new Readable({
           signal: ac.signal,
