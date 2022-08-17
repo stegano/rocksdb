@@ -206,14 +206,14 @@ class RocksLevel extends AbstractLevel {
         const seq = this.sequence
         let sync = true
         this[kRef]()
-        binding.batch_write(this[kContext], context, options, (err) => {
+        binding.batch_write(this[kContext], context, options, (err, sequence) => {
           this[kUnref]()
 
           if (!err) {
             this.emit('update', {
               rows: batch.toArray(),
               count: batch.length,
-              sequence: seq + 1
+              sequence: sequence ?? (seq + 1)
             })
           }
           if (sync) {

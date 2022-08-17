@@ -1495,23 +1495,37 @@ NAPI_METHOD(batch_write) {
     napi_ref batchRef;
     NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
 
-    struct State {};
-    runAsync<State>(
+    runAsync<int64_t>(
         "leveldown.batch.write", env, callback,
-        [=](auto& state) {
+        [=](int64_t& seq) {
           rocksdb::WriteOptions writeOptions;
           writeOptions.sync = *sync;
+
+          // TODO (fix): Better way to get final batch sequence?
+          seq = database->db->GetLatestSequenceNumber() + 1;
+
           return database->db->Write(writeOptions, batch);
         },
-        [=](auto& state, auto env, auto& argv) { return napi_delete_reference(env, batchRef); });
+        [=](int64_t& seq, auto env, auto& argv) {
+          argv.resize(2);
+          NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
+          NAPI_STATUS_RETURN(napi_create_int64(env, seq, &argv[1]));
+          return napi_ok;
+        });
   } else {
+    // TODO (fix): Better way to get final batch sequence?
+    auto seq = database->db->GetLatestSequenceNumber() + 1;
+
+    napi_value result;
+    NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result));
+
     rocksdb::WriteOptions writeOptions;
     ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
 
     napi_value global;
     NAPI_STATUS_THROWS(napi_get_global(env, &global));
 
-    NAPI_STATUS_THROWS(napi_call_function(env, global, callback, 0, nullptr, nullptr));
+    NAPI_STATUS_THROWS(napi_call_function(env, global, callback, 1, &result, nullptr));
   }
 
   return 0;
