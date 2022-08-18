@@ -1516,8 +1516,10 @@ NAPI_METHOD(batch_write) {
     // TODO (fix): Better way to get final batch sequence?
     auto seq = database->db->GetLatestSequenceNumber() + 1;
 
-    napi_value result;
-    NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result));
+    std::array<napi_value, 2> result;
+
+    NAPI_STATUS_THROWS(napi_get_null(env, &result[0]));
+    NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result[1]));
 
     rocksdb::WriteOptions writeOptions;
     ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
@@ -1525,7 +1527,7 @@ NAPI_METHOD(batch_write) {
     napi_value global;
     NAPI_STATUS_THROWS(napi_get_global(env, &global));
 
-    NAPI_STATUS_THROWS(napi_call_function(env, global, callback, 1, &result, nullptr));
+    NAPI_STATUS_THROWS(napi_call_function(env, global, callback, result.size(), result.data(), nullptr));
   }
 
   return 0;

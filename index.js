@@ -209,6 +209,12 @@ class RocksLevel extends AbstractLevel {
         binding.batch_write(this[kContext], context, options, (err, sequence) => {
           this[kUnref]()
 
+          // TODO (fix): Temporary workaround.
+          if (sequence == null && typeof err === 'number') {
+            sequence = err
+            err = null
+          }
+
           if (!err) {
             this.emit('update', {
               rows: batch.toArray(),
