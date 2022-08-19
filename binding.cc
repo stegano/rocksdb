@@ -688,8 +688,8 @@ NAPI_METHOD(db_open) {
 
   dbOptions.avoid_unnecessary_blocking_io = true;
   dbOptions.write_dbid_to_manifest = true;
-  dbOptions.use_adaptive_mutex = true;       // We don't have soo many threads in the libuv thread pool...
-  dbOptions.enable_pipelined_write = false;  // We only write in the main thread...
+  dbOptions.use_adaptive_mutex = true;      // We don't have soo many threads in the libuv thread pool...
+  dbOptions.enable_pipelined_write = true;  // We only write in the main thread...
   dbOptions.create_missing_column_families = true;
   dbOptions.fail_if_options_file_error = true;
 
@@ -1488,47 +1488,29 @@ NAPI_METHOD(batch_write) {
   auto options = argv[2];
   auto callback = argv[3];
 
-  std::optional<bool> sync;
+  bool sync = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
 
-  if (sync) {
-    napi_ref batchRef;
-    NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
+  napi_ref batchRef;
+  NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
 
-    runAsync<int64_t>(
-        "leveldown.batch.write", env, callback,
-        [=](int64_t& seq) {
-          rocksdb::WriteOptions writeOptions;
-          writeOptions.sync = *sync;
+  runAsync<int64_t>(
+      "leveldown.batch.write", env, callback,
+      [=](int64_t& seq) {
+        rocksdb::WriteOptions writeOptions;
+        writeOptions.sync = sync;
 
-          // TODO (fix): Better way to get final batch sequence?
-          seq = database->db->GetLatestSequenceNumber() + 1;
+        // TODO (fix): Better way to get batch sequence?
+        seq = database->db->GetLatestSequenceNumber() + 1;
 
-          return database->db->Write(writeOptions, batch);
-        },
-        [=](int64_t& seq, auto env, auto& argv) {
-          argv.resize(2);
-          NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
-          NAPI_STATUS_RETURN(napi_create_int64(env, seq, &argv[1]));
-          return napi_ok;
-        });
-  } else {
-    // TODO (fix): Better way to get final batch sequence?
-    auto seq = database->db->GetLatestSequenceNumber() + 1;
-
-    std::array<napi_value, 2> result;
-
-    NAPI_STATUS_THROWS(napi_get_null(env, &result[0]));
-    NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result[1]));
-
-    rocksdb::WriteOptions writeOptions;
-    ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
-
-    napi_value global;
-    NAPI_STATUS_THROWS(napi_get_global(env, &global));
-
-    NAPI_STATUS_THROWS(napi_call_function(env, global, callback, result.size(), result.data(), nullptr));
-  }
+        return database->db->Write(writeOptions, batch);
+      },
+      [=](int64_t& seq, auto env, auto& argv) {
+        argv.resize(2);
+        NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
+        NAPI_STATUS_RETURN(napi_create_int64(env, seq, &argv[1]));
+        return napi_ok;
+      });
 
   return 0;
 }
