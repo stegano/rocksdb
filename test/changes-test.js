@@ -31,7 +31,7 @@ test('test updates()', async function (t) {
   t.equal(batch2.length, 1)
 
   const val = []
-  for await (const { rows, sequence, count } of db.updates({ since: 2 })) {
+  for await (const { rows, sequence, count } of db.updates({ since: 2 - 1 })) {
     t.equal(count, 1)
     t.equal(sequence, 2)
     t.equal(sequence + count - 1, db.sequence)
