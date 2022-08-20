@@ -251,6 +251,7 @@
         "rocksdb/db/wal_edit.cc",
         "rocksdb/db/wal_manager.cc",
         "rocksdb/db/wide/wide_column_serialization.cc",
+        "rocksdb/db/wide/wide_columns.cc",
         "rocksdb/db/write_batch.cc",
         "rocksdb/db/write_batch_base.cc",
         "rocksdb/db/write_controller.cc",
