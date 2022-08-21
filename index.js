@@ -227,8 +227,21 @@ class RocksLevel extends AbstractLevel {
     callback = fromCallback(callback, kPromise)
 
     try {
-      binding.batch_do(this[kContext], operations, options ?? EMPTY)
-      process.nextTick(callback, null)
+      this[kRef]()
+      binding.batch_do(this[kContext], operations, options ?? EMPTY, (err, sequence) => {
+        this[kUnref]()
+
+        // TODO (fix)
+        // if (!err) {
+        //   this.emit('update', {
+        //     rows: batch.toArray(),
+        //     count: batch.length,
+        //     sequence: sequence
+        //   })
+        // }
+
+        callback(err)
+      })
     } catch (err) {
       process.nextTick(callback, err)
     }

@@ -1331,14 +1331,19 @@ NAPI_METHOD(iterator_nextv) {
 }
 
 NAPI_METHOD(batch_do) {
-  NAPI_ARGV(3);
+  NAPI_ARGV(4);
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  rocksdb::WriteBatch batch;
+  const auto elements = argv[1];
+  const auto options = argv[2];
+  const auto callback = argv[3];
 
-  auto elements = argv[1];
+  bool sync = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
+
+  auto batch = std::make_unique<rocksdb::WriteBatch>();
 
   uint32_t length;
   NAPI_STATUS_THROWS(napi_get_array_length(env, elements, &length));
@@ -1358,25 +1363,39 @@ NAPI_METHOD(batch_do) {
 
     if (type == "del") {
       NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
-      ROCKS_STATUS_THROWS_NAPI(batch.Delete(column, key));
+      ROCKS_STATUS_THROWS_NAPI(batch->Delete(column, key));
     } else if (type == "put") {
       NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
       NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
-      ROCKS_STATUS_THROWS_NAPI(batch.Put(column, key, value));
+      ROCKS_STATUS_THROWS_NAPI(batch->Put(column, key, value));
     } else if (type == "data") {
       NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
-      ROCKS_STATUS_THROWS_NAPI(batch.PutLogData(value));
+      ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(value));
     } else if (type == "merge") {
       NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
       NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
-      ROCKS_STATUS_THROWS_NAPI(batch.Merge(column, key, value));
+      ROCKS_STATUS_THROWS_NAPI(batch->Merge(column, key, value));
     } else {
       NAPI_STATUS_THROWS(napi_invalid_arg);
     }
   }
 
-  rocksdb::WriteOptions writeOptions;
-  ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, &batch));
+  runAsync<int64_t>(
+      "leveldown.batch.do", env, callback,
+      [=, batch = std::move(batch)](int64_t& seq) {
+        rocksdb::WriteOptions writeOptions;
+        writeOptions.sync = sync;
+
+        // TODO (fix): Better way to get batch sequence?
+        seq = database->db->GetLatestSequenceNumber() + 1;
+
+        return database->db->Write(writeOptions, batch.get());
+      },
+      [=](int64_t& seq, auto env, auto& argv) {
+        argv.resize(2);
+        NAPI_STATUS_RETURN(napi_create_int64(env, seq, &argv[1]));
+        return napi_ok;
+      });
 
   return 0;
 }
