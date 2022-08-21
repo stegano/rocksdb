@@ -1462,7 +1462,7 @@ NAPI_METHOD(batch_merge) {
   NAPI_ARGV(4);
 
   rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], (void**)(&batch)));
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   NapiSlice key;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
