@@ -231,6 +231,17 @@ static napi_status GetProperty(napi_env env,
                                const std::string_view& key,
                                T& result,
                                bool required = false) {
+  napi_valuetype objType;
+  NAPI_STATUS_RETURN(napi_typeof(env, obj, &objType));
+
+  if (objType == napi_undefined || objType == napi_null) {
+    return napi_ok;
+  }
+
+  if (objType != napi_object) {
+    return napi_invalid_arg;
+  }
+
   bool has = false;
   NAPI_STATUS_RETURN(napi_has_named_property(env, obj, key.data(), &has));
 
@@ -241,19 +252,10 @@ static napi_status GetProperty(napi_env env,
   napi_value value;
   NAPI_STATUS_RETURN(napi_get_named_property(env, obj, key.data(), &value));
 
-  bool nully = false;
+  napi_valuetype valueType;
+  NAPI_STATUS_RETURN(napi_typeof(env, value, &valueType));
 
-  napi_value nullVal;
-  NAPI_STATUS_RETURN(napi_get_null(env, &nullVal));
-  NAPI_STATUS_RETURN(napi_strict_equals(env, nullVal, value, &nully));
-  if (nully) {
-    return required ? napi_invalid_arg : napi_ok;
-  }
-
-  napi_value undefinedVal;
-  NAPI_STATUS_RETURN(napi_get_undefined(env, &undefinedVal));
-  NAPI_STATUS_RETURN(napi_strict_equals(env, undefinedVal, value, &nully));
-  if (nully) {
+  if (valueType == napi_null || valueType == napi_undefined) {
     return required ? napi_invalid_arg : napi_ok;
   }
 
