@@ -311,7 +311,9 @@ class RocksLevel extends AbstractLevel {
     options = {
       since: options?.since ?? 0,
       keys: options?.keys ?? true,
+      keyEncoding: options?.keyEncoding,
       values: options?.values ?? true,
+      valueEncoding: options?.valueEncoding,
       data: options?.data ?? true,
       live: options?.live ?? false,
       column: options?.column ?? null,
