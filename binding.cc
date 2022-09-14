@@ -958,6 +958,7 @@ NAPI_METHOD(db_get_many) {
         readOptions.snapshot = snapshot.get();
         readOptions.async_io = true;
         readOptions.ignore_range_deletions = ignoreRangeDeletions;
+        readOptions.optimize_multiget_for_io = true;
 
         const auto size = keys.size();
 
