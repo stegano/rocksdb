@@ -234,7 +234,6 @@
         "rocksdb/db/merge_helper.cc",
         "rocksdb/db/merge_operator.cc",
         "rocksdb/db/output_validator.cc",
-        "rocksdb/db/periodic_work_scheduler.cc",
         "rocksdb/db/range_del_aggregator.cc",
         "rocksdb/db/range_tombstone_fragmenter.cc",
         "rocksdb/db/repair.cc",
