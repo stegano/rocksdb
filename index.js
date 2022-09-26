@@ -360,7 +360,7 @@ class RocksLevel extends AbstractLevel {
         const buffer = new Readable({
           signal: ac.signal,
           objectMode: true,
-          readableHighWaterMark: 1024,
+          readableHighWaterMark: 8192,
           construct (callback) {
             this._next = (update) => {
               if (!this.push(update)) {
@@ -389,7 +389,7 @@ class RocksLevel extends AbstractLevel {
               ...options,
               signal: ac.signal,
               // HACK: https://github.com/facebook/rocksdb/issues/10476
-              since: Math.max(0, options.since - 2048)
+              since: Math.max(0, options.since - 8192)
             })) {
               if (first) {
                 if (update.sequence > since) {
@@ -398,10 +398,8 @@ class RocksLevel extends AbstractLevel {
                 first = false
               }
 
-              if (update.sequence >= since) {
-                yield update
-                since = update.sequence + update.count
-              }
+              yield update
+              since = update.sequence + update.count
             }
           }
         } catch (err) {
@@ -422,10 +420,8 @@ class RocksLevel extends AbstractLevel {
             }
             first = false
           }
-          if (update.sequence >= since) {
-            yield update
-            since = update.sequence + update.count
-          }
+          yield update
+          since = update.sequence + update.count
         }
       }
     } finally {
