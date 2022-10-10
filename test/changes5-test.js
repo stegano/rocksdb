@@ -27,12 +27,12 @@ test('test updates column filter()', async function (t) {
 
   const val = []
   for await (const { rows } of db.updates({
-		since: 0,
-		column: db.columns.asd,
-		keys: true,
-		values: true,
-		data: true,
-	})) {
+    since: 0,
+    column: db.columns.asd,
+    keys: true,
+    values: true,
+    data: true
+  })) {
     val.push(...rows)
   }
 

@@ -388,8 +388,7 @@ class RocksLevel extends AbstractLevel {
             for await (const update of db[kUpdates]({
               ...options,
               signal: ac.signal,
-              // HACK: https://github.com/facebook/rocksdb/issues/10476
-              since: Math.max(0, options.since - 8192)
+              since: Math.max(0, options.since - 8192) // TODO (fix): https://github.com/facebook/rocksdb/issues/10476
             })) {
               if (first) {
                 if (update.sequence > since) {
@@ -398,7 +397,11 @@ class RocksLevel extends AbstractLevel {
                 first = false
               }
 
-              yield update
+							// TODO (Fix): What if since > sequence && since < sequence + count
+              if (update.sequence + update.count > since) {
+                yield update
+              }
+
               since = update.sequence + update.count
             }
           }
@@ -420,7 +423,12 @@ class RocksLevel extends AbstractLevel {
             }
             first = false
           }
-          yield update
+
+					// TODO (Fix): What if since > sequence && since < sequence + count
+          if (update.sequence + update.count > since) {
+            yield update
+          }
+
           since = update.sequence + update.count
         }
       }
