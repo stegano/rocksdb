@@ -311,6 +311,7 @@
         "rocksdb/options/options.cc",
         "rocksdb/options/options_helper.cc",
         "rocksdb/options/options_parser.cc",
+        "rocksdb/port/mmap.cc",
         "rocksdb/port/stack_trace.cc",
         "rocksdb/table/adaptive/adaptive_table_factory.cc",
         "rocksdb/table/block_based/binary_search_index_reader.cc",
