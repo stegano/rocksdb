@@ -306,13 +306,15 @@ struct BaseIterator : public Closable {
                const std::optional<std::string>& gte,
                const int limit,
                const bool fillCache,
-               std::shared_ptr<const rocksdb::Snapshot> snapshot)
+               std::shared_ptr<const rocksdb::Snapshot> snapshot,
+               bool tailing = false)
       : database_(database),
         column_(column),
         snapshot_(snapshot),
         reverse_(reverse),
         limit_(limit),
-        fillCache_(fillCache) {
+        fillCache_(fillCache),
+        tailing_(tailing) {
     if (lte) {
       upper_bound_ = rocksdb::PinnableSlice();
       *upper_bound_->GetSelf() = std::move(*lte) + '\0';
@@ -426,6 +428,7 @@ struct BaseIterator : public Closable {
     readOptions.snapshot = snapshot_.get();
     readOptions.async_io = true;
     readOptions.adaptive_readahead = true;
+    readOptions.tailing = tailing_;
 
     iterator_.reset(database_->db->NewIterator(readOptions, column_));
   }
@@ -436,6 +439,7 @@ struct BaseIterator : public Closable {
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
   const int limit_;
+  const bool tailing_;
   const bool fillCache_;
 };
 
@@ -454,8 +458,9 @@ struct Iterator final : public BaseIterator {
            const Encoding keyEncoding,
            const Encoding valueEncoding,
            const size_t highWaterMarkBytes,
-           std::shared_ptr<const rocksdb::Snapshot> snapshot)
-      : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot),
+           std::shared_ptr<const rocksdb::Snapshot> snapshot,
+           bool tailing = false)
+      : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot, tailing),
         keys_(keys),
         values_(values),
         keyEncoding_(keyEncoding),
@@ -1157,6 +1162,9 @@ NAPI_METHOD(iterator_init) {
   bool values = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
 
+  bool tailing = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "tailing", tailing));
+
   bool fillCache = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
@@ -1190,9 +1198,9 @@ NAPI_METHOD(iterator_init) {
   std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
                                                     [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
-  auto iterator =
-      std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
-                                             fillCache, keyEncoding, valueEncoding, highWaterMarkBytes, snapshot));
+  auto iterator = std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt,
+                                                         gte, fillCache, keyEncoding, valueEncoding, highWaterMarkBytes,
+                                                         snapshot, tailing));
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
