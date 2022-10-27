@@ -439,8 +439,8 @@ struct BaseIterator : public Closable {
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
   const int limit_;
-  const bool tailing_;
   const bool fillCache_;
+  const bool tailing_;
 };
 
 struct Iterator final : public BaseIterator {
