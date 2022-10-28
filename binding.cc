@@ -1520,6 +1520,9 @@ NAPI_METHOD(batch_write) {
   bool sync = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
 
+  bool lowPriority = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
+
   napi_ref batchRef;
   NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
 
@@ -1528,6 +1531,7 @@ NAPI_METHOD(batch_write) {
       [=](int64_t& seq) {
         rocksdb::WriteOptions writeOptions;
         writeOptions.sync = sync;
+        writeOptions.low_pri = lowPriority;
 
         // TODO (fix): Better way to get batch sequence?
         seq = database->db->GetLatestSequenceNumber() + 1;
