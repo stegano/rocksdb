@@ -661,6 +661,21 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   return napi_ok;
 }
 
+NAPI_METHOD(db_get_identity) {
+  NAPI_ARGV(1);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+	std::string identity;
+	ROCKS_STATUS_THROWS_NAPI(database->db->GetDbIdentity(identity));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(Convert(env, &identity, Encoding::String, result));
+
+  return result;
+}
+
 NAPI_METHOD(db_open) {
   NAPI_ARGV(4);
 
@@ -1683,6 +1698,7 @@ NAPI_METHOD(db_flush_wal) {
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
+  NAPI_EXPORT_FUNCTION(db_get_identity);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_many);
   NAPI_EXPORT_FUNCTION(db_clear);

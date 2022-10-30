@@ -36,7 +36,7 @@
     "rimraf": "^3.0.0",
     "standard": "^17.0.0",
     "tape": "^5.6.1",
-    "tempy": "^3.0.0"
+    "tempy": "^1.0.1"
   },
   "standard": {
     "ignore": [
