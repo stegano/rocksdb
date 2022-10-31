@@ -608,6 +608,24 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     }
   }
 
+  std::optional<std::string> compactionPriority;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "compactionPriority", compactionPriority));
+  if (compactionPriority) {
+    if (compactionPriority == "byCompensatedSize") {
+      columnOptions.compaction_pri = rocksdb::kByCompensatedSize;
+    } else if (compactionPriority == "oldestLargestSeqFirst") {
+      columnOptions.compaction_pri = rocksdb::kOldestLargestSeqFirst;
+    } else if (compactionPriority == "smallestSeqFirst") {
+      columnOptions.compaction_pri = rocksdb::kOldestSmallestSeqFirst;
+    } else if (compactionPriority == "overlappingRatio") {
+      columnOptions.compaction_pri = rocksdb::kMinOverlappingRatio;
+    } else if (compactionPriority == "roundRobin") {
+      columnOptions.compaction_pri = rocksdb::kRoundRobin;
+    } else {
+      // Throw?
+    }
+  }
+
   uint32_t cacheSize = 8 << 20;
   NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
 
@@ -667,8 +685,8 @@ NAPI_METHOD(db_get_identity) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-	std::string identity;
-	ROCKS_STATUS_THROWS_NAPI(database->db->GetDbIdentity(identity));
+  std::string identity;
+  ROCKS_STATUS_THROWS_NAPI(database->db->GetDbIdentity(identity));
 
   napi_value result;
   NAPI_STATUS_THROWS(Convert(env, &identity, Encoding::String, result));
