@@ -208,11 +208,7 @@ class RocksLevel extends AbstractLevel {
           this[kUnref]()
 
           if (!err) {
-            this.emit('update', {
-              rows: batch.toArray(),
-              count: batch.length,
-              sequence: sequence
-            })
+            this.emit('update', { batch, sequence })
           }
 
           callback(err)
@@ -233,11 +229,7 @@ class RocksLevel extends AbstractLevel {
 
         // TODO (fix)
         // if (!err) {
-        //   this.emit('update', {
-        //     rows: batch.toArray(),
-        //     count: batch.length,
-        //     sequence: sequence
-        //   })
+        // 	this.emit('update', { batch, sequence })
         // }
 
         callback(err)
@@ -366,7 +358,13 @@ class RocksLevel extends AbstractLevel {
           objectMode: true,
           readableHighWaterMark: 8192,
           construct (callback) {
-            this._next = (update) => {
+            this._next = ({ batch, sequence }) => {
+              const update = {
+                rows: batch.toArray(options),
+                count: batch.length,
+                sequence: sequence
+              }
+
               if (!this.push(update)) {
                 this.push(null)
                 db.off('update', this._next)
