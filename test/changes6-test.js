@@ -18,10 +18,10 @@ test('test updates()', async function (t) {
   await batch1.write()
 
   for await (const { rows } of db.updates({ since: 0, valueEncoding: 'buffer', keyEncoding: 'buffer' })) {
-		for (const row of rows) {
-			console.error(row)
-			t.ok(Buffer.isBuffer(row))
-		}
+    for (const row of rows) {
+      console.error(row)
+      t.ok(Buffer.isBuffer(row))
+    }
   }
 
   t.end()

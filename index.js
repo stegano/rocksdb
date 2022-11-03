@@ -229,7 +229,7 @@ class RocksLevel extends AbstractLevel {
 
         // TODO (fix)
         // if (!err) {
-        // 	this.emit('update', { batch, sequence })
+        //   this.emit('update', { batch, sequence })
         // }
 
         callback(err)
@@ -245,9 +245,9 @@ class RocksLevel extends AbstractLevel {
     return new Iterator(this, this[kContext], options ?? EMPTY)
   }
 
-	get identity () {
-		return binding.db_get_identity(this[kContext])
-	}
+  get identity () {
+    return binding.db_get_identity(this[kContext])
+  }
 
   getProperty (property) {
     if (typeof property !== 'string') {
@@ -362,7 +362,7 @@ class RocksLevel extends AbstractLevel {
               const update = {
                 rows: batch.toArray(options),
                 count: batch.length,
-                sequence: sequence
+                sequence
               }
 
               if (!this.push(update)) {
@@ -399,7 +399,7 @@ class RocksLevel extends AbstractLevel {
                 first = false
               }
 
-							// TODO (Fix): What if since > sequence && since < sequence + count
+              // TODO (Fix): What if since > sequence && since < sequence + count
               if (update.sequence + update.count > since) {
                 yield update
               }
@@ -426,7 +426,7 @@ class RocksLevel extends AbstractLevel {
             first = false
           }
 
-					// TODO (Fix): What if since > sequence && since < sequence + count
+          // TODO (Fix): What if since > sequence && since < sequence + count
           if (update.sequence + update.count > since) {
             yield update
           }

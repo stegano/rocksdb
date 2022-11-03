@@ -13,7 +13,7 @@ test('setUp db', function (t) {
 })
 
 test('test identity()', async function (t) {
-	t.ok(typeof db.identity === 'string')
+  t.ok(typeof db.identity === 'string')
 })
 
 test('tearDown', async function (t) {
