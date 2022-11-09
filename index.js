@@ -1,22 +1,18 @@
 'use strict'
 
 const { fromCallback } = require('catering')
-const { AbortError } = require('./common')
 const { AbstractLevel } = require('abstract-level')
 const ModuleError = require('module-error')
 const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
-const { Readable } = require('readable-stream')
 const os = require('os')
-const AbortController = require('abort-controller')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kLocation = Symbol('location')
 const kPromise = Symbol('promise')
-const kUpdates = Symbol('updates')
 const kRef = Symbol('ref')
 const kUnref = Symbol('unref')
 const kRefs = Symbol('refs')
@@ -206,11 +202,6 @@ class RocksLevel extends AbstractLevel {
         this[kRef]()
         binding.batch_write(this[kContext], context, options, (err, sequence) => {
           this[kUnref]()
-
-          if (!err) {
-            this.emit('update', { batch, sequence })
-          }
-
           callback(err)
         })
       } catch (err) {
@@ -226,12 +217,6 @@ class RocksLevel extends AbstractLevel {
       this[kRef]()
       binding.batch_do(this[kContext], operations, options ?? EMPTY, (err, sequence) => {
         this[kUnref]()
-
-        // TODO (fix)
-        // if (!err) {
-        //   this.emit('update', { batch, sequence })
-        // }
-
         callback(err)
       })
     } catch (err) {
@@ -288,183 +273,6 @@ class RocksLevel extends AbstractLevel {
       }))
     } finally {
       binding.iterator_close(context)
-      this[kUnref]()
-    }
-  }
-
-  async * updates (options) {
-    // TODO (fix): Ensure open status etc...?
-    if (this.status !== 'open') {
-      throw new Error('Database is not open')
-    }
-
-    if (this.status !== 'open') {
-      throw new ModuleError('Database is not open', {
-        code: 'LEVEL_DATABASE_NOT_OPEN'
-      })
-    }
-
-    options = {
-      since: options?.since ?? 0,
-      keys: options?.keys ?? true,
-      keyEncoding: options?.keyEncoding,
-      values: options?.values ?? true,
-      valueEncoding: options?.valueEncoding,
-      data: options?.data ?? true,
-      live: options?.live ?? false,
-      column: options?.column ?? null,
-      signal: options?.signal ?? null
-    }
-
-    if (typeof options.since !== 'number') {
-      throw new TypeError("'since' must be nully or a number")
-    }
-
-    if (typeof options.keys !== 'boolean') {
-      throw new TypeError("'keys' must be nully or a boolean")
-    }
-
-    if (typeof options.values !== 'boolean') {
-      throw new TypeError("'values' must be nully or a boolean")
-    }
-
-    if (typeof options.data !== 'boolean') {
-      throw new TypeError("'data' must be nully or a boolean")
-    }
-
-    if (options.column !== undefined && typeof options.column !== 'object') {
-      throw new TypeError("'column' must be nully or a object")
-    }
-
-    if (typeof options.live !== 'boolean') {
-      throw new TypeError("'live' must be nully or a boolean")
-    }
-
-    const ac = new AbortController()
-    const onAbort = () => {
-      ac.abort()
-    }
-
-    options.signal?.addEventListener('abort', onAbort)
-    this.on('closing', onAbort)
-
-    const db = this
-
-    try {
-      let since = (options.since ?? 0) + 1
-      while (true) {
-        const buffer = new Readable({
-          signal: ac.signal,
-          objectMode: true,
-          readableHighWaterMark: 8192,
-          construct (callback) {
-            this._next = ({ batch, sequence }) => {
-              const update = {
-                rows: batch.toArray(options),
-                count: batch.length,
-                sequence
-              }
-
-              if (!this.push(update)) {
-                this.push(null)
-                db.off('update', this._next)
-              }
-            }
-            db.on('update', this._next)
-            callback()
-          },
-          read () {},
-          destroy (err, callback) {
-            db.off('update', this._next)
-            callback(err)
-          }
-        })
-
-        if (ac.signal.aborted) {
-          throw new AbortError()
-        }
-
-        try {
-          if (since <= db.sequence) {
-            let first = true
-            for await (const update of db[kUpdates]({
-              ...options,
-              signal: ac.signal,
-              since: Math.max(0, options.since - 8192) // TODO (fix): https://github.com/facebook/rocksdb/issues/10476
-            })) {
-              if (first) {
-                if (update.sequence > since) {
-                  db.emit('warning', `Invalid updates sequence ${update.sequence} > ${options.since}.`)
-                }
-                first = false
-              }
-
-              // TODO (Fix): What if since > sequence && since < sequence + count
-              if (update.sequence + update.count > since) {
-                yield update
-              }
-
-              since = update.sequence + update.count
-            }
-          }
-        } catch (err) {
-          if (err.code !== 'LEVEL_TRYAGAIN') {
-            throw err
-          }
-        }
-
-        if (!options.live) {
-          return
-        }
-
-        let first = true
-        for await (const update of buffer) {
-          if (first) {
-            if (update.sequence > since) {
-              db.emit('warning', `Invalid batch sequence ${update.sequence} > ${options.since}.`)
-            }
-            first = false
-          }
-
-          // TODO (Fix): What if since > sequence && since < sequence + count
-          if (update.sequence + update.count > since) {
-            yield update
-          }
-
-          since = update.sequence + update.count
-        }
-      }
-    } finally {
-      this.off('closing', onAbort)
-      options.signal?.removeEventListener('abort', onAbort)
-    }
-  }
-
-  async * [kUpdates] ({ signal, ...options }) {
-    const context = binding.updates_init(this[kContext], options)
-    this[kRef]()
-    try {
-      while (true) {
-        if (signal?.aborted) {
-          throw new AbortError()
-        }
-
-        const entry = await new Promise((resolve, reject) => binding.updates_next(context, (err, rows, sequence, count) => {
-          if (err) {
-            reject(err)
-          } else {
-            resolve({ rows, sequence, count })
-          }
-        }))
-
-        if (!entry.rows) {
-          return
-        }
-
-        yield entry
-      }
-    } finally {
-      binding.updates_close(context)
       this[kUnref]()
     }
   }

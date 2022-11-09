@@ -38,7 +38,6 @@ class NullLogger : public rocksdb::Logger {
 
 struct Database;
 struct Iterator;
-struct Updates;
 
 struct ColumnFamily {
   napi_ref ref;
@@ -252,48 +251,6 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
   const Encoding keyEncoding_;
   const Encoding valueEncoding_;
   std::vector<BatchEntry> cache_;
-};
-
-struct Updates : public BatchIterator, public Closable {
-  Updates(Database* database,
-          const int64_t seqNumber,
-          const bool keys,
-          const bool values,
-          const bool data,
-          const rocksdb::ColumnFamilyHandle* column,
-          const Encoding keyEncoding,
-          const Encoding valueEncoding)
-      : BatchIterator(database, keys, values, data, column, keyEncoding, valueEncoding),
-        database_(database),
-        start_(seqNumber) {}
-
-  virtual ~Updates() { assert(!iterator_); }
-
-  rocksdb::Status Close() override {
-    iterator_.reset();
-    return rocksdb::Status::OK();
-  }
-
-  napi_status Attach(napi_env env, napi_value context) {
-    NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
-    database_->closables.insert(this);
-    return napi_ok;
-  }
-
-  napi_status Detach(napi_env env) {
-    database_->closables.erase(this);
-    if (ref_) {
-      NAPI_STATUS_RETURN(napi_delete_reference(env, ref_));
-    }
-    return napi_ok;
-  }
-
-  Database* database_;
-  int64_t start_;
-  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
-
- private:
-  napi_ref ref_ = nullptr;
 };
 
 struct BaseIterator : public Closable {
@@ -846,106 +803,6 @@ NAPI_METHOD(db_close) {
   runAsync<State>(
       "leveldown.close", env, callback, [=](auto& state) { return database->Close(); },
       [](auto& state, auto env, auto& argv) { return napi_ok; });
-
-  return 0;
-}
-
-NAPI_METHOD(updates_init) {
-  NAPI_ARGV(2);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  const auto options = argv[1];
-
-  int64_t since = 0;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "since", since));
-
-  bool keys = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
-
-  bool values = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
-
-  bool data = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
-
-  Encoding keyEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
-
-  Encoding valueEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
-
-  rocksdb::ColumnFamilyHandle* column = nullptr;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
-
-  auto updates =
-      std::unique_ptr<Updates>(new Updates(database, since, keys, values, data, column, keyEncoding, valueEncoding));
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
-
-  // Prevent GC of JS object before the iterator is closed (explicitly or on
-  // db close) and keep track of non-closed iterators to end them on db close.
-  NAPI_STATUS_THROWS(updates.release()->Attach(env, result));
-
-  return result;
-}
-
-NAPI_METHOD(updates_next) {
-  NAPI_ARGV(2);
-
-  Updates* updates;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
-
-  auto callback = argv[1];
-
-  runAsync<rocksdb::BatchResult>(
-      "leveldown.updates.next", env, callback,
-      [=](auto& batchResult) {
-        if (!updates->iterator_) {
-          rocksdb::TransactionLogIterator::ReadOptions options;
-          const auto status = updates->database_->db->GetUpdatesSince(updates->start_, &updates->iterator_, options);
-          if (!status.ok()) {
-            return status;
-          }
-        } else if (updates->iterator_->Valid()) {
-          updates->iterator_->Next();
-        }
-
-        if (!updates->iterator_->Valid() || !updates->iterator_->status().ok()) {
-          return updates->iterator_->status();
-        }
-
-        batchResult = updates->iterator_->GetBatch();
-
-        return rocksdb::Status::OK();
-      },
-      [=](auto& batchResult, auto env, auto& argv) {
-        if (!batchResult.writeBatchPtr) {
-          return napi_ok;
-        }
-
-        argv.resize(5);
-        NAPI_STATUS_RETURN(updates->Iterate(env, *batchResult.writeBatchPtr, &argv[1]));
-        NAPI_STATUS_RETURN(napi_create_int64(env, batchResult.sequence, &argv[2]));
-        NAPI_STATUS_RETURN(napi_create_int64(env, batchResult.writeBatchPtr->Count(), &argv[3]));
-        NAPI_STATUS_RETURN(napi_create_int64(env, updates->start_, &argv[4]));
-
-        return napi_ok;
-      });
-
-  return 0;
-}
-
-NAPI_METHOD(updates_close) {
-  NAPI_ARGV(1);
-
-  Updates* updates;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
-
-  ROCKS_STATUS_THROWS_NAPI(updates->Close());
-  NAPI_STATUS_THROWS(updates->Detach(env));
 
   return 0;
 }
@@ -1730,10 +1587,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_close);
   NAPI_EXPORT_FUNCTION(iterator_nextv);
   NAPI_EXPORT_FUNCTION(iterator_get_sequence);
-
-  NAPI_EXPORT_FUNCTION(updates_init);
-  NAPI_EXPORT_FUNCTION(updates_close);
-  NAPI_EXPORT_FUNCTION(updates_next);
 
   NAPI_EXPORT_FUNCTION(batch_do);
   NAPI_EXPORT_FUNCTION(batch_init);

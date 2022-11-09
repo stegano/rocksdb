@@ -134,18 +134,6 @@ test('test chained-batch 2', async function (t) {
     }
   }
 
-  for await (const update of db.updates({ live: false, since: 0, column })) {
-    for (let n = 0; n < update.rows; n += 4) {
-      t.ok(update.rows[1][0] !== '_')
-    }
-  }
-
-  for await (const update of db.updates({ live: false, since: 0, column: db.columns.default })) {
-    for (let n = 0; n < update.rows; n += 4) {
-      t.ok(update.rows[1][0] === '_')
-    }
-  }
-
   await db.close()
 
   t.end()

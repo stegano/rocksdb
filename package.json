@@ -11,13 +11,11 @@
     "rebuild": "npm run install --build-from-source"
   },
   "dependencies": {
-    "abort-controller": "^3.0.0",
     "abstract-level": "^1.0.2",
     "catering": "^2.1.1",
     "module-error": "^1.0.2",
     "napi-macros": "~2.0.0",
-    "node-gyp-build": "^4.5.0",
-    "readable-stream": "^4.2.0"
+    "node-gyp-build": "^4.5.0"
   },
   "devDependencies": {
     "@types/node": "^18.11.3",
