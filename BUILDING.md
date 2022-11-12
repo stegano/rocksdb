@@ -10,9 +10,9 @@
   - Copy `libfolly.a` to `/usr/lib/x86_64-linux-gnu`.
   - Copy headers to `/usr/lib/x86_64-linux-gnu/include`.
   - Copy boost headers from folly scratchpad to `/usr/lib/x86_64-linux-gnu/include`.
-- `npx prebuildify -t 18.11.0 --napi --strip --arch x64`
+- `JOBS=8 npx prebuildify -t 18.11.0 --napi --strip --arch x64`
 
 # OSX
 
 - `brew install zstd`
-- `npx prebuildify -t 18.11.0 --napi --strip --arch arm64`
+- `JOBS=8 npx prebuildify -t 18.11.0 --napi --strip --arch arm64`
