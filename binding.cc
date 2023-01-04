@@ -26,6 +26,7 @@
 #include <thread>
 #include <vector>
 
+#include "max_rev_operator.h"
 #include "util.h"
 
 class NullLogger : public rocksdb::Logger {
@@ -556,8 +557,12 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   std::optional<std::string> mergeOperatorOpt;
   NAPI_STATUS_RETURN(GetProperty(env, options, "mergeOperator", mergeOperatorOpt));
   if (mergeOperatorOpt) {
-		ROCKS_STATUS_RETURN_NAPI(
-				rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
+    if (*mergeOperatorOpt == "maxRev") {
+      columnOptions.merge_operator = std::make_shared<MaxRevOperator>();
+    } else {
+      ROCKS_STATUS_RETURN_NAPI(
+          rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
+    }
   }
 
   std::optional<std::string> compactionPriority;
