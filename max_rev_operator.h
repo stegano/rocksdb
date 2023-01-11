@@ -1,13 +1,14 @@
 #pragma once
 
+#include <cstddef>
 #include <rocksdb/slice.h>
 #include <rocksdb/merge_operator.h>
 
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
-  auto indexA = 0UL;
-  auto indexB = 0UL;
-  const auto endA = a.size();
-  const auto endB = b.size();
+  std::size_t indexA = 0;
+  std::size_t indexB = 0;
+  const std::size_t endA = a[indexA++];
+  const std::size_t endB = b[indexB++];
 
   // Compare the revision number
   auto result = 0;
