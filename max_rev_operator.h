@@ -5,10 +5,16 @@
 #include <rocksdb/merge_operator.h>
 
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
+  if (a.empty()) {
+    return b.empty() ? 0 : -1;
+  } else if (b.empty()) {
+    return 1;
+  }
+
   std::size_t indexA = 0;
   std::size_t indexB = 0;
-  const std::size_t endA = a[indexA++];
-  const std::size_t endB = b[indexB++];
+  const std::size_t endA = std::min<std::size_t>(a[indexA++], a.size());
+  const std::size_t endB = std::min<std::size_t>(b[indexB++], b.size());
 
   // Compare the revision number
   auto result = 0;
