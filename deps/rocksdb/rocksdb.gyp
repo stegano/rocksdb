@@ -163,6 +163,7 @@
       "sources": [
         "rocksdb/cache/cache.cc",
         "rocksdb/cache/cache_entry_roles.cc",
+				"rocksdb/cache/cache_helpers.cc",
         "rocksdb/cache/cache_key.cc",
         "rocksdb/cache/cache_reservation_manager.cc",
         "rocksdb/cache/charged_cache.cc",
@@ -321,6 +322,7 @@
         "rocksdb/table/block_based/block_based_table_iterator.cc",
         "rocksdb/table/block_based/block_based_table_reader.cc",
         "rocksdb/table/block_based/block_builder.cc",
+				"rocksdb/table/block_based/block_cache.cc",
         "rocksdb/table/block_based/block_prefetcher.cc",
         "rocksdb/table/block_based/block_prefix_index.cc",
         "rocksdb/table/block_based/data_block_hash_index.cc",
@@ -339,7 +341,6 @@
         "rocksdb/table/block_based/reader_common.cc",
         "rocksdb/table/block_based/uncompression_dict_reader.cc",
         "rocksdb/table/block_fetcher.cc",
-				"rocksdb/table/compaction_merging_iterator.cc",
         "rocksdb/table/cuckoo/cuckoo_table_builder.cc",
         "rocksdb/table/cuckoo/cuckoo_table_factory.cc",
         "rocksdb/table/cuckoo/cuckoo_table_reader.cc",
