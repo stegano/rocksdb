@@ -168,7 +168,7 @@ class RocksLevel extends AbstractLevel {
     return callback[kPromise]
   }
 
-	_getMergeOperands(key, options, callback) {
+  _getMergeOperands (key, options, callback) {
     callback = fromCallback(callback, kPromise)
 
     try {
@@ -183,7 +183,7 @@ class RocksLevel extends AbstractLevel {
     }
 
     return callback[kPromise]
-	}
+  }
 
   _del (key, options, callback) {
     callback = fromCallback(callback, kPromise)

@@ -10,9 +10,9 @@ test('setUp db', function (t) {
     valueEncoding: 'buffer',
     columns: {
       default: {
-        mergeOperator: 'maxRev',
-      },
-    },
+        mergeOperator: 'maxRev'
+      }
+    }
   })
   db.open(t.end.bind(t))
 })
@@ -20,15 +20,15 @@ test('setUp db', function (t) {
 test('max rev', async function (t) {
   const batch = db._chainedBatch()
 
-  const rec1 =Buffer.from('03-SuJnevw6qTIF1P-SO34j9xEGiJbQq-render')
-	rec1[0] = rec1.byteLength - 1
+  const rec1 = Buffer.from('03-SuJnevw6qTIF1P-SO34j9xEGiJbQq-render')
+  rec1[0] = rec1.byteLength - 1
   batch._merge('test', rec1, {
-    column: db.columns.default,
+    column: db.columns.default
   })
-  const rec2 =Buffer.from('02-SuJnevw6qTIF1P-SO34j9xEGiJbQq-render213123213')
-	rec2[0] = rec2.byteLength - 1
+  const rec2 = Buffer.from('02-SuJnevw6qTIF1P-SO34j9xEGiJbQq-render213123213')
+  rec2[0] = rec2.byteLength - 1
   batch._merge('test', rec2, {
-    column: db.columns.default,
+    column: db.columns.default
   })
 
   await batch.write()
@@ -42,4 +42,3 @@ test('tearDown', async function (t) {
   await db.close()
   t.end()
 })
-
