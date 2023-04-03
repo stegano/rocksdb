@@ -5,7 +5,7 @@
   "license": "MIT",
   "main": "index.js",
   "scripts": {
-    "install": "node-gyp-build",
+    "install": "node-gyp-build --verbose",
     "test": "standard && (nyc -s tape test/*-test.js | faucet) && nyc report",
     "test-prebuild": "cross-env PREBUILDS_ONLY=1 npm t",
     "rebuild": "npm run install --build-from-source"
