@@ -115,6 +115,9 @@
               "/usr/lib/include",
               # "/usr/local/Cellar/jemalloc/5.3.0/include"
             ],
+            "dependencies": [
+              "../liburing/liburing.gyp:liburing"
+            ],
             "cflags": [
               "-msse4.2",
               "-mpclmul",
