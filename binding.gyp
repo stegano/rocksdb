@@ -15,6 +15,14 @@
                             "-mbmi",
                             "-mlzcnt"
                         ],
+						"dependencies": [
+							"./deps/liburing/liburing.gyp:liburing"
+						],
+						"include_dirs": [
+							"/usr/lib/x86_64-linux-gnu/include",
+							"/usr/lib/include",
+							# "/usr/local/Cellar/jemalloc/5.3.0/include"
+						],
                         "ccflags": ["-flto"],
                         "cflags!": ["-fno-exceptions"],
                         "cflags_cc!": ["-fno-exceptions"],
