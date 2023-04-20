@@ -18,6 +18,9 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
+#include <liburing.h>
+#include <sys/uio.h>
+
 #include <iostream>
 #include <memory>
 #include <optional>
