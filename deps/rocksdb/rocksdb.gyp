@@ -135,11 +135,11 @@
             "defines": ["OS_MACOSX=1"],
             "direct_dependent_settings": {
               "libraries": [
-                "/opt/homebrew/Cellar/zstd/1.5.2/lib/libzstd.a"
+                "/opt/homebrew/Cellar/zstd/1.5.5/lib/libzstd.a"
               ],
             },
             "include_dirs": [
-              "/opt/homebrew/Cellar/zstd/1.5.2/include"
+              "/opt/homebrew/Cellar/zstd/1.5.5/include"
             ],
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
