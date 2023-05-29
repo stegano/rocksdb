@@ -87,7 +87,7 @@
               "ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1",
               "ROCKSDB_RANGESYNC_PRESENT=1",
               "ROCKSDB_SCHED_GETCPU_PRESENT=1",
-              "ROCKSDB_IOURING_PRESENT=1",
+              # "ROCKSDB_IOURING_PRESENT=1",
               "USE_FOLLY=1",
               "FOLLY_NO_CONFIG=1"
               "HAVE_SSE42=1",
@@ -114,9 +114,6 @@
               "/usr/lib/x86_64-linux-gnu/include",
               "/usr/lib/include",
               # "/usr/local/Cellar/jemalloc/5.3.0/include"
-            ],
-            "dependencies": [
-              "../liburing/liburing.gyp:liburing"
             ],
             "cflags": [
               "-msse4.2",
@@ -392,7 +389,6 @@
         "rocksdb/util/compression_context_cache.cc",
         "rocksdb/util/concurrent_task_limiter_impl.cc",
         "rocksdb/util/crc32c.cc",
-        "rocksdb/util/crc32c_arm64.cc",
         "rocksdb/util/data_structure.cc",
         "rocksdb/util/dynamic_bloom.cc",
         "rocksdb/util/hash.cc",
