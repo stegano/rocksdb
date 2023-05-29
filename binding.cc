@@ -18,9 +18,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
-#include <liburing.h>
-#include <sys/uio.h>
-
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -471,33 +468,7 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   }
 }
 
-inline void DeleteIOUring(void* p) {
-  struct io_uring* iu = static_cast<struct io_uring*>(p);
-  delete iu;
-}
-
-const unsigned int kIoUringDepth = 256;
-inline struct io_uring* CreateIOUring() {
-  struct io_uring* new_io_uring = new struct io_uring;
-  int ret = io_uring_queue_init(kIoUringDepth, new_io_uring, 0);
-  if (ret) {
-    delete new_io_uring;
-    new_io_uring = nullptr;
-  }
-  return new_io_uring;
-}
-
 NAPI_METHOD(db_init) {
-  // Ensure io_uring works.
-  {
-    io_uring new_io_uring = {};
-    auto ret = io_uring_queue_init(256, &new_io_uring, 0);
-    if (ret) {
-      ROCKS_STATUS_THROWS_NAPI(rocksdb::Status::NotSupported("ioring not supported"));
-    }
-    io_uring_queue_exit(&new_io_uring);
-  }
-
   auto database = new Database();
   napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
 
