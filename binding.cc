@@ -383,7 +383,7 @@ struct BaseIterator : public Closable {
     }
     readOptions.fill_cache = fillCache_;
     readOptions.snapshot = snapshot_.get();
-    readOptions.async_io = false; // TODO (fix): enable
+    readOptions.async_io = true;
     readOptions.adaptive_readahead = true;
     readOptions.tailing = tailing_;
 
@@ -909,9 +909,9 @@ NAPI_METHOD(db_get_many) {
         rocksdb::ReadOptions readOptions;
         readOptions.fill_cache = fillCache;
         readOptions.snapshot = snapshot.get();
-        readOptions.async_io = false; // TODO (fix): enable
+        readOptions.async_io = true;
         readOptions.ignore_range_deletions = ignoreRangeDeletions;
-        readOptions.optimize_multiget_for_io = false; // TODO (fix): enable
+        readOptions.optimize_multiget_for_io = true;
 
         const auto size = keys.size();
 
