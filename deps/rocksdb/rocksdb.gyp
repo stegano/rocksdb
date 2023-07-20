@@ -58,6 +58,12 @@
               "/usr/lib/include",
               # "/usr/local/Cellar/jemalloc/5.3.0/include"
             ],
+            "sources": [
+              "rocksdb/port/port_posix.cc",
+              "rocksdb/env/env_posix.cc",
+              "rocksdb/env/fs_posix.cc",
+              "rocksdb/env/io_posix.cc"
+            ],
             "cflags": [
               "-msse4.2",
               "-mpclmul",
