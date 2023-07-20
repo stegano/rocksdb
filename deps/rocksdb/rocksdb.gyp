@@ -21,6 +21,63 @@
       ],
       "conditions": [
         [
+          "OS == 'win'",
+          {
+            "include_dirs": ["rocksdb/port/win/"],
+            "defines": [
+              "LEVELDB_PLATFORM_UV=1",
+              "OS_WIN=1",
+              "NOMINMAX=1",
+              "_HAS_EXCEPTIONS=1"
+            ],
+            "sources": [
+              "rocksdb/port/win/io_win.cc",
+              "rocksdb/port/win/env_win.cc",
+              "rocksdb/port/win/env_default.cc",
+              "rocksdb/port/win/port_win.cc",
+              "rocksdb/port/win/win_logger.cc",
+              "rocksdb/port/win/win_thread.cc"
+            ],
+            "msvs_settings": {
+              "VCCLCompilerTool": {
+                "EnableFunctionLevelLinking": "true",
+                "ExceptionHandling": "2",
+                "DisableSpecificWarnings": ["4355", "4530", "4267", "4244"]
+              }
+            },
+            "configurations": {
+              "Debug": {
+                "msvs_settings": {
+                  "VCCLCompilerTool": { "RuntimeTypeInfo": "true" }
+                }
+              },
+              "Release": {
+                "msvs_settings": {
+                  "VCCLCompilerTool": { "RuntimeTypeInfo": "true" }
+                }
+              }
+            }
+          },
+          {
+            "sources": [
+              "rocksdb/port/port_posix.cc",
+              "rocksdb/env/env_posix.cc",
+              "rocksdb/env/fs_posix.cc",
+              "rocksdb/env/io_posix.cc"
+            ],
+            "defines": ["ROCKSDB_PLATFORM_POSIX=1", "ROCKSDB_LIB_IO_POSIX=1"],
+            "ccflags": [
+              "-fno-omit-frame-pointer",
+              "-momit-leaf-frame-pointer",
+              "-fno-builtin-memcmp"
+            ],
+            "cflags": ["-std=c++20"],
+            "cflags!": ["-fno-rtti"],
+            "cflags_cc!": ["-fno-rtti"],
+            "cflags_cc+": ["-frtti"]
+          }
+        ],
+        [
           "OS == 'linux'",
           {
             "defines": [
@@ -58,12 +115,6 @@
               "/usr/lib/include",
               # "/usr/local/Cellar/jemalloc/5.3.0/include"
             ],
-            "sources": [
-              "rocksdb/port/port_posix.cc",
-              "rocksdb/env/env_posix.cc",
-              "rocksdb/env/fs_posix.cc",
-              "rocksdb/env/io_posix.cc"
-            ],
             "cflags": [
               "-msse4.2",
               "-mpclmul",
@@ -81,7 +132,7 @@
         [
           "OS == 'mac'",
           {
-            "defines": ["OS_MACOSX=1", "ROCKSDB_PLATFORM_POSIX=1", "ROCKSDB_LIB_IO_POSIX=1"],
+            "defines": ["OS_MACOSX=1"],
             "direct_dependent_settings": {
               "libraries": [
                 "/opt/homebrew/Cellar/zstd/1.5.5/lib/libzstd.a"
@@ -89,12 +140,6 @@
             },
             "include_dirs": [
               "/opt/homebrew/Cellar/zstd/1.5.5/include"
-            ],
-            "sources": [
-              "rocksdb/port/port_posix.cc",
-              "rocksdb/env/env_posix.cc",
-              "rocksdb/env/fs_posix.cc",
-              "rocksdb/env/io_posix.cc"
             ],
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
