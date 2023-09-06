@@ -43,6 +43,7 @@ class RocksLevel extends AbstractLevel {
       walCompression: options?.walCompression ?? false,
       unorderedWrite: options?.unorderedWrite ?? false,
       manualWalFlush: options?.manualWalFlush ?? false,
+      walTotalSizeLimit: options?.walTotalSizeLimit ?? 0,
       infoLogLevel: options?.infoLogLevel ?? ''
     }
 
