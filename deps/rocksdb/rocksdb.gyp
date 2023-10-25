@@ -404,6 +404,8 @@
         "rocksdb/util/string_util.cc",
         "rocksdb/util/thread_local.cc",
         "rocksdb/util/threadpool_imp.cc",
+        "rocksdb/util/udt_util.cc",
+        "rocksdb/util/write_batch_util.cc",
         "rocksdb/util/xxhash.cc",
         "rocksdb/utilities/agg_merge/agg_merge.cc",
         "rocksdb/utilities/backup/backup_engine.cc",
