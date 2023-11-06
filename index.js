@@ -55,8 +55,6 @@ class RocksLevel extends AbstractLevel {
         utf8: true
       },
       seek: true,
-      createIfMissing: true,
-      errorIfExists: true,
       additionalMethods: {
         updates: true,
         query: true
