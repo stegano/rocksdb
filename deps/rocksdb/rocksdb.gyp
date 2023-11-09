@@ -36,7 +36,7 @@
               "rocksdb/port/win/env_default.cc",
               "rocksdb/port/win/port_win.cc",
               "rocksdb/port/win/win_logger.cc",
-              "rocksdb/port/win/win_thread.cc"
+              "rocksdb/port/win/win_thread.cc",
             ],
             "msvs_settings": {
               "VCCLCompilerTool": {
@@ -170,6 +170,7 @@
         "rocksdb/cache/secondary_cache.cc",
         "rocksdb/cache/secondary_cache_adapter.cc",
         "rocksdb/cache/sharded_cache.cc",
+        "rocksdb/cache/tiered_secondary_cache.cc",
         "rocksdb/db/arena_wrapped_db_iter.cc",
         "rocksdb/db/blob/blob_contents.cc",
         "rocksdb/db/blob/blob_fetcher.cc",
@@ -252,6 +253,7 @@
         "rocksdb/db/wal_manager.cc",
         "rocksdb/db/wide/wide_column_serialization.cc",
         "rocksdb/db/wide/wide_columns.cc",
+        "rocksdb/db/wide/wide_columns_helper.cc",
         "rocksdb/db/write_batch.cc",
         "rocksdb/db/write_batch_base.cc",
         "rocksdb/db/write_controller.cc",
@@ -389,7 +391,7 @@
         "rocksdb/util/compression_context_cache.cc",
         "rocksdb/util/concurrent_task_limiter_impl.cc",
         "rocksdb/util/crc32c.cc",
-        "rocksdb/util/crc32c_arm64.cc",
+				"rocksdb/util/crc32c_arm64.cc",
         "rocksdb/util/data_structure.cc",
         "rocksdb/util/dynamic_bloom.cc",
         "rocksdb/util/hash.cc",
