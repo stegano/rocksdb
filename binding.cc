@@ -1563,26 +1563,6 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
-NAPI_METHOD(db_flush_wal) {
-  NAPI_ARGV(3);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  auto options = argv[1];
-
-  bool sync = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
-
-  auto callback = argv[2];
-
-  runAsync<bool>(
-      "leveldown.flushWal", env, callback, [=](auto& state) { return database->db->FlushWAL(sync); },
-      [=](auto& state, auto env, auto& argv) { return napi_ok; });
-
-  return 0;
-}
-
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1592,7 +1572,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
-  NAPI_EXPORT_FUNCTION(db_flush_wal);
   NAPI_EXPORT_FUNCTION(db_get_merge_operands);
 
   NAPI_EXPORT_FUNCTION(iterator_init);

@@ -292,12 +292,6 @@ class RocksLevel extends AbstractLevel {
       this[kUnref]()
     }
   }
-
-  async flushWal (options) {
-    return new Promise((resolve, reject) => {
-      binding.db_flush_wal(this[kContext], options ?? {}, (err, val) => err ? reject(err) : resolve(val))
-    })
-  }
 }
 
 exports.RocksLevel = RocksLevel
