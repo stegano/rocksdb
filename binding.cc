@@ -902,8 +902,7 @@ NAPI_METHOD(db_open) {
 						database->columns[column.handle->GetID()] = column;
 					}
 
-					napi_value columns;
-					NAPI_STATUS_RETURN(napi_create_object(env, &columns));
+					napi_value columns = argv[1];
 					for (auto& [id, column] : database->columns) {
 						napi_value val;
 						NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &val));
