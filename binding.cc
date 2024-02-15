@@ -54,8 +54,6 @@ struct Database final {
   ~Database() { assert(!db); }
 
   rocksdb::Status Close() {
-		std::lock_guard<std::mutex> lock(mutex);
-
     if (!db) {
       return rocksdb::Status::OK();
     }
@@ -91,8 +89,8 @@ struct Database final {
 		}
 	}
 
-	int refs = 0;
 	std::mutex mutex;
+	int refs = 0;
 	std::string location;
   std::unique_ptr<rocksdb::DB> db;
   std::set<Closable*> closables;
@@ -470,11 +468,7 @@ struct Iterator final : public BaseIterator {
 
 static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   if (data) {
-		auto database = reinterpret_cast<Database*>(data);
-
-		std::lock_guard<std::mutex> lock(database->mutex);
-
-    database->Unref();
+    reinterpret_cast<Database*>(data)->Unref();
   }
 }
 
@@ -507,10 +501,7 @@ NAPI_METHOD(db_init) {
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
 
-	{
-		std::lock_guard<std::mutex> lock(database->mutex);
-		database->Ref();
-	}
+	database->Ref();
 
   return result;
 }
@@ -776,8 +767,6 @@ NAPI_METHOD(db_open) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-	std::lock_guard<std::mutex> lock(database->mutex);
-
 	if (database->db) {
 		napi_value columns;
 		NAPI_STATUS_THROWS(napi_create_object(env, &columns));
@@ -893,16 +882,11 @@ NAPI_METHOD(db_open) {
 
 					rocksdb::DB* db = nullptr;
 
-					// TODO (fix): There is a race condition here... Check if we are already opening the database.
-
 					const auto status = descriptors.empty()
 						? rocksdb::DB::Open(dbOptions, database->location, &db)
 						: rocksdb::DB::Open(dbOptions, database->location, descriptors, &handles, &db);
 
-					{
-						std::lock_guard<std::mutex> lock(database->mutex);
-						database->db.reset(db);
-					}
+					database->db.reset(db);
 
 					return status;
 				},
@@ -942,8 +926,6 @@ NAPI_METHOD(db_close) {
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-	std::lock_guard<std::mutex> lock(database->mutex);
 
   auto callback = argv[1];
 
