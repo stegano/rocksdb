@@ -40,8 +40,6 @@ struct Database;
 struct Iterator;
 
 struct ColumnFamily {
-  napi_ref ref;
-  napi_value val;
   rocksdb::ColumnFamilyHandle* handle;
   rocksdb::ColumnFamilyDescriptor descriptor;
 };
@@ -52,9 +50,12 @@ struct Closable {
 };
 
 struct Database final {
+	Database(std::string location) : location(std::move(location)) {}
   ~Database() { assert(!db); }
 
   rocksdb::Status Close() {
+		std::lock_guard<std::mutex> lock(mutex);
+
     if (!db) {
       return rocksdb::Status::OK();
     }
@@ -64,17 +65,35 @@ struct Database final {
     }
     closables.clear();
 
-    for (auto& [id, column] : columns) {
-      db->DestroyColumnFamilyHandle(column.handle);
-    }
-    columns.clear();
-
     db->FlushWAL(true);
 
-    auto db2 = std::move(db);
-    return db2->Close();
+		for (auto& [id, column] : columns) {
+			db->DestroyColumnFamilyHandle(column.handle);
+		}
+		columns.clear();
+
+		auto db2 = std::move(db);
+		return db2->Close();
   }
 
+	void Ref() {
+		std::lock_guard<std::mutex> lock(mutex);
+
+		refs++;
+	}
+
+	void Unref() {
+		std::lock_guard<std::mutex> lock(mutex);
+
+		if (--refs == 0) {
+			Close();
+			delete this;
+		}
+	}
+
+	int refs = 0;
+	std::mutex mutex;
+	std::string location;
   std::unique_ptr<rocksdb::DB> db;
   std::set<Closable*> closables;
   std::map<int32_t, ColumnFamily> columns;
@@ -449,31 +468,73 @@ struct Iterator final : public BaseIterator {
   napi_ref ref_ = nullptr;
 };
 
-static void env_cleanup_hook(void* arg) {
-  auto database = reinterpret_cast<Database*>(arg);
-  if (database) {
-    database->Close();
-  }
-}
-
 static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   if (data) {
-    auto database = reinterpret_cast<Database*>(data);
-    database->Close();
-    napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    for (auto& [id, column] : database->columns) {
-      napi_delete_reference(env, column.ref);
-    }
-    delete database;
+		auto database = reinterpret_cast<Database*>(data);
+
+		std::lock_guard<std::mutex> lock(database->mutex);
+
+    database->Unref();
   }
 }
 
 NAPI_METHOD(db_init) {
-  auto database = new Database();
-  napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
+  NAPI_ARGV(1);
+
+	Database* database = nullptr;
+
+  napi_valuetype type;
+  NAPI_STATUS_THROWS(napi_typeof(env, argv[0], &type));
+
+  if (type == napi_string) {
+		std::string location;
+    size_t length = 0;
+    NAPI_STATUS_THROWS(napi_get_value_string_utf8(env, argv[0], nullptr, 0, &length));
+    location.resize(length, '\0');
+    NAPI_STATUS_THROWS(napi_get_value_string_utf8(env, argv[0], &location[0], length + 1, &length));
+
+		database = new Database(location);
+  } else if (type == napi_bigint) {
+		int64_t value;
+		bool lossless;
+		NAPI_STATUS_THROWS(napi_get_value_bigint_int64(env, argv[0], &value, &lossless));
+
+		database = reinterpret_cast<Database*>(value);
+  } else {
+		NAPI_STATUS_THROWS(napi_invalid_arg);
+	}
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
+
+	{
+		std::lock_guard<std::mutex> lock(database->mutex);
+		database->Ref();
+	}
+
+  return result;
+}
+
+NAPI_METHOD(db_get_handle) {
+  NAPI_ARGV(1);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_bigint_int64(env, reinterpret_cast<intptr_t>(database), &result));
+
+  return result;
+}
+
+NAPI_METHOD(db_get_location) {
+  NAPI_ARGV(1);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(Convert(env, &database->location, Encoding::String, result));
 
   return result;
 }
@@ -710,141 +771,164 @@ NAPI_METHOD(db_get_identity) {
 }
 
 NAPI_METHOD(db_open) {
-  NAPI_ARGV(4);
+  NAPI_ARGV(3);
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  std::string location;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], location));
+	std::lock_guard<std::mutex> lock(database->mutex);
 
-  rocksdb::Options dbOptions;
+	if (database->db) {
+		napi_value columns;
+		NAPI_STATUS_THROWS(napi_create_object(env, &columns));
+		for (auto& [id, column] : database->columns) {
+			napi_value val;
+			NAPI_STATUS_THROWS(napi_create_external(env, column.handle, nullptr, nullptr, &val));
+			NAPI_STATUS_THROWS(napi_set_named_property(env, columns, column.descriptor.name.c_str(), val));
+		}
+		return columns;
+	} else {
+		rocksdb::Options dbOptions;
 
-  const auto options = argv[2];
+		const auto options = argv[1];
 
-  int parallelism = std::max<int>(1, std::thread::hardware_concurrency() / 2);
-  NAPI_STATUS_THROWS(GetProperty(env, options, "parallelism", parallelism));
-  dbOptions.IncreaseParallelism(parallelism);
+		int parallelism = std::max<int>(1, std::thread::hardware_concurrency() / 2);
+		NAPI_STATUS_THROWS(GetProperty(env, options, "parallelism", parallelism));
+		dbOptions.IncreaseParallelism(parallelism);
 
-  uint32_t walTTL = 0;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "walTTL", walTTL));
-  dbOptions.WAL_ttl_seconds = walTTL / 1e3;
+		uint32_t walTTL = 0;
+		NAPI_STATUS_THROWS(GetProperty(env, options, "walTTL", walTTL));
+		dbOptions.WAL_ttl_seconds = walTTL / 1e3;
 
-  uint32_t walSizeLimit = 0;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "walSizeLimit", walSizeLimit));
-  dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
+		uint32_t walSizeLimit = 0;
+		NAPI_STATUS_THROWS(GetProperty(env, options, "walSizeLimit", walSizeLimit));
+		dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
 
-	uint32_t maxTotalWalSize = 0;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "walTotalSizeLimit", walSizeLimit));
-  dbOptions.max_total_wal_size = maxTotalWalSize / 1e6;
+		uint32_t maxTotalWalSize = 0;
+		NAPI_STATUS_THROWS(GetProperty(env, options, "walTotalSizeLimit", walSizeLimit));
+		dbOptions.max_total_wal_size = maxTotalWalSize / 1e6;
 
-  bool walCompression = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "walCompression", walCompression));
-  dbOptions.wal_compression =
-      walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
+		bool walCompression = false;
+		NAPI_STATUS_THROWS(GetProperty(env, options, "walCompression", walCompression));
+		dbOptions.wal_compression =
+				walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
 
-  dbOptions.avoid_unnecessary_blocking_io = true;
-  dbOptions.write_dbid_to_manifest = true;
-  dbOptions.use_adaptive_mutex = true;      // We don't have soo many threads in the libuv thread pool...
-  dbOptions.enable_pipelined_write = true;  // We only write in the main thread...
-  dbOptions.create_missing_column_families = true;
-  dbOptions.fail_if_options_file_error = true;
+		dbOptions.avoid_unnecessary_blocking_io = true;
+		dbOptions.write_dbid_to_manifest = true;
+		dbOptions.enable_pipelined_write = true;  // We only write in the main thread...
+		dbOptions.create_missing_column_families = true;
+		dbOptions.fail_if_options_file_error = true;
 
-  NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
-  NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
-  NAPI_STATUS_THROWS(GetProperty(env, options, "unorderedWrite", dbOptions.unordered_write));
-  NAPI_STATUS_THROWS(GetProperty(env, options, "pipelinedWrite", dbOptions.enable_pipelined_write));
+		NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
+		NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
+		NAPI_STATUS_THROWS(GetProperty(env, options, "pipelinedWrite", dbOptions.enable_pipelined_write));
 
-  // TODO (feat): dbOptions.listeners
+		// TODO (feat): dbOptions.listeners
 
-  std::string infoLogLevel;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "infoLogLevel", infoLogLevel));
-  if (infoLogLevel.size() > 0) {
-    rocksdb::InfoLogLevel lvl = {};
+		std::string infoLogLevel;
+		NAPI_STATUS_THROWS(GetProperty(env, options, "infoLogLevel", infoLogLevel));
+		if (infoLogLevel.size() > 0) {
+			rocksdb::InfoLogLevel lvl = {};
 
-    if (infoLogLevel == "debug")
-      lvl = rocksdb::InfoLogLevel::DEBUG_LEVEL;
-    else if (infoLogLevel == "info")
-      lvl = rocksdb::InfoLogLevel::INFO_LEVEL;
-    else if (infoLogLevel == "warn")
-      lvl = rocksdb::InfoLogLevel::WARN_LEVEL;
-    else if (infoLogLevel == "error")
-      lvl = rocksdb::InfoLogLevel::ERROR_LEVEL;
-    else if (infoLogLevel == "fatal")
-      lvl = rocksdb::InfoLogLevel::FATAL_LEVEL;
-    else if (infoLogLevel == "header")
-      lvl = rocksdb::InfoLogLevel::HEADER_LEVEL;
-    else
-      napi_throw_error(env, nullptr, "invalid log level");
+			if (infoLogLevel == "debug")
+				lvl = rocksdb::InfoLogLevel::DEBUG_LEVEL;
+			else if (infoLogLevel == "info")
+				lvl = rocksdb::InfoLogLevel::INFO_LEVEL;
+			else if (infoLogLevel == "warn")
+				lvl = rocksdb::InfoLogLevel::WARN_LEVEL;
+			else if (infoLogLevel == "error")
+				lvl = rocksdb::InfoLogLevel::ERROR_LEVEL;
+			else if (infoLogLevel == "fatal")
+				lvl = rocksdb::InfoLogLevel::FATAL_LEVEL;
+			else if (infoLogLevel == "header")
+				lvl = rocksdb::InfoLogLevel::HEADER_LEVEL;
+			else
+				napi_throw_error(env, nullptr, "invalid log level");
 
-    dbOptions.info_log_level = lvl;
-  } else {
-    // In some places RocksDB checks this option to see if it should prepare
-    // debug information (ahead of logging), so set it to the highest level.
-    dbOptions.info_log_level = rocksdb::InfoLogLevel::HEADER_LEVEL;
-    dbOptions.info_log.reset(new NullLogger());
-  }
+			dbOptions.info_log_level = lvl;
+		} else {
+			// In some places RocksDB checks this option to see if it should prepare
+			// debug information (ahead of logging), so set it to the highest level.
+			dbOptions.info_log_level = rocksdb::InfoLogLevel::HEADER_LEVEL;
+			dbOptions.info_log.reset(new NullLogger());
+		}
 
-  NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
+		NAPI_STATUS_THROWS(InitOptions(env, dbOptions, options));
 
-  std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
+		std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
 
-  bool hasColumns;
-  NAPI_STATUS_THROWS(napi_has_named_property(env, options, "columns", &hasColumns));
+		bool hasColumns;
+		NAPI_STATUS_THROWS(napi_has_named_property(env, options, "columns", &hasColumns));
 
-  if (hasColumns) {
-    napi_value columns;
-    NAPI_STATUS_THROWS(napi_get_named_property(env, options, "columns", &columns));
+		if (hasColumns) {
+			napi_value columns;
+			NAPI_STATUS_THROWS(napi_get_named_property(env, options, "columns", &columns));
 
-    napi_value keys;
-    NAPI_STATUS_THROWS(napi_get_property_names(env, columns, &keys));
+			napi_value keys;
+			NAPI_STATUS_THROWS(napi_get_property_names(env, columns, &keys));
 
-    uint32_t len;
-    NAPI_STATUS_THROWS(napi_get_array_length(env, keys, &len));
+			uint32_t len;
+			NAPI_STATUS_THROWS(napi_get_array_length(env, keys, &len));
 
-    descriptors.resize(len);
-    for (uint32_t n = 0; n < len; ++n) {
-      napi_value key;
-      NAPI_STATUS_THROWS(napi_get_element(env, keys, n, &key));
+			descriptors.resize(len);
+			for (uint32_t n = 0; n < len; ++n) {
+				napi_value key;
+				NAPI_STATUS_THROWS(napi_get_element(env, keys, n, &key));
 
-      napi_value column;
-      NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
+				napi_value column;
+				NAPI_STATUS_THROWS(napi_get_property(env, columns, key, &column));
 
-      NAPI_STATUS_THROWS(InitOptions(env, descriptors[n].options, column));
+				NAPI_STATUS_THROWS(InitOptions(env, descriptors[n].options, column));
 
-      NAPI_STATUS_THROWS(GetValue(env, key, descriptors[n].name));
-    }
-  }
+				NAPI_STATUS_THROWS(GetValue(env, key, descriptors[n].name));
+			}
+		}
 
-  auto callback = argv[3];
+		auto callback = argv[2];
 
-  runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
-      "leveldown.open", env, callback,
-      [=](auto& handles) {
-        rocksdb::DB* db = nullptr;
-        const auto status = descriptors.empty() ? rocksdb::DB::Open(dbOptions, location, &db)
-                                                : rocksdb::DB::Open(dbOptions, location, descriptors, &handles, &db);
-        database->db.reset(db);
-        return status;
-      },
-      [=](auto& handles, auto env, auto& argv) {
-        argv.resize(2);
+		runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
+				"leveldown.open", env, callback,
+				[=](auto& handles) {
+					assert(!database->db);
 
-        const auto size = handles.size();
-        NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
+					rocksdb::DB* db = nullptr;
 
-        for (size_t n = 0; n < size; ++n) {
-          ColumnFamily column;
-          column.handle = handles[n];
-          column.descriptor = descriptors[n];
-          NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &column.val));
-          NAPI_STATUS_RETURN(napi_create_reference(env, column.val, 1, &column.ref));
-          NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], descriptors[n].name.c_str(), column.val));
-          database->columns[column.handle->GetID()] = column;
-        }
+					// TODO (fix): There is a race condition here... Check if we are already opening the database.
 
-        return napi_ok;
-      });
+					const auto status = descriptors.empty()
+						? rocksdb::DB::Open(dbOptions, database->location, &db)
+						: rocksdb::DB::Open(dbOptions, database->location, descriptors, &handles, &db);
+
+					{
+						std::lock_guard<std::mutex> lock(database->mutex);
+						database->db.reset(db);
+					}
+
+					return status;
+				},
+				[=](auto& handles, auto env, auto& argv) {
+					argv.resize(2);
+
+					NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
+
+					for (size_t n = 0; n < handles.size(); ++n) {
+						ColumnFamily column;
+						column.handle = handles[n];
+						column.descriptor = descriptors[n];
+						database->columns[column.handle->GetID()] = column;
+					}
+
+					napi_value columns;
+					NAPI_STATUS_RETURN(napi_create_object(env, &columns));
+					for (auto& [id, column] : database->columns) {
+						napi_value val;
+						NAPI_STATUS_RETURN(napi_create_external(env, column.handle, nullptr, nullptr, &val));
+						NAPI_STATUS_RETURN(napi_set_named_property(env, columns, column.descriptor.name.c_str(), val));
+					}
+
+					return napi_ok;
+				});
+	}
 
   return 0;
 }
@@ -858,6 +942,8 @@ NAPI_METHOD(db_close) {
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+	std::lock_guard<std::mutex> lock(database->mutex);
 
   auto callback = argv[1];
 
@@ -1567,6 +1653,8 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
   NAPI_EXPORT_FUNCTION(db_get_identity);
+  NAPI_EXPORT_FUNCTION(db_get_handle);
+  NAPI_EXPORT_FUNCTION(db_get_location);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_many);
   NAPI_EXPORT_FUNCTION(db_clear);

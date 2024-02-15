@@ -8,6 +8,7 @@ const suite = require('abstract-level/test')
 module.exports = suite.common({
   test,
   factory (options) {
-    return new RocksLevel(tempy.directory(), options)
+    const location = tempy.directory()
+    return new RocksLevel(location, options)
   }
 })

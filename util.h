@@ -45,6 +45,12 @@ static void Finalize(napi_env env, void* data, void* hint) {
   }
 }
 
+static void FinalizeFree(napi_env env, void* data, void* hint) {
+  if (hint) {
+    free(hint);
+  }
+}
+
 static napi_value CreateError(napi_env env, const std::optional<std::string_view>& code, const std::string_view& msg) {
   napi_value codeValue = nullptr;
   if (code) {

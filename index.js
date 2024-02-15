@@ -3,15 +3,14 @@
 const { fromCallback } = require('catering')
 const { AbstractLevel } = require('abstract-level')
 const ModuleError = require('module-error')
-const fs = require('fs')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
-const os = require('os')
+const fs = require('node:fs')
+const assert = require('node:assert')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
-const kLocation = Symbol('location')
 const kPromise = Symbol('promise')
 const kRef = Symbol('ref')
 const kUnref = Symbol('unref')
@@ -21,34 +20,7 @@ const kPendingClose = Symbol('pendingClose')
 const EMPTY = {}
 
 class RocksLevel extends AbstractLevel {
-  constructor (location, options, _) {
-    // To help migrating to abstract-level
-    if (typeof options === 'function' || typeof _ === 'function') {
-      throw new ModuleError('The levelup-style callback argument has been removed', {
-        code: 'LEVEL_LEGACY'
-      })
-    }
-
-    if (typeof location !== 'string' || location === '') {
-      throw new TypeError("The first argument 'location' must be a non-empty string")
-    }
-
-    options = {
-      ...options, // TODO (fix): Other defaults...
-      parallelism: options?.parallelism ?? Math.max(1, os.cpus().length / 2),
-      createIfMissing: options?.createIfMissing ?? true,
-      errorIfExists: options?.errorIfExists ?? false,
-      walTTL: options?.walTTL ?? 0,
-      walSizeLimit: options?.walSizeLimit ?? 0,
-      walCompression: options?.walCompression ?? false,
-      unorderedWrite: options?.unorderedWrite ?? false,
-      manualWalFlush: options?.manualWalFlush ?? false,
-      walTotalSizeLimit: options?.walTotalSizeLimit ?? 0,
-      infoLogLevel: options?.infoLogLevel ?? ''
-    }
-
-    // TODO (fix): Check options.
-
+  constructor (locationOrHandle, options) {
     super({
       encodings: {
         buffer: true,
@@ -61,45 +33,64 @@ class RocksLevel extends AbstractLevel {
       }
     }, options)
 
-    this[kLocation] = location
-    this[kContext] = binding.db_init()
+    this[kContext] = binding.db_init(locationOrHandle)
     this[kColumns] = {}
 
     this[kRefs] = 0
     this[kPendingClose] = null
-
-    // .updates(...) uses 'update' listener.
-    this.setMaxListeners(100)
   }
 
   get sequence () {
     return binding.db_get_latest_sequence(this[kContext])
   }
 
-  get location () {
-    return this[kLocation]
-  }
-
   get columns () {
     return this[kColumns]
   }
 
+  get handle () {
+    // TODO (fix): Support returning handle even if not open yet...
+    assert(this.status === 'open', 'Database is not open')
+
+    return binding.db_get_handle(this[kContext])
+  }
+
+  get location () {
+    return binding.db_get_location(this[kContext])
+  }
+
   _open (options, callback) {
-    const onOpen = (err, columns) => {
-      if (err) {
+    const doOpen = () => {
+      let columns
+      try {
+        columns = binding.db_open(this[kContext], options, (err, columns) => {
+          if (err) {
+            callback(err)
+          } else {
+            this[kColumns] = columns
+            callback(null)
+          }
+        })
+      } catch (err) {
         callback(err)
-      } else {
+      }
+
+      if (columns) {
         this[kColumns] = columns
         callback(null)
       }
     }
+
     if (options.createIfMissing) {
-      fs.mkdir(this[kLocation], { recursive: true }, (err) => {
-        if (err) return callback(err)
-        binding.db_open(this[kContext], this[kLocation], options, onOpen)
+      fs.mkdir(this.location, { recursive: true }, (err) => {
+        if (err) {
+          callback(err)
+        } else {
+          doOpen()
+        }
       })
     } else {
-      binding.db_open(this[kContext], this[kLocation], options, onOpen)
+      doOpen()
     }
   }
 
