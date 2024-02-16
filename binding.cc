@@ -54,14 +54,16 @@ struct Database final {
   ~Database() { assert(!db); }
 
   rocksdb::Status Close() {
+		std::lock_guard<std::mutex> lock(mutex_);
+
     if (!db) {
       return rocksdb::Status::OK();
     }
 
-    for (auto closable : closables) {
-      closable->Close();
-    }
-    closables.clear();
+		for (auto closable : closables_) {
+			closable->Close();
+		}
+		closables_.clear();
 
     db->FlushWAL(true);
 
@@ -75,26 +77,37 @@ struct Database final {
   }
 
 	void Ref() {
-		std::lock_guard<std::mutex> lock(mutex);
-
-		refs++;
+		refs_++;
 	}
 
 	void Unref() {
-		std::lock_guard<std::mutex> lock(mutex);
-
-		if (--refs == 0) {
+		if (--refs_ == 0) {
 			Close();
 			delete this;
 		}
 	}
 
-	std::mutex mutex;
-	int refs = 0;
-	std::string location;
+	void Attach (Closable* closable) {
+		std::lock_guard<std::mutex> lock(mutex_);
+
+		closables_.insert(closable);
+	}
+
+	void Detach (Closable* closable) {
+		std::lock_guard<std::mutex> lock(mutex_);
+
+		closables_.erase(closable);
+	}
+
+	const std::string location;
+
   std::unique_ptr<rocksdb::DB> db;
-  std::set<Closable*> closables;
   std::map<int32_t, ColumnFamily> columns;
+
+private:
+	mutable std::mutex mutex_;
+  std::set<Closable*> closables_;
+	std::atomic<int> refs_ = 0;
 };
 
 enum BatchOp { Empty, Put, Delete, Merge, Data };
@@ -443,12 +456,12 @@ struct Iterator final : public BaseIterator {
 
   napi_status Attach(napi_env env, napi_value context) {
     NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
-    database_->closables.insert(this);
+		database_->Attach(this);
     return napi_ok;
   }
 
   napi_status Detach(napi_env env) {
-    database_->closables.erase(this);
+		database_->Detach(this);
     if (ref_) {
       NAPI_STATUS_RETURN(napi_delete_reference(env, ref_));
     }
