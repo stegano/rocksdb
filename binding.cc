@@ -654,7 +654,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::BlockBasedTableOptions tableOptions;
 
   if (cacheSize) {
-    tableOptions.block_cache = rocksdb::NewLRUCache(cacheSize);
+    tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     tableOptions.cache_index_and_filter_blocks = true;
     NAPI_STATUS_RETURN(
         GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks));
