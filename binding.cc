@@ -479,9 +479,30 @@ struct Iterator final : public BaseIterator {
   napi_ref ref_ = nullptr;
 };
 
+/**
+ * Hook for when the environment exits. This hook will be called after
+ * already-scheduled napi_async_work items have finished, which gives us
+ * the guarantee that no db operations will be in-flight at this time.
+ */
+static void env_cleanup_hook (void* data) {
+		auto database = reinterpret_cast<Database*>(data);
+
+  // Do everything that db_close() does but synchronously. We're expecting that GC
+  // did not (yet) collect the database because that would be a user mistake (not
+  // closing their db) made during the lifetime of the environment. That's different
+  // from an environment being torn down (like the main process or a worker thread)
+  // where it's our responsibility to clean up. Note also, the following code must
+  // be a safe noop if called before db_open() or after db_close().
+  if (database) {
+		database->Unref();
+  }
+}
+
 static void FinalizeDatabase(napi_env env, void* data, void* hint) {
-  if (data) {
-    reinterpret_cast<Database*>(data)->Unref();
+	auto database = reinterpret_cast<Database*>(data);
+  if (database) {
+    napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
+    database->Unref();
   }
 }
 
@@ -510,6 +531,8 @@ NAPI_METHOD(db_init) {
   } else {
 		NAPI_STATUS_THROWS(napi_invalid_arg);
 	}
+
+  napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
