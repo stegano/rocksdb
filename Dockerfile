@@ -23,5 +23,8 @@ COPY . .
 RUN cd deps/rocksdb/rocksdb && make libzstd.a && \
   cp libzstd.a /usr/lib/x86_64-linux-gnu/
 
+# liburing-dev
+RUN apt update && apt install liburing-dev -y
+
 # This will build rocksdb (deps/rocksdb/rocksdb.gyp) and then the rocks-level bindings (binding.gyp)
 RUN yarn && npx prebuildify -t 18.11.0 -t 20.11.1 -t 21.6.2 --napi --strip --arch x64
