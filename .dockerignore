@@ -3,6 +3,7 @@
 .dockerignore
 /node_modules
 /prebuilds
+/build
 Dockerfile
 build.sh
 *.md
