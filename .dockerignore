@@ -1,0 +1,9 @@
+.git
+.github
+.dockerignore
+/node_modules
+/prebuilds
+Dockerfile
+build.sh
+*.md
+prebuilds.iid

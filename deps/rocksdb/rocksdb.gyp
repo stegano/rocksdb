@@ -87,7 +87,7 @@
               "ROCKSDB_PTHREAD_ADAPTIVE_MUTEX=1",
               "ROCKSDB_RANGESYNC_PRESENT=1",
               "ROCKSDB_SCHED_GETCPU_PRESENT=1",
-              # "ROCKSDB_IOURING_PRESENT=1",
+              "ROCKSDB_IOURING_PRESENT=1",
               "USE_FOLLY=1",
               "FOLLY_NO_CONFIG=1"
               "HAVE_SSE42=1",
@@ -107,6 +107,7 @@
               "libraries": [
                 "/usr/lib/x86_64-linux-gnu/libzstd.a",
                 "/usr/lib/x86_64-linux-gnu/libfolly.a",
+                "/usr/lib/x86_64-linux-gnu/liburing.a",
                 # "/usr/lib/x86_64-linux-gnu/libjemalloc.a",
               ],
             },
