@@ -1,4 +1,4 @@
-FROM node:21.6.2
+FROM node:20.11.0-bullseye
 
 ENV CMAKE_BUILD_PARALLEL_LEVEL=16 MAKEFLAGS=-j16 JOBS=16
 
@@ -27,4 +27,4 @@ RUN cd deps/rocksdb/rocksdb && make libzstd.a && \
 RUN apt update && apt install liburing-dev -y
 
 # This will build rocksdb (deps/rocksdb/rocksdb.gyp) and then the rocks-level bindings (binding.gyp)
-RUN yarn && npx prebuildify -t 20.11.1 --napi --strip --arch x64
+RUN yarn && npx prebuildify --napi --strip --arch x64
