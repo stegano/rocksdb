@@ -323,38 +323,38 @@ struct BaseIterator : public Closable {
 
   virtual ~BaseIterator() { assert(!iterator_); }
 
-  bool DidSeek() const { return iterator_ != nullptr; }
+  bool DidSeek() const { return iterator_ != nullptr && !target_; }
 
   void SeekToRange() {
     if (!iterator_) {
       Init();
     }
 
-    if (reverse_) {
+    if (target_) {
+      auto target = rocksdb::Slice(*target_);
+
+      if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
+        // TODO (fix): Why is this required? Seek should handle it?
+        // https://github.com/facebook/rocksdb/issues/9904
+        iterator_->SeekToLast();
+        if (iterator_->Valid()) {
+          iterator_->Next();
+        }
+      } else if (reverse_) {
+        iterator_->SeekForPrev(target);
+      } else {
+        iterator_->Seek(target);
+      }
+
+      target_ = std::nullopt;
+    } else if (reverse_) {
       iterator_->SeekToLast();
     } else {
       iterator_->SeekToFirst();
     }
   }
 
-  void Seek(const rocksdb::Slice& target) {
-    if (!iterator_) {
-      Init();
-    }
-
-    if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
-      // TODO (fix): Why is this required? Seek should handle it?
-      // https://github.com/facebook/rocksdb/issues/9904
-      iterator_->SeekToLast();
-      if (iterator_->Valid()) {
-        iterator_->Next();
-      }
-    } else if (reverse_) {
-      iterator_->SeekForPrev(target);
-    } else {
-      iterator_->Seek(target);
-    }
-  }
+  void Seek(const rocksdb::Slice& target) { target_ = target.ToString(); }
 
   rocksdb::Status Close() override {
     snapshot_.reset();
@@ -422,6 +422,7 @@ struct BaseIterator : public Closable {
   std::optional<rocksdb::PinnableSlice> lower_bound_;
   std::optional<rocksdb::PinnableSlice> upper_bound_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
+  std::optional<std::string> target_;
   const bool reverse_;
   const int limit_;
   const bool fillCache_;
@@ -1275,7 +1276,7 @@ NAPI_METHOD(iterator_seek) {
   NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
   iterator->first_ = true;
-  iterator->Seek(target);  // TODO: Does seek causing blocking IO?
+  iterator->Seek(target);
 
   return 0;
 }
