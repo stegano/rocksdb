@@ -1274,8 +1274,18 @@ NAPI_METHOD(iterator_seek) {
   NapiSlice target;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
-  iterator->first_ = true;
-  iterator->Seek(target);  // TODO: Does seek causing blocking IO?
+  struct State {};
+
+  runAsync<State>(
+      std::string("leveldown.iterator.seek"), env, callback,
+      [=](auto& state) {
+				iterator->first_ = true;
+				iterator->Seek(target);
+        return iterator->Status();
+      },
+      [=](auto& state, auto env, auto& argv) {
+        return napi_ok;
+      });
 
   return 0;
 }
