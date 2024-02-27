@@ -330,10 +330,11 @@ struct BaseIterator : public Closable {
       Init();
     }
 
-    if (target_) {
-      auto target = rocksdb::Slice(*target_);
+    const auto target = std::move(target_);
 
-      if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
+    if (target) {
+      if ((upper_bound_ && target->compare(*upper_bound_) >= 0) ||
+          (lower_bound_ && target->compare(*lower_bound_) < 0)) {
         // TODO (fix): Why is this required? Seek should handle it?
         // https://github.com/facebook/rocksdb/issues/9904
         iterator_->SeekToLast();
@@ -341,12 +342,10 @@ struct BaseIterator : public Closable {
           iterator_->Next();
         }
       } else if (reverse_) {
-        iterator_->SeekForPrev(target);
+        iterator_->SeekForPrev(*target);
       } else {
-        iterator_->Seek(target);
+        iterator_->Seek(*target);
       }
-
-      target_ = std::nullopt;
     } else if (reverse_) {
       iterator_->SeekToLast();
     } else {
@@ -354,7 +353,10 @@ struct BaseIterator : public Closable {
     }
   }
 
-  void Seek(const rocksdb::Slice& target) { target_ = target.ToString(); }
+  void Seek(const rocksdb::Slice& target) {
+    target_ = rocksdb::PinnableSlice();
+    target_->PinSelf(target);
+  }
 
   rocksdb::Status Close() override {
     snapshot_.reset();
@@ -421,8 +423,8 @@ struct BaseIterator : public Closable {
   int count_ = 0;
   std::optional<rocksdb::PinnableSlice> lower_bound_;
   std::optional<rocksdb::PinnableSlice> upper_bound_;
+  std::optional<rocksdb::PinnableSlice> target_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
-  std::optional<std::string> target_;
   const bool reverse_;
   const int limit_;
   const bool fillCache_;
