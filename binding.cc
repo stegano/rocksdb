@@ -330,31 +330,27 @@ struct BaseIterator : public Closable {
       Init();
     }
 
-    if (target_) {
-      auto target = rocksdb::Slice(*target_);
-
-      if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
-        // TODO (fix): Why is this required? Seek should handle it?
-        // https://github.com/facebook/rocksdb/issues/9904
-        iterator_->SeekToLast();
-        if (iterator_->Valid()) {
-          iterator_->Next();
-        }
-      } else if (reverse_) {
-        iterator_->SeekForPrev(target);
-      } else {
-        iterator_->Seek(target);
-      }
-
-      target_ = std::nullopt;
-    } else if (reverse_) {
+    if (reverse_) {
       iterator_->SeekToLast();
     } else {
       iterator_->SeekToFirst();
     }
   }
 
-  void Seek(const rocksdb::Slice& target) { target_ = target.ToString(); }
+  void Seek(const rocksdb::Slice& target) {
+		if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
+			// TODO (fix): Why is this required? Seek should handle it?
+			// https://github.com/facebook/rocksdb/issues/9904
+			iterator_->SeekToLast();
+			if (iterator_->Valid()) {
+				iterator_->Next();
+			}
+		} else if (reverse_) {
+			iterator_->SeekForPrev(target);
+		} else {
+			iterator_->Seek(target);
+		}
+	}
 
   rocksdb::Status Close() override {
     snapshot_.reset();
