@@ -323,30 +323,14 @@ struct BaseIterator : public Closable {
 
   virtual ~BaseIterator() { assert(!iterator_); }
 
-  bool DidSeek() const { return iterator_ != nullptr && !target_; }
+  bool DidSeek() const { return iterator_ != nullptr; }
 
   void SeekToRange() {
     if (!iterator_) {
       Init();
     }
 
-    const auto target = std::move(target_);
-
-    if (target) {
-      if ((upper_bound_ && target->compare(*upper_bound_) >= 0) ||
-          (lower_bound_ && target->compare(*lower_bound_) < 0)) {
-        // TODO (fix): Why is this required? Seek should handle it?
-        // https://github.com/facebook/rocksdb/issues/9904
-        iterator_->SeekToLast();
-        if (iterator_->Valid()) {
-          iterator_->Next();
-        }
-      } else if (reverse_) {
-        iterator_->SeekForPrev(*target);
-      } else {
-        iterator_->Seek(*target);
-      }
-    } else if (reverse_) {
+    if (reverse_) {
       iterator_->SeekToLast();
     } else {
       iterator_->SeekToFirst();
@@ -354,8 +338,22 @@ struct BaseIterator : public Closable {
   }
 
   void Seek(const rocksdb::Slice& target) {
-    target_ = rocksdb::PinnableSlice();
-    target_->PinSelf(target);
+    if (!iterator_) {
+      Init();
+    }
+
+    if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
+      // TODO (fix): Why is this required? Seek should handle it?
+      // https://github.com/facebook/rocksdb/issues/9904
+      iterator_->SeekToLast();
+      if (iterator_->Valid()) {
+        iterator_->Next();
+      }
+    } else if (reverse_) {
+      iterator_->SeekForPrev(target);
+    } else {
+      iterator_->Seek(target);
+    }
   }
 
   rocksdb::Status Close() override {
@@ -423,7 +421,6 @@ struct BaseIterator : public Closable {
   int count_ = 0;
   std::optional<rocksdb::PinnableSlice> lower_bound_;
   std::optional<rocksdb::PinnableSlice> upper_bound_;
-  std::optional<rocksdb::PinnableSlice> target_;
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
   const int limit_;
@@ -1277,8 +1274,18 @@ NAPI_METHOD(iterator_seek) {
   NapiSlice target;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
-  iterator->first_ = true;
-  iterator->Seek(target);
+  struct State {};
+
+  runAsync<State>(
+      std::string("leveldown.iterator.seek"), env, callback,
+      [=](auto& state) {
+				iterator->first_ = true;
+				iterator->Seek(target);
+        return iterator->Status();
+      },
+      [=](auto& state, auto env, auto& argv) {
+        return napi_ok;
+      });
 
   return 0;
 }
