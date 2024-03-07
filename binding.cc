@@ -76,15 +76,6 @@ struct Database final {
     return db2->Close();
   }
 
-  void Ref() { refs_++; }
-
-  void Unref() {
-    if (--refs_ == 0) {
-      Close();
-      delete this;
-    }
-  }
-
   void Attach(Closable* closable) {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -105,7 +96,6 @@ struct Database final {
  private:
   mutable std::mutex mutex_;
   std::set<Closable*> closables_;
-  std::atomic<int> refs_ = 0;
 };
 
 enum BatchOp { Empty, Put, Delete, Merge, Data };
@@ -492,7 +482,7 @@ static void env_cleanup_hook(void* data) {
   // where it's our responsibility to clean up. Note also, the following code must
   // be a safe noop if called before db_open() or after db_close().
   if (database) {
-    database->Unref();
+    database->Close();
   }
 }
 
@@ -500,7 +490,7 @@ static void FinalizeDatabase(napi_env env, void* data, void* hint) {
   auto database = reinterpret_cast<Database*>(data);
   if (database) {
     napi_remove_env_cleanup_hook(env, env_cleanup_hook, database);
-    database->Unref();
+    database->Close();
   }
 }
 
@@ -512,6 +502,8 @@ NAPI_METHOD(db_init) {
   napi_valuetype type;
   NAPI_STATUS_THROWS(napi_typeof(env, argv[0], &type));
 
+  napi_value result;
+
   if (type == napi_string) {
     std::string location;
     size_t length = 0;
@@ -520,22 +512,20 @@ NAPI_METHOD(db_init) {
     NAPI_STATUS_THROWS(napi_get_value_string_utf8(env, argv[0], &location[0], length + 1, &length));
 
     database = new Database(location);
+  	napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
+  	NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
   } else if (type == napi_bigint) {
     int64_t value;
     bool lossless;
     NAPI_STATUS_THROWS(napi_get_value_bigint_int64(env, argv[0], &value, &lossless));
 
     database = reinterpret_cast<Database*>(value);
+  	NAPI_STATUS_THROWS(napi_create_external(env, database, nullptr, nullptr, &result));
+
+		// We should have an env_cleanup_hook for closing iterators...
   } else {
     NAPI_STATUS_THROWS(napi_invalid_arg);
   }
-
-  napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
-
-  database->Ref();
 
   return result;
 }
