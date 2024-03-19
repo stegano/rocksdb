@@ -8,7 +8,7 @@
     "install": "node-gyp-build",
     "test": "standard && (nyc -s tape test/*-test.js | faucet) && nyc report",
     "test-prebuild": "cross-env PREBUILDS_ONLY=1 npm t",
-    "rebuild": "npm run install --build-from-source"
+    "rebuild": "JOBS=8 npm run install --build-from-source"
   },
   "dependencies": {
     "abstract-level": "^1.0.2",

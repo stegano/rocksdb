@@ -1551,6 +1551,8 @@ NAPI_METHOD(batch_clear) {
 NAPI_METHOD(batch_write) {
   NAPI_ARGV(4);
 
+	napi_value result = 0;
+
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
@@ -1566,29 +1568,37 @@ NAPI_METHOD(batch_write) {
   bool lowPriority = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
 
-  napi_ref batchRef;
-  NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
+	rocksdb::WriteOptions writeOptions;
+	writeOptions.sync = sync;
+	writeOptions.low_pri = lowPriority;
+	writeOptions.no_slowdown = true;
 
-  runAsync<int64_t>(
-      "leveldown.batch.write", env, callback,
-      [=](int64_t& seq) {
-        rocksdb::WriteOptions writeOptions;
-        writeOptions.sync = sync;
-        writeOptions.low_pri = lowPriority;
+	const auto status = database->db->Write(writeOptions, batch);
 
-        // TODO (fix): Better way to get batch sequence?
-        seq = database->db->GetLatestSequenceNumber() + 1;
+	if (status == rocksdb::Status::Incomplete()) {
+		napi_ref batchRef;
+		NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
 
-        return database->db->Write(writeOptions, batch);
-      },
-      [=](int64_t& seq, auto env, auto& argv) {
-        argv.resize(2);
-        NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
-        NAPI_STATUS_RETURN(napi_create_int64(env, seq, &argv[1]));
-        return napi_ok;
-      });
+		runAsync<int64_t>(
+				"leveldown.batch.write", env, callback,
+				[=](int64_t& seq) {
+					rocksdb::WriteOptions writeOptions;
+					writeOptions.sync = sync;
+					writeOptions.low_pri = lowPriority;
+					return database->db->Write(writeOptions, batch);
+				},
+				[=](int64_t& seq, auto env, auto& argv) {
+					NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
+					return napi_ok;
+				});
 
-  return 0;
+		NAPI_STATUS_THROWS(napi_get_boolean(env, false, &result));
+	} else {
+		ROCKS_STATUS_THROWS_NAPI(status);
+		NAPI_STATUS_THROWS(napi_get_boolean(env, true, &result));
+	}
+
+  return result;
 }
 
 NAPI_METHOD(batch_put_log_data) {

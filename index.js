@@ -207,10 +207,14 @@ class RocksLevel extends AbstractLevel {
     return new ChainedBatch(this, this[kContext], (batch, context, options, callback) => {
       try {
         this[kRef]()
-        binding.batch_write(this[kContext], context, options, (err, sequence) => {
+        const sync = binding.batch_write(this[kContext], context, options, (err) => {
           this[kUnref]()
           callback(err)
         })
+        if (sync) {
+          this[kUnref]()
+          process.nextTick(callback, null)
+        }
       } catch (err) {
         process.nextTick(callback, err)
       }
