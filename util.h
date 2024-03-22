@@ -241,7 +241,7 @@ static napi_status GetProperty(napi_env env,
   NAPI_STATUS_RETURN(napi_typeof(env, obj, &objType));
 
   if (objType == napi_undefined || objType == napi_null) {
-    return napi_ok;
+    return required ? napi_invalid_arg : napi_ok;
   }
 
   if (objType != napi_object) {
