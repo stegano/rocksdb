@@ -270,8 +270,7 @@ class RocksLevel extends AbstractLevel {
     const context = binding.iterator_init(this[kContext], options ?? {})
     try {
       this[kRef]()
-      const limit = options.limit ?? 1000
-      return await new Promise((resolve, reject) => binding.iterator_nextv(context, limit, (err, rows, finished) => {
+      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit, (err, rows, finished) => {
         if (err) {
           reject(err)
         } else {
