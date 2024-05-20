@@ -128,6 +128,8 @@ class RocksLevel extends AbstractLevel {
   }
 
   _get (key, options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     this._getMany([key], options ?? EMPTY, (err, val) => {
       if (err) {
         callback(err)
@@ -139,6 +141,8 @@ class RocksLevel extends AbstractLevel {
         callback(null, val[0])
       }
     })
+
+    return callback[kPromise]
   }
 
   _getMany (keys, options, callback) {

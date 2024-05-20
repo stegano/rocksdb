@@ -4,6 +4,8 @@
 #include <rocksdb/slice.h>
 #include <rocksdb/merge_operator.h>
 
+#include <iostream>
+
 int compareRev(const rocksdb::Slice& a, const rocksdb::Slice& b) {
   if (a.empty()) {
     return b.empty() ? 0 : -1;
