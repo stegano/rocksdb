@@ -311,7 +311,7 @@ struct BaseIterator : public Closable {
     }
   }
 
-  virtual ~BaseIterator() { assert(!iterator_); }
+  virtual ~BaseIterator() {}
 
   bool DidSeek() const { return iterator_ != nullptr; }
 
