@@ -148,10 +148,17 @@ class RocksLevel extends AbstractLevel {
   _getMany (keys, options, callback) {
     callback = fromCallback(callback, kPromise)
 
+    if (options?.keysEncoding !== 'buffer') {
+      keys = keys.map(key => Buffer.from(key))
+    }
+
     try {
       this[kRef]()
       binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, val) => {
-        callback(err, val)
+        if (options?.valueEncoding !== 'buffer') {
+          val = val.map(v => v != null ? v.toString(options?.valueEncoding) : v)
+        }
+        callback(err, val, keys)
         this[kUnref]()
       })
     } catch (err) {

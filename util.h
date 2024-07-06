@@ -298,7 +298,7 @@ napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) 
 }
 
 template <typename State, typename T1, typename T2>
-napi_status runAsync(const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
+napi_status runAsync(State&& state, const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
   struct Worker final {
     static void Execute(napi_env env, void* data) {
       auto worker = reinterpret_cast<Worker*>(data);
@@ -353,13 +353,19 @@ napi_status runAsync(const std::string& name, napi_env env, napi_value callback,
     typename std::decay<T1>::type execute;
     typename std::decay<T2>::type then;
 
-    napi_ref callbackRef = nullptr;
+    State state;
+
+		napi_ref callbackRef = nullptr;
     napi_async_work asyncWork = nullptr;
     rocksdb::Status status = rocksdb::Status::OK();
-    State state = State();
   };
 
-  auto worker = std::unique_ptr<Worker>(new Worker{env, std::forward<T1>(execute), std::forward<T2>(then)});
+  auto worker = std::unique_ptr<Worker>(new Worker{
+		env,
+		std::forward<T1>(execute),
+		std::forward<T2>(then),
+		std::move(state)
+	});
 
   NAPI_STATUS_RETURN(napi_create_reference(env, callback, 1, &worker->callbackRef));
   napi_value asyncResourceName;
@@ -372,4 +378,8 @@ napi_status runAsync(const std::string& name, napi_env env, napi_value callback,
   worker.release();
 
   return napi_ok;
+}
+template <typename State, typename T1, typename T2>
+napi_status runAsync(const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
+	return runAsync<State>(State{}, name, env, callback, std::forward<T1>(execute), std::forward<T2>(then));
 }

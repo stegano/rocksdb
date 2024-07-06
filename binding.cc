@@ -966,7 +966,7 @@ NAPI_METHOD(db_get_many) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  std::vector<std::string> keys;
+  std::vector<rocksdb::Slice> keys;
   {
     uint32_t length;
     NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &length));
@@ -975,14 +975,16 @@ NAPI_METHOD(db_get_many) {
     for (uint32_t n = 0; n < length; n++) {
       napi_value element;
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-      NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
+
+      char* buf = nullptr;
+      size_t length = 0;
+      NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
+
+			keys[n] = { buf, length };
     }
   }
 
   const auto options = argv[2];
-
-  Encoding valueEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
   bool fillCache = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
@@ -1010,17 +1012,12 @@ NAPI_METHOD(db_get_many) {
 
         const auto size = keys.size();
 
-        std::vector<rocksdb::Slice> keys2;
-        keys2.reserve(size);
-        for (const auto& key : keys) {
-          keys2.emplace_back(key);
-        }
         std::vector<rocksdb::Status> statuses;
 
         statuses.resize(size);
         values.resize(size);
 
-        database->db->MultiGet(readOptions, column, size, keys2.data(), values.data(), statuses.data());
+        database->db->MultiGet(readOptions, column, size, keys.data(), values.data(), statuses.data());
 
         for (size_t idx = 0; idx < size; idx++) {
           if (statuses[idx].IsNotFound()) {
@@ -1040,7 +1037,8 @@ NAPI_METHOD(db_get_many) {
         for (size_t idx = 0; idx < values.size(); idx++) {
           napi_value element;
           if (values[idx].GetSelf()) {
-            NAPI_STATUS_RETURN(Convert(env, &values[idx], valueEncoding, element));
+						auto ptr = new rocksdb::PinnableSlice(std::move(values[idx]));
+						NAPI_STATUS_RETURN(napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr, &element));
           } else {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           }
