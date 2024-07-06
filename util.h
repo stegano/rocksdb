@@ -269,6 +269,20 @@ static napi_status GetProperty(napi_env env,
 }
 
 template <typename T>
+napi_status Convert(napi_env env, rocksdb::PinnableSlice* s, Encoding encoding, napi_value& result) {
+  if (!s) {
+    return napi_get_null(env, &result);
+  } else if (encoding == Encoding::Buffer) {
+		auto ptr = new rocksdb::PinnableSlice(std::move(*s));
+		return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr, &result);
+  } else if (encoding == Encoding::String) {
+    return napi_create_string_utf8(env, s->data(), s->size(), &result);
+  } else {
+    return napi_invalid_arg;
+  }
+}
+
+template <typename T>
 napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) {
   if (!s) {
     return napi_get_null(env, &result);
