@@ -148,7 +148,7 @@ class RocksLevel extends AbstractLevel {
   _getMany (keys, options, callback) {
     callback = fromCallback(callback, kPromise)
 
-		const { keysEncoding, valueEncoding } = options ?? EMPTY
+    const { keysEncoding, valueEncoding } = options ?? EMPTY
 
     if (keysEncoding !== 'buffer') {
       keys = keys.map(key => Buffer.from(key))
