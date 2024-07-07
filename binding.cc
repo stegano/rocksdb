@@ -1465,14 +1465,19 @@ NAPI_METHOD(batch_init) {
 NAPI_METHOD(batch_put) {
   NAPI_ARGV(4);
 
+	char* buf;
+	size_t length;
+
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
-  NapiSlice key;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+  rocksdb::Slice key;
+	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[1], reinterpret_cast<void**>(&buf), &length));
+	key = { buf, length };
 
-  NapiSlice val;
-  NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
+  rocksdb::Slice val;
+	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[2], reinterpret_cast<void**>(&buf), &length));
+	val = { buf, length };
 
   const auto options = argv[3];
 
@@ -1491,11 +1496,15 @@ NAPI_METHOD(batch_put) {
 NAPI_METHOD(batch_del) {
   NAPI_ARGV(3);
 
+	char* buf;
+	size_t length;
+
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
-  NapiSlice key;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+  rocksdb::Slice key;
+	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[1], reinterpret_cast<void**>(&buf), &length));
+	key = { buf, length };
 
   const auto options = argv[2];
 
@@ -1514,14 +1523,19 @@ NAPI_METHOD(batch_del) {
 NAPI_METHOD(batch_merge) {
   NAPI_ARGV(4);
 
+	char* buf;
+	size_t length;
+
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
-  NapiSlice key;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+  rocksdb::Slice key;
+	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[1], reinterpret_cast<void**>(&buf), &length));
+	key = { buf, length };
 
-  NapiSlice val;
-  NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
+  rocksdb::Slice val;
+	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[2], reinterpret_cast<void**>(&buf), &length));
+	key = { buf, length };
 
   const auto options = argv[3];
 
@@ -1601,20 +1615,6 @@ NAPI_METHOD(batch_write) {
   return result;
 }
 
-NAPI_METHOD(batch_put_log_data) {
-  NAPI_ARGV(3);
-
-  rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
-
-  NapiSlice logData;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], logData));
-
-  ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(logData));
-
-  return 0;
-}
-
 NAPI_METHOD(batch_count) {
   NAPI_ARGV(1);
 
@@ -1689,7 +1689,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_del);
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);
-  NAPI_EXPORT_FUNCTION(batch_put_log_data);
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);

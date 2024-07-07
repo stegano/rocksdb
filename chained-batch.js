@@ -34,6 +34,9 @@ class ChainedBatch extends AbstractChainedBatch {
       })
     }
 
+    key = typeof key === 'string' ? Buffer.from(key) : key
+    value = typeof value === 'string' ? Buffer.from(value) : value
+
     binding.batch_put(this[kBatchContext], key, value, options ?? EMPTY)
   }
 
@@ -43,6 +46,8 @@ class ChainedBatch extends AbstractChainedBatch {
         code: 'LEVEL_INVALID_KEY'
       })
     }
+
+    key = typeof key === 'string' ? Buffer.from(key) : key
 
     binding.batch_del(this[kBatchContext], key, options ?? EMPTY)
   }
@@ -67,16 +72,6 @@ class ChainedBatch extends AbstractChainedBatch {
     return binding.batch_count(this[kBatchContext])
   }
 
-  _putLogData (value, options) {
-    if (value === null || value === undefined) {
-      throw new ModuleError('value cannot be null or undefined', {
-        code: 'LEVEL_INVALID_VALUE'
-      })
-    }
-
-    binding.batch_put_log_data(this[kBatchContext], value, options ?? EMPTY)
-  }
-
   _merge (key, value, options) {
     if (key === null || key === undefined) {
       throw new ModuleError('Key cannot be null or undefined', {
@@ -89,6 +84,9 @@ class ChainedBatch extends AbstractChainedBatch {
         code: 'LEVEL_INVALID_VALUE'
       })
     }
+
+    key = typeof key === 'string' ? Buffer.from(key) : key
+    value = typeof value === 'string' ? Buffer.from(value) : value
 
     binding.batch_merge(this[kBatchContext], key, value, options ?? EMPTY)
   }
