@@ -980,6 +980,8 @@ NAPI_METHOD(db_get_many) {
       size_t length = 0;
       NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
 
+			// TODO (fix): Ensure lifetime of buffer?
+
 			keys[n] = { buf, length };
     }
   }
