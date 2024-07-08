@@ -1159,11 +1159,14 @@ NAPI_METHOD(db_clear) {
 NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
 
+	char* buf;
+	size_t length;
+
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  NapiSlice property;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], property));
+  rocksdb::PinnableSlice property;
+	NAPI_STATUS_THROWS(GetValue(env, argv[1], property));
 
   std::string value;
   database->db->GetProperty(property, &value);
@@ -1261,8 +1264,8 @@ NAPI_METHOD(iterator_seek) {
   Iterator* iterator;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
-  NapiSlice target;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
+  rocksdb::PinnableSlice target;
+	NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
   iterator->first_ = true;
   iterator->Seek(target);  // TODO: Does seek causing blocking IO?
@@ -1402,9 +1405,9 @@ NAPI_METHOD(batch_do) {
   NAPI_STATUS_THROWS(napi_get_array_length(env, elements, &length));
 
   for (uint32_t i = 0; i < length; i++) {
-    NapiSlice type;
-    NapiSlice key;
-    NapiSlice value;
+    rocksdb::PinnableSlice type;
+    rocksdb::PinnableSlice key;
+    rocksdb::PinnableSlice value;
 
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, elements, i, &element));
