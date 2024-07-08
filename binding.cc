@@ -512,17 +512,17 @@ NAPI_METHOD(db_init) {
     NAPI_STATUS_THROWS(napi_get_value_string_utf8(env, argv[0], &location[0], length + 1, &length));
 
     database = new Database(location);
-  	napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
-  	NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
+    napi_add_env_cleanup_hook(env, env_cleanup_hook, database);
+    NAPI_STATUS_THROWS(napi_create_external(env, database, FinalizeDatabase, nullptr, &result));
   } else if (type == napi_bigint) {
     int64_t value;
     bool lossless;
     NAPI_STATUS_THROWS(napi_get_value_bigint_int64(env, argv[0], &value, &lossless));
 
     database = reinterpret_cast<Database*>(value);
-  	NAPI_STATUS_THROWS(napi_create_external(env, database, nullptr, nullptr, &result));
+    NAPI_STATUS_THROWS(napi_create_external(env, database, nullptr, nullptr, &result));
 
-		// We should have an env_cleanup_hook for closing iterators...
+    // We should have an env_cleanup_hook for closing iterators...
   } else {
     NAPI_STATUS_THROWS(napi_invalid_arg);
   }
@@ -966,7 +966,7 @@ NAPI_METHOD(db_get_many) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-	// TODO (fix): Ensure lifetime of buffer?
+  // TODO (fix): Ensure lifetime of buffer?
   std::vector<rocksdb::Slice> keys;
   {
     uint32_t length;
@@ -1033,8 +1033,8 @@ NAPI_METHOD(db_get_many) {
         for (size_t idx = 0; idx < values.size(); idx++) {
           napi_value element;
           if (values[idx].GetSelf()) {
-						auto ptr = new rocksdb::PinnableSlice(std::move(values[idx]));
-						NAPI_STATUS_RETURN(napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr, &element));
+            auto ptr = new rocksdb::PinnableSlice(std::move(values[idx]));
+            NAPI_STATUS_RETURN(napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr, &element));
           } else {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           }
@@ -1157,7 +1157,7 @@ NAPI_METHOD(db_get_property) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
   rocksdb::PinnableSlice property;
-	NAPI_STATUS_THROWS(GetValue(env, argv[1], property));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], property));
 
   std::string value;
   database->db->GetProperty(property, &value);
@@ -1256,7 +1256,7 @@ NAPI_METHOD(iterator_seek) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   rocksdb::PinnableSlice target;
-	NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
   iterator->first_ = true;
   iterator->Seek(target);  // TODO: Does seek causing blocking IO?
@@ -1337,9 +1337,9 @@ NAPI_METHOD(iterator_nextv) {
             v.PinSelf(iterator->CurrentValue());
           }
 
-					bytesRead += k.size() + v.size();
-					state.cache.push_back(std::move(k));
-					state.cache.push_back(std::move(v));
+          bytesRead += k.size() + v.size();
+          state.cache.push_back(std::move(k));
+          state.cache.push_back(std::move(v));
 
           if (bytesRead > iterator->highWaterMarkBytes_ || state.cache.size() / 2 >= size) {
             state.finished = false;
@@ -1461,10 +1461,10 @@ NAPI_METHOD(batch_put) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::Slice key;
-	NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   rocksdb::Slice val;
-	NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
+  NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
 
@@ -1487,7 +1487,7 @@ NAPI_METHOD(batch_del) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::Slice key;
-	NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   const auto options = argv[2];
 
@@ -1510,10 +1510,10 @@ NAPI_METHOD(batch_merge) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::Slice key;
-	NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   rocksdb::Slice val;
-	NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
+  NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
 
@@ -1543,7 +1543,7 @@ NAPI_METHOD(batch_clear) {
 NAPI_METHOD(batch_write) {
   NAPI_ARGV(4);
 
-	napi_value result = 0;
+  napi_value result = 0;
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
@@ -1560,35 +1560,35 @@ NAPI_METHOD(batch_write) {
   bool lowPriority = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
 
-	rocksdb::WriteOptions writeOptions;
-	writeOptions.sync = sync;
-	writeOptions.low_pri = lowPriority;
-	writeOptions.no_slowdown = true;
+  rocksdb::WriteOptions writeOptions;
+  writeOptions.sync = sync;
+  writeOptions.low_pri = lowPriority;
+  writeOptions.no_slowdown = true;
 
-	const auto status = database->db->Write(writeOptions, batch);
+  const auto status = database->db->Write(writeOptions, batch);
 
-	if (status == rocksdb::Status::Incomplete()) {
-		napi_ref batchRef;
-		NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
+  if (status == rocksdb::Status::Incomplete()) {
+    napi_ref batchRef;
+    NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
 
-		runAsync<int64_t>(
-				"leveldown.batch.write", env, callback,
-				[=](int64_t& seq) {
-					rocksdb::WriteOptions writeOptions;
-					writeOptions.sync = sync;
-					writeOptions.low_pri = lowPriority;
-					return database->db->Write(writeOptions, batch);
-				},
-				[=](int64_t& seq, auto env, auto& argv) {
-					NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
-					return napi_ok;
-				});
+    runAsync<int64_t>(
+        "leveldown.batch.write", env, callback,
+        [=](int64_t& seq) {
+          rocksdb::WriteOptions writeOptions;
+          writeOptions.sync = sync;
+          writeOptions.low_pri = lowPriority;
+          return database->db->Write(writeOptions, batch);
+        },
+        [=](int64_t& seq, auto env, auto& argv) {
+          NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
+          return napi_ok;
+        });
 
-		NAPI_STATUS_THROWS(napi_get_boolean(env, false, &result));
-	} else {
-		ROCKS_STATUS_THROWS_NAPI(status);
-		NAPI_STATUS_THROWS(napi_get_boolean(env, true, &result));
-	}
+    NAPI_STATUS_THROWS(napi_get_boolean(env, false, &result));
+  } else {
+    ROCKS_STATUS_THROWS_NAPI(status);
+    NAPI_STATUS_THROWS(napi_get_boolean(env, true, &result));
+  }
 
   return result;
 }

@@ -92,17 +92,17 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
 }
 
 static napi_status GetString(napi_env env, napi_value from, rocksdb::Slice& to) {
-	bool isBuffer;
-	NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
+  bool isBuffer;
+  NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
 
-	if (isBuffer) {
-		char* buf = nullptr;
-		size_t length = 0;
-		NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
-		to = { buf, length };
-	} else {
-		return napi_invalid_arg;
-	}
+  if (isBuffer) {
+    char* buf = nullptr;
+    size_t length = 0;
+    NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
+    to = {buf, length};
+  } else {
+    return napi_invalid_arg;
+  }
 
   return napi_ok;
 }
@@ -138,7 +138,7 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSli
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
 
   NAPI_STATUS_RETURN(GetString(env, from, *to.GetSelf()));
-	to.PinSelf();
+  to.PinSelf();
 
   return napi_ok;
 }
@@ -245,8 +245,9 @@ napi_status Convert(napi_env env, rocksdb::PinnableSlice* s, Encoding encoding, 
   if (!s || !s->IsPinned()) {
     return napi_get_null(env, &result);
   } else if (encoding == Encoding::Buffer) {
-		auto ptr = new rocksdb::PinnableSlice(std::move(*s));
-		return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()), Finalize<rocksdb::PinnableSlice>, ptr, &result);
+    auto ptr = new rocksdb::PinnableSlice(std::move(*s));
+    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
+                                       Finalize<rocksdb::PinnableSlice>, ptr, &result);
   } else if (encoding == Encoding::String) {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
   } else {
@@ -268,7 +269,12 @@ napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) 
 }
 
 template <typename State, typename T1, typename T2>
-napi_status runAsync(State&& state, const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
+napi_status runAsync(State&& state,
+                     const std::string& name,
+                     napi_env env,
+                     napi_value callback,
+                     T1&& execute,
+                     T2&& then) {
   struct Worker final {
     static void Execute(napi_env env, void* data) {
       auto worker = reinterpret_cast<Worker*>(data);
@@ -325,17 +331,13 @@ napi_status runAsync(State&& state, const std::string& name, napi_env env, napi_
 
     State state;
 
-		napi_ref callbackRef = nullptr;
+    napi_ref callbackRef = nullptr;
     napi_async_work asyncWork = nullptr;
     rocksdb::Status status = rocksdb::Status::OK();
   };
 
-  auto worker = std::unique_ptr<Worker>(new Worker{
-		env,
-		std::forward<T1>(execute),
-		std::forward<T2>(then),
-		std::move(state)
-	});
+  auto worker =
+      std::unique_ptr<Worker>(new Worker{env, std::forward<T1>(execute), std::forward<T2>(then), std::move(state)});
 
   NAPI_STATUS_RETURN(napi_create_reference(env, callback, 1, &worker->callbackRef));
   napi_value asyncResourceName;
@@ -351,5 +353,5 @@ napi_status runAsync(State&& state, const std::string& name, napi_env env, napi_
 }
 template <typename State, typename T1, typename T2>
 napi_status runAsync(const std::string& name, napi_env env, napi_value callback, T1&& execute, T2&& then) {
-	return runAsync<State>(State{}, name, env, callback, std::forward<T1>(execute), std::forward<T2>(then));
+  return runAsync<State>(State{}, name, env, callback, std::forward<T1>(execute), std::forward<T2>(then));
 }
