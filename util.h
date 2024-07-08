@@ -91,6 +91,22 @@ static napi_value ToError(napi_env env, const rocksdb::Status& status) {
   return CreateError(env, {}, msg);
 }
 
+static napi_status GetString(napi_env env, napi_value from, rocksdb::Slice& to) {
+	bool isBuffer;
+	NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
+
+	if (isBuffer) {
+		char* buf = nullptr;
+		size_t length = 0;
+		NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
+		to = { buf, length };
+	} else {
+		return napi_invalid_arg;
+	}
+
+  return napi_ok;
+}
+
 static napi_status GetString(napi_env env, napi_value from, std::string& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
@@ -157,6 +173,10 @@ static napi_status GetValue(napi_env env, napi_value value, std::string& result)
 }
 
 static napi_status GetValue(napi_env env, napi_value value, rocksdb::PinnableSlice& result) {
+  return GetString(env, value, result);
+}
+
+static napi_status GetValue(napi_env env, napi_value value, rocksdb::Slice& result) {
   return GetString(env, value, result);
 }
 

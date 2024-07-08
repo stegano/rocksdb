@@ -966,6 +966,7 @@ NAPI_METHOD(db_get_many) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
+	// TODO (fix): Ensure lifetime of buffer?
   std::vector<rocksdb::Slice> keys;
   {
     uint32_t length;
@@ -975,14 +976,7 @@ NAPI_METHOD(db_get_many) {
     for (uint32_t n = 0; n < length; n++) {
       napi_value element;
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-
-      char* buf = nullptr;
-      size_t length = 0;
-      NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
-
-			// TODO (fix): Ensure lifetime of buffer?
-
-			keys[n] = { buf, length };
+      NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
     }
   }
 
@@ -1158,9 +1152,6 @@ NAPI_METHOD(db_clear) {
 
 NAPI_METHOD(db_get_property) {
   NAPI_ARGV(2);
-
-	char* buf;
-	size_t length;
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
@@ -1468,19 +1459,14 @@ NAPI_METHOD(batch_init) {
 NAPI_METHOD(batch_put) {
   NAPI_ARGV(4);
 
-	char* buf;
-	size_t length;
-
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::Slice key;
-	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[1], reinterpret_cast<void**>(&buf), &length));
-	key = { buf, length };
+	NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   rocksdb::Slice val;
-	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[2], reinterpret_cast<void**>(&buf), &length));
-	val = { buf, length };
+	NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
 
@@ -1499,15 +1485,11 @@ NAPI_METHOD(batch_put) {
 NAPI_METHOD(batch_del) {
   NAPI_ARGV(3);
 
-	char* buf;
-	size_t length;
-
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::Slice key;
-	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[1], reinterpret_cast<void**>(&buf), &length));
-	key = { buf, length };
+	NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   const auto options = argv[2];
 
@@ -1526,19 +1508,14 @@ NAPI_METHOD(batch_del) {
 NAPI_METHOD(batch_merge) {
   NAPI_ARGV(4);
 
-	char* buf;
-	size_t length;
-
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
 
   rocksdb::Slice key;
-	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[1], reinterpret_cast<void**>(&buf), &length));
-	key = { buf, length };
+	NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
   rocksdb::Slice val;
-	NAPI_STATUS_THROWS(napi_get_buffer_info(env, argv[2], reinterpret_cast<void**>(&buf), &length));
-	key = { buf, length };
+	NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
   const auto options = argv[3];
 
