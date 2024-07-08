@@ -242,7 +242,7 @@ static napi_status GetProperty(napi_env env,
 
 template <typename T>
 napi_status Convert(napi_env env, rocksdb::PinnableSlice* s, Encoding encoding, napi_value& result) {
-  if (!s) {
+  if (!s || !s->IsPinned()) {
     return napi_get_null(env, &result);
   } else if (encoding == Encoding::Buffer) {
 		auto ptr = new rocksdb::PinnableSlice(std::move(*s));
@@ -259,8 +259,6 @@ napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) 
   if (!s) {
     return napi_get_null(env, &result);
   } else if (encoding == Encoding::Buffer) {
-    // napi_create_external_buffer would be nice but is unsafe since node
-    // buffers are not read-only.
     return napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
   } else if (encoding == Encoding::String) {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);

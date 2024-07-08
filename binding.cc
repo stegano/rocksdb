@@ -1302,7 +1302,7 @@ NAPI_METHOD(iterator_nextv) {
   auto callback = argv[2];
 
   struct State {
-    std::vector<std::optional<std::string>> cache;
+    std::vector<rocksdb::PinnableSlice> cache;
     bool finished = false;
   };
 
@@ -1325,23 +1325,21 @@ NAPI_METHOD(iterator_nextv) {
           if (!iterator->Valid() || !iterator->Increment())
             break;
 
+          auto k = rocksdb::PinnableSlice();
+          auto v = rocksdb::PinnableSlice();
+
           if (iterator->keys_ && iterator->values_) {
-            auto k = iterator->CurrentKey();
-            auto v = iterator->CurrentValue();
-            bytesRead += k.size() + v.size();
-            state.cache.push_back(k.ToString());
-            state.cache.push_back(v.ToString());
+            k.PinSelf(iterator->CurrentKey());
+            v.PinSelf(iterator->CurrentValue());
           } else if (iterator->keys_) {
-            auto k = iterator->CurrentKey();
-            bytesRead += k.size();
-            state.cache.push_back(k.ToString());
-            state.cache.push_back(std::nullopt);
+            k.PinSelf(iterator->CurrentKey());
           } else if (iterator->values_) {
-            auto v = iterator->CurrentValue();
-            bytesRead += v.size();
-            state.cache.push_back(std::nullopt);
-            state.cache.push_back(v.ToString());
+            v.PinSelf(iterator->CurrentValue());
           }
+
+					bytesRead += k.size() + v.size();
+					state.cache.push_back(std::move(k));
+					state.cache.push_back(std::move(v));
 
           if (bytesRead > iterator->highWaterMarkBytes_ || state.cache.size() / 2 >= size) {
             state.finished = false;
@@ -1362,8 +1360,8 @@ NAPI_METHOD(iterator_nextv) {
           napi_value key;
           napi_value val;
 
-          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 0], iterator->keyEncoding_, key));
-          NAPI_STATUS_RETURN(Convert(env, state.cache[n + 1], iterator->valueEncoding_, val));
+          NAPI_STATUS_RETURN(Convert(env, &state.cache[n + 0], iterator->keyEncoding_, key));
+          NAPI_STATUS_RETURN(Convert(env, &state.cache[n + 1], iterator->valueEncoding_, val));
 
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 0), key));
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 1), val));
