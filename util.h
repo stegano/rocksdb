@@ -245,9 +245,11 @@ napi_status Convert(napi_env env, rocksdb::PinnableSlice* s, Encoding encoding, 
   if (!s || !s->IsPinned()) {
     return napi_get_null(env, &result);
   } else if (encoding == Encoding::Buffer) {
-    auto ptr = new rocksdb::PinnableSlice(std::move(*s));
-    return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
-                                       Finalize<rocksdb::PinnableSlice>, ptr, &result);
+		// TODO (fix): Is this leaking?
+    // auto ptr = new rocksdb::PinnableSlice(std::move(*s));
+    // return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
+    //                                    Finalize<rocksdb::PinnableSlice>, ptr, &result);
+    return napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
   } else if (encoding == Encoding::String) {
     return napi_create_string_utf8(env, s->data(), s->size(), &result);
   } else {
