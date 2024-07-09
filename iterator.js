@@ -1,9 +1,11 @@
 'use strict'
 
+const { fromCallback } = require('catering')
 const { AbstractIterator } = require('abstract-level')
 
 const binding = require('./binding')
 
+const kPromise = Symbol('promise')
 const kContext = Symbol('context')
 const kCache = Symbol('cache')
 const kFinished = Symbol('finished')
@@ -82,6 +84,8 @@ class Iterator extends AbstractIterator {
   }
 
   _nextv (size, options, callback) {
+    callback = fromCallback(callback, kPromise)
+
     if (this[kFinished]) {
       process.nextTick(callback, null, [])
     } else {
@@ -89,6 +93,8 @@ class Iterator extends AbstractIterator {
       this[kFirst] = false
       binding.iterator_nextv(this[kContext], size, this[kHandleNextv])
     }
+
+    return callback[kPromise]
   }
 
   [kHandleNextv] (err, items, finished) {
