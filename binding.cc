@@ -980,40 +980,31 @@ NAPI_METHOD(db_get_many_sync) {
 
   auto callback = argv[3];
 
-  std::vector<rocksdb::Slice> keys{size};
-  std::vector<rocksdb::Status> statuses{size};
-  std::vector<rocksdb::PinnableSlice> values{size};
-
-  for (uint32_t n = 0; n < size; n++) {
-    napi_value element;
-    char* buf;
-    size_t length;
-    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-    NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
-    keys[n] = rocksdb::Slice{ buf, length };
-  }
-
   rocksdb::ReadOptions readOptions;
   readOptions.fill_cache = fillCache;
   readOptions.ignore_range_deletions = ignoreRangeDeletions;
 
-  database->db->MultiGet(readOptions, column, size, keys.data(), values.data(), statuses.data());
-
   napi_value ret;
-  NAPI_STATUS_THROWS(napi_create_array_with_length(env, values.size(), &ret));
+  NAPI_STATUS_THROWS(napi_create_array_with_length(env, size, &ret));
 
-  for (size_t idx = 0; idx < values.size(); idx++) {
-    const auto& status = statuses[idx];
-    const auto& value = values[idx];
+  napi_value element;
+  char* buf;
+  size_t length;
+  for (uint32_t n = 0; n < size; n++) {
+    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
+    NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
+    const auto key = rocksdb::Slice{ buf, length };
 
-    napi_value element;
+    rocksdb::PinnableSlice value;
+    const auto status = database->db->Get(readOptions, column, key, &value);
+
     if (status.IsNotFound()) {
       NAPI_STATUS_THROWS(napi_get_undefined(env, &element));
     } else {
       ROCKS_STATUS_THROWS_NAPI(status);
       NAPI_STATUS_THROWS(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
     }
-    NAPI_STATUS_THROWS(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
+    NAPI_STATUS_THROWS(napi_set_element(env, argv[1], n, element));
   }
 
   return ret;

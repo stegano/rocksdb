@@ -3,7 +3,7 @@ import { RocksLevel } from '../index.js'
 import { LRUCache } from 'lru-cache'
 
 const values = []
-for (let x = 0; x < 1e3; x++) {
+for (let x = 0; x < 4e3; x++) {
   values.push(Buffer.from(Math.random().toString(36).repeat(4)))
 }
 
