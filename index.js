@@ -171,10 +171,6 @@ class RocksLevel extends AbstractLevel {
     return callback[kPromise]
   }
 
-  _getManySync (keys, options) {
-    return binding.db_get_many_sync(this[kContext], keys, options ?? EMPTY)
-  }
-
   _getMergeOperands (key, options, callback) {
     callback = fromCallback(callback, kPromise)
 
