@@ -17,10 +17,10 @@ const db = new RocksLevel('./tmp', {
     default: {
       cacheSize: 128e6,
       memtableMemoryBudget: 128e6,
-      compaction: 'level',
+      compaction: 'level'
       // optimize: 'point-lookup',
-    },
-  },
+    }
+  }
 })
 await db.open()
 
@@ -42,7 +42,7 @@ const getOpts = {
   readTier: 1
 }
 
-db._getMany(values, getOpts).length
+x += db._getMany(values, getOpts).length
 
 bench('rocks async', async () => {
   x += (await db._getMany(values, getOpts)).length

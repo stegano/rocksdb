@@ -958,6 +958,17 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
+napi_status GetReadOptions(napi_env env, napi_value options, rocksdb::ReadOptions& readOptions) {
+  NAPI_STATUS_RETURN(GetProperty(env, options, "fillCache", readOptions.fill_cache));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "ignoreRangeDeletions", readOptions.ignore_range_deletions));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "valueSizeSoftLimit", readOptions.value_size_soft_limit));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "asyncIO", readOptions.async_io));
+
+  int readTier = readOptions.read_tier;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "readTier", readTier));
+  readOptions.read_tier = static_cast<rocksdb::ReadTier>(readTier);
+}
+
 NAPI_METHOD(db_get_many_sync) {
   NAPI_ARGV(3);
 
@@ -967,24 +978,11 @@ NAPI_METHOD(db_get_many_sync) {
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &size));
 
-  const auto options = argv[2];
-
-  bool fillCache = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
-
-  bool ignoreRangeDeletions = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
-
-  int readTier = rocksdb::ReadTier::kReadAllTier;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "readTier", readTier));
+  rocksdb::ReadOptions readOptions;
+  NAPI_STATUS_THROWS(GetReadOptions(env, argv[2], readOptions));
 
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
-
-  rocksdb::ReadOptions readOptions;
-  readOptions.fill_cache = fillCache;
-  readOptions.ignore_range_deletions = ignoreRangeDeletions;
-  readOptions.read_tier = static_cast<rocksdb::ReadTier>(readTier);
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
 
   napi_value ret;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, size, &ret));
@@ -1002,7 +1000,7 @@ NAPI_METHOD(db_get_many_sync) {
 
     if (status.IsNotFound()) {
       NAPI_STATUS_THROWS(napi_get_undefined(env, &element));
-    } else if (status.IsIncomplete()) {
+    } else if (status.IsIncomplete() || status.IsAborted()) {
       NAPI_STATUS_THROWS(napi_get_null(env, &element));
     } else {
       ROCKS_STATUS_THROWS_NAPI(status);
@@ -1023,19 +1021,13 @@ NAPI_METHOD(db_get_many) {
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &size));
 
-  const auto options = argv[2];
-
-  bool fillCache = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
-
-  bool ignoreRangeDeletions = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
-
-  int readTier = rocksdb::ReadTier::kReadAllTier;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "readTier", readTier));
+  rocksdb::ReadOptions readOptions;
+  readOptions.async_io = true;
+  readOptions.optimize_multiget_for_io = true;
+  NAPI_STATUS_THROWS(GetReadOptions(env, argv[2], readOptions));
 
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
 
   auto callback = argv[3];
 
@@ -1061,14 +1053,8 @@ NAPI_METHOD(db_get_many) {
 
   runAsync<State>(
       "leveldown.get.many", env, callback,
-      [=, keys = std::move(keys), snapshot = std::move(snapshot)](auto& state) {
-        rocksdb::ReadOptions readOptions;
-        readOptions.fill_cache = fillCache;
+      [=, keys = std::move(keys), snapshot = std::move(snapshot), readOptions = std::move(readOptions)](auto& state) mutable {
         readOptions.snapshot = snapshot.get();
-        readOptions.async_io = true;
-        readOptions.ignore_range_deletions = ignoreRangeDeletions;
-        readOptions.optimize_multiget_for_io = true;
-        readOptions.read_tier = static_cast<rocksdb::ReadTier>(readTier);
 
         state.statuses.resize(size);
         state.values.resize(size);
@@ -1089,7 +1075,7 @@ NAPI_METHOD(db_get_many) {
           napi_value element;
           if (status.IsNotFound()) {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
-          } else if (status.IsIncomplete()) {
+          } else if (status.IsIncomplete() || status.IsAborted()) {
             NAPI_STATUS_RETURN(napi_get_null(env, &element));
           } else {
             ROCKS_STATUS_RETURN_NAPI(status);
