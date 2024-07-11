@@ -999,14 +999,14 @@ NAPI_METHOD(db_get_many_sync) {
     const auto status = database->db->Get(readOptions, column, key, &value);
 
     if (status.IsNotFound()) {
-      NAPI_STATUS_THROWS(napi_get_undefined(env, &element));
-    } else if (status.IsIncomplete() || status.IsAborted()) {
       NAPI_STATUS_THROWS(napi_get_null(env, &element));
+    } else if (status.IsIncomplete() || status.IsAborted()) {
+      NAPI_STATUS_THROWS(napi_get_undefined(env, &element));
     } else {
       ROCKS_STATUS_THROWS_NAPI(status);
       NAPI_STATUS_THROWS(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
     }
-    NAPI_STATUS_THROWS(napi_set_element(env, argv[1], n, element));
+    NAPI_STATUS_THROWS(napi_set_element(env, ret, n, element));
   }
 
   return ret;
@@ -1074,9 +1074,9 @@ NAPI_METHOD(db_get_many) {
 
           napi_value element;
           if (status.IsNotFound()) {
-            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
-          } else if (status.IsIncomplete() || status.IsAborted()) {
             NAPI_STATUS_RETURN(napi_get_null(env, &element));
+          } else if (status.IsIncomplete() || status.IsAborted()) {
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           } else {
             ROCKS_STATUS_RETURN_NAPI(status);
             NAPI_STATUS_RETURN(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
