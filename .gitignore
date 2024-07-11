@@ -23,3 +23,5 @@ package-lock.json
 .benchmarks/
 .vscode
 .tap
+tmp
+yarn-error.log
