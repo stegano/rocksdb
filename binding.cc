@@ -959,7 +959,7 @@ NAPI_METHOD(db_close) {
 }
 
 NAPI_METHOD(db_get_many_sync) {
-  NAPI_ARGV(4);
+  NAPI_ARGV(3);
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
