@@ -39,6 +39,7 @@ const getOpts = {
   keyEncoding: 'buffer',
   valueEncoding: 'buffer',
   fillCache: true,
+  readTier: 1
 }
 
 db._getMany(values, getOpts).length

@@ -975,14 +975,16 @@ NAPI_METHOD(db_get_many_sync) {
   bool ignoreRangeDeletions = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
 
+  int readTier = rocksdb::ReadTier::kReadAllTier;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "readTier", readTier));
+
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
-
-  auto callback = argv[3];
 
   rocksdb::ReadOptions readOptions;
   readOptions.fill_cache = fillCache;
   readOptions.ignore_range_deletions = ignoreRangeDeletions;
+  readOptions.read_tier = static_cast<rocksdb::ReadTier>(readTier);
 
   napi_value ret;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, size, &ret));
@@ -1000,6 +1002,8 @@ NAPI_METHOD(db_get_many_sync) {
 
     if (status.IsNotFound()) {
       NAPI_STATUS_THROWS(napi_get_undefined(env, &element));
+    } else if (status.IsIncomplete()) {
+      NAPI_STATUS_THROWS(napi_get_null(env, &element));
     } else {
       ROCKS_STATUS_THROWS_NAPI(status);
       NAPI_STATUS_THROWS(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
@@ -1026,6 +1030,9 @@ NAPI_METHOD(db_get_many) {
 
   bool ignoreRangeDeletions = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
+
+  int readTier = rocksdb::ReadTier::kReadAllTier;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "readTier", readTier));
 
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
@@ -1061,6 +1068,7 @@ NAPI_METHOD(db_get_many) {
         readOptions.async_io = true;
         readOptions.ignore_range_deletions = ignoreRangeDeletions;
         readOptions.optimize_multiget_for_io = true;
+        readOptions.read_tier = static_cast<rocksdb::ReadTier>(readTier);
 
         state.statuses.resize(size);
         state.values.resize(size);
@@ -1081,6 +1089,8 @@ NAPI_METHOD(db_get_many) {
           napi_value element;
           if (status.IsNotFound()) {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
+          } else if (status.IsIncomplete()) {
+            NAPI_STATUS_RETURN(napi_get_null(env, &element));
           } else {
             ROCKS_STATUS_RETURN_NAPI(status);
             NAPI_STATUS_RETURN(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
