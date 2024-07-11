@@ -958,19 +958,8 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
-napi_status GetReadOptions(napi_env env, napi_value options, rocksdb::ReadOptions& readOptions) {
-  NAPI_STATUS_RETURN(GetProperty(env, options, "fillCache", readOptions.fill_cache));
-  NAPI_STATUS_RETURN(GetProperty(env, options, "ignoreRangeDeletions", readOptions.ignore_range_deletions));
-  NAPI_STATUS_RETURN(GetProperty(env, options, "valueSizeSoftLimit", readOptions.value_size_soft_limit));
-  NAPI_STATUS_RETURN(GetProperty(env, options, "asyncIO", readOptions.async_io));
-
-  int readTier = readOptions.read_tier;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "readTier", readTier));
-  readOptions.read_tier = static_cast<rocksdb::ReadTier>(readTier);
-}
-
 NAPI_METHOD(db_get_many_sync) {
-  NAPI_ARGV(3);
+  NAPI_ARGV(4);
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
@@ -978,35 +967,53 @@ NAPI_METHOD(db_get_many_sync) {
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &size));
 
-  rocksdb::ReadOptions readOptions;
-  NAPI_STATUS_THROWS(GetReadOptions(env, argv[2], readOptions));
+  const auto options = argv[2];
+
+  bool fillCache = true;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
+
+  bool ignoreRangeDeletions = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
 
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+
+  auto callback = argv[3];
+
+  std::vector<rocksdb::Slice> keys{size};
+  std::vector<rocksdb::Status> statuses{size};
+  std::vector<rocksdb::PinnableSlice> values{size};
+
+  for (uint32_t n = 0; n < size; n++) {
+    napi_value element;
+    char* buf;
+    size_t length;
+    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
+    NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
+    keys[n] = rocksdb::Slice{ buf, length };
+  }
+
+  rocksdb::ReadOptions readOptions;
+  readOptions.fill_cache = fillCache;
+  readOptions.ignore_range_deletions = ignoreRangeDeletions;
+
+  database->db->MultiGet(readOptions, column, size, keys.data(), values.data(), statuses.data());
 
   napi_value ret;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, size, &ret));
 
-  napi_value element;
-  char* buf;
-  size_t length;
-  for (uint32_t n = 0; n < size; n++) {
-    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-    NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
-    const auto key = rocksdb::Slice{ buf, length };
+  for (uint32_t idx = 0; idx < size; idx++) {
+    const auto& status = statuses[idx];
+    const auto& value = values[idx];
 
-    rocksdb::PinnableSlice value;
-    const auto status = database->db->Get(readOptions, column, key, &value);
-
+    napi_value element;
     if (status.IsNotFound()) {
-      NAPI_STATUS_THROWS(napi_get_null(env, &element));
-    } else if (status.IsIncomplete() || status.IsAborted()) {
       NAPI_STATUS_THROWS(napi_get_undefined(env, &element));
     } else {
       ROCKS_STATUS_THROWS_NAPI(status);
       NAPI_STATUS_THROWS(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
     }
-    NAPI_STATUS_THROWS(napi_set_element(env, ret, n, element));
+    NAPI_STATUS_THROWS(napi_set_element(env, argv[1], idx, element));
   }
 
   return ret;
@@ -1021,13 +1028,16 @@ NAPI_METHOD(db_get_many) {
   uint32_t size;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &size));
 
-  rocksdb::ReadOptions readOptions;
-  readOptions.async_io = true;
-  readOptions.optimize_multiget_for_io = true;
-  NAPI_STATUS_THROWS(GetReadOptions(env, argv[2], readOptions));
+  const auto options = argv[2];
+
+  bool fillCache = true;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
+
+  bool ignoreRangeDeletions = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
 
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
   auto callback = argv[3];
 
@@ -1053,8 +1063,13 @@ NAPI_METHOD(db_get_many) {
 
   runAsync<State>(
       "leveldown.get.many", env, callback,
-      [=, keys = std::move(keys), snapshot = std::move(snapshot), readOptions = std::move(readOptions)](auto& state) mutable {
+      [=, keys = std::move(keys), snapshot = std::move(snapshot)](auto& state) {
+        rocksdb::ReadOptions readOptions;
+        readOptions.fill_cache = fillCache;
         readOptions.snapshot = snapshot.get();
+        readOptions.async_io = true;
+        readOptions.ignore_range_deletions = ignoreRangeDeletions;
+        readOptions.optimize_multiget_for_io = true;
 
         state.statuses.resize(size);
         state.values.resize(size);
@@ -1066,22 +1081,20 @@ NAPI_METHOD(db_get_many) {
       [=](auto& state, auto env, auto& argv) {
         argv.resize(2);
 
-        NAPI_STATUS_RETURN(napi_create_array_with_length(env, state.values.size(), &argv[1]));
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &argv[1]));
 
-        for (size_t idx = 0; idx < state.values.size(); idx++) {
+        for (uint32_t idx = 0; idx < size; idx++) {
           const auto& status = state.statuses[idx];
           const auto& value = state.values[idx];
 
           napi_value element;
           if (status.IsNotFound()) {
-            NAPI_STATUS_RETURN(napi_get_null(env, &element));
-          } else if (status.IsIncomplete() || status.IsAborted()) {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           } else {
             ROCKS_STATUS_RETURN_NAPI(status);
             NAPI_STATUS_RETURN(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
           }
-          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, element));
         }
 
         return napi_ok;
@@ -1603,35 +1616,22 @@ NAPI_METHOD(batch_write) {
   bool lowPriority = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
 
-  rocksdb::WriteOptions writeOptions;
-  writeOptions.sync = sync;
-  writeOptions.low_pri = lowPriority;
-  writeOptions.no_slowdown = true;
+  // TODO (fix): This ref can leak on error...
+  napi_ref batchRef;
+  NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
 
-  const auto status = database->db->Write(writeOptions, batch);
-
-  if (status == rocksdb::Status::Incomplete()) {
-    napi_ref batchRef;
-    NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
-
-    runAsync<int64_t>(
-        "leveldown.batch.write", env, callback,
-        [=](int64_t& seq) {
-          rocksdb::WriteOptions writeOptions;
-          writeOptions.sync = sync;
-          writeOptions.low_pri = lowPriority;
-          return database->db->Write(writeOptions, batch);
-        },
-        [=](int64_t& seq, auto env, auto& argv) {
-          NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
-          return napi_ok;
-        });
-
-    NAPI_STATUS_THROWS(napi_get_boolean(env, false, &result));
-  } else {
-    ROCKS_STATUS_THROWS_NAPI(status);
-    NAPI_STATUS_THROWS(napi_get_boolean(env, true, &result));
-  }
+  runAsync<int64_t>(
+      "leveldown.batch.write", env, callback,
+      [=](int64_t& seq) {
+        rocksdb::WriteOptions writeOptions;
+        writeOptions.sync = sync;
+        writeOptions.low_pri = lowPriority;
+        return database->db->Write(writeOptions, batch);
+      },
+      [=](int64_t& seq, auto env, auto& argv) {
+        NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
+        return napi_ok;
+      });
 
   return result;
 }

@@ -3,7 +3,7 @@ import { RocksLevel } from '../index.js'
 import { LRUCache } from 'lru-cache'
 
 const values = []
-for (let x = 0; x < 4e3; x++) {
+for (let x = 0; x < 1e3; x++) {
   values.push(Buffer.from(Math.random().toString(36).repeat(4)))
 }
 
@@ -38,11 +38,10 @@ let x = 0
 const getOpts = {
   keyEncoding: 'buffer',
   valueEncoding: 'buffer',
-  fillCache: true,
-  readTier: 1
+  fillCache: true
 }
 
-x += db._getMany(values, getOpts).length
+x = db._getMany(values, getOpts).length
 
 bench('rocks async', async () => {
   x += (await db._getMany(values, getOpts)).length
