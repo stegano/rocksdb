@@ -148,18 +148,16 @@ class RocksLevel extends AbstractLevel {
   _getMany (keys, options, callback) {
     callback = fromCallback(callback, kPromise)
 
-    const { keyEncoding, valueEncoding } = options ?? EMPTY
+    const { keyEncoding } = options ?? EMPTY
 
     if (keyEncoding !== 'buffer') {
-      keys = keys.map(key => Buffer.from(key))
+      keys = keys.map(key => typeof key === 'string' ? Buffer.from(key) : key)
     }
 
     try {
       this[kRef]()
+      // NOTE: `keys` needs to be referenced until callback is called
       binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, val) => {
-        if (valueEncoding !== 'buffer') {
-          val = val.map(v => v != null ? v.toString(valueEncoding) : v)
-        }
         callback(err, val, keys)
         this[kUnref]()
       })
@@ -237,15 +235,17 @@ class RocksLevel extends AbstractLevel {
   _batch (operations, options, callback) {
     callback = fromCallback(callback, kPromise)
 
-    try {
-      this[kRef]()
-      binding.batch_do(this[kContext], operations, options ?? EMPTY, (err, sequence) => {
-        this[kUnref]()
-        callback(err)
-      })
-    } catch (err) {
-      process.nextTick(callback, err)
+    const batch = this._chainedBatch()
+    for (const { type, key, value, column } of operations) {
+      if (type === 'del') {
+        batch._del(key, { column })
+      } else if (type === 'put') {
+        batch._put(key, value, { column })
+      } else {
+        assert(false)
+      }
     }
+    batch.write(callback)
 
     return callback[kPromise]
   }

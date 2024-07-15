@@ -54,16 +54,19 @@ struct Database final {
   ~Database() { assert(!db); }
 
   rocksdb::Status Close() {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     if (!db) {
       return rocksdb::Status::OK();
     }
 
-    for (auto closable : closables_) {
+    std::set<Closable*> closables;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      closables = std::move(closables_);
+    }
+
+    for (auto closable : closables) {
       closable->Close();
     }
-    closables_.clear();
 
     db->FlushWAL(true);
 
@@ -309,6 +312,7 @@ struct BaseIterator : public Closable {
       *lower_bound_->GetSelf() = std::move(*gt) + '\0';
       lower_bound_->PinSelf();
     }
+    database_->Attach(this);
   }
 
   virtual ~BaseIterator() { assert(!iterator_); }
@@ -327,7 +331,7 @@ struct BaseIterator : public Closable {
     }
   }
 
-  void Seek(const rocksdb::Slice& target) {
+  virtual void Seek(const rocksdb::Slice& target) {
     if (!iterator_) {
       Init();
     }
@@ -346,9 +350,10 @@ struct BaseIterator : public Closable {
     }
   }
 
-  rocksdb::Status Close() override {
+  virtual rocksdb::Status Close() override {
     snapshot_.reset();
     iterator_.reset();
+    database_->Detach(this);
     return rocksdb::Status::OK();
   }
 
@@ -440,20 +445,12 @@ struct Iterator final : public BaseIterator {
         values_(values),
         keyEncoding_(keyEncoding),
         valueEncoding_(valueEncoding),
-        highWaterMarkBytes_(highWaterMarkBytes) {}
-
-  napi_status Attach(napi_env env, napi_value context) {
-    NAPI_STATUS_RETURN(napi_create_reference(env, context, 1, &ref_));
-    database_->Attach(this);
-    return napi_ok;
-  }
-
-  napi_status Detach(napi_env env) {
-    database_->Detach(this);
-    if (ref_) {
-      NAPI_STATUS_RETURN(napi_delete_reference(env, ref_));
+        highWaterMarkBytes_(highWaterMarkBytes) {
     }
-    return napi_ok;
+
+  void Seek(const rocksdb::Slice& target) override {
+    first_ = true;
+    return BaseIterator::Seek(target);
   }
 
   const bool keys_;
@@ -462,9 +459,6 @@ struct Iterator final : public BaseIterator {
   const Encoding valueEncoding_;
   const size_t highWaterMarkBytes_;
   bool first_ = true;
-
- private:
-  napi_ref ref_ = nullptr;
 };
 
 /**
@@ -975,6 +969,9 @@ NAPI_METHOD(db_get_many) {
   bool ignoreRangeDeletions = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
 
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
+
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
@@ -1031,7 +1028,7 @@ NAPI_METHOD(db_get_many) {
             NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           } else {
             ROCKS_STATUS_RETURN_NAPI(status);
-            NAPI_STATUS_RETURN(napi_create_buffer_copy(env, value.size(), value.data(), nullptr, &element));
+            NAPI_STATUS_RETURN(Convert(env, &value, valueEncoding, element));
           }
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, element));
         }
@@ -1236,10 +1233,7 @@ NAPI_METHOD(iterator_init) {
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
-
-  // Prevent GC of JS object before the iterator is closed (explicitly or on
-  // db close) and keep track of non-closed iterators to end them on db close.
-  NAPI_STATUS_THROWS(iterator.release()->Attach(env, result));
+  iterator.release();
 
   return result;
 }
@@ -1253,8 +1247,7 @@ NAPI_METHOD(iterator_seek) {
   rocksdb::PinnableSlice target;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], target));
 
-  iterator->first_ = true;
-  iterator->Seek(target);  // TODO: Does seek causing blocking IO?
+  iterator->Seek(target);
 
   return 0;
 }
@@ -1266,23 +1259,8 @@ NAPI_METHOD(iterator_close) {
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
   ROCKS_STATUS_THROWS_NAPI(iterator->Close());
-  NAPI_STATUS_THROWS(iterator->Detach(env));
 
   return 0;
-}
-
-NAPI_METHOD(iterator_get_sequence) {
-  NAPI_ARGV(1);
-
-  Iterator* iterator;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
-
-  const auto seq = iterator->snapshot_->GetSequenceNumber();
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_int64(env, seq, &result));
-
-  return result;
 }
 
 NAPI_METHOD(iterator_nextv) {
@@ -1364,76 +1342,6 @@ NAPI_METHOD(iterator_nextv) {
 
         NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &argv[2]));
 
-        return napi_ok;
-      });
-
-  return 0;
-}
-
-NAPI_METHOD(batch_do) {
-  NAPI_ARGV(4);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  const auto elements = argv[1];
-  const auto options = argv[2];
-  const auto callback = argv[3];
-
-  bool sync = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
-
-  auto batch = std::make_unique<rocksdb::WriteBatch>();
-
-  uint32_t length;
-  NAPI_STATUS_THROWS(napi_get_array_length(env, elements, &length));
-
-  for (uint32_t i = 0; i < length; i++) {
-    rocksdb::PinnableSlice type;
-    rocksdb::PinnableSlice key;
-    rocksdb::PinnableSlice value;
-
-    napi_value element;
-    NAPI_STATUS_THROWS(napi_get_element(env, elements, i, &element));
-
-    NAPI_STATUS_THROWS(GetProperty(env, element, "type", type, true));
-
-    rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-    NAPI_STATUS_THROWS(GetProperty(env, element, "column", column));
-
-    if (type == "del") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
-      ROCKS_STATUS_THROWS_NAPI(batch->Delete(column, key));
-    } else if (type == "put") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
-      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
-      ROCKS_STATUS_THROWS_NAPI(batch->Put(column, key, value));
-    } else if (type == "data") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
-      ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(value));
-    } else if (type == "merge") {
-      NAPI_STATUS_THROWS(GetProperty(env, element, "key", key, true));
-      NAPI_STATUS_THROWS(GetProperty(env, element, "value", value, true));
-      ROCKS_STATUS_THROWS_NAPI(batch->Merge(column, key, value));
-    } else {
-      NAPI_STATUS_THROWS(napi_invalid_arg);
-    }
-  }
-
-  runAsync<int64_t>(
-      "leveldown.batch.do", env, callback,
-      [=, batch = std::move(batch)](int64_t& seq) {
-        rocksdb::WriteOptions writeOptions;
-        writeOptions.sync = sync;
-
-        // TODO (fix): Better way to get batch sequence?
-        seq = database->db->GetLatestSequenceNumber() + 1;
-
-        return database->db->Write(writeOptions, batch.get());
-      },
-      [=](int64_t& seq, auto env, auto& argv) {
-        argv.resize(2);
-        NAPI_STATUS_RETURN(napi_create_int64(env, seq, &argv[1]));
         return napi_ok;
       });
 
@@ -1555,10 +1463,6 @@ NAPI_METHOD(batch_write) {
   bool lowPriority = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
 
-  // TODO (fix): This ref can leak on error...
-  napi_ref batchRef;
-  NAPI_STATUS_THROWS(napi_create_reference(env, argv[1], 1, &batchRef));
-
   runAsync<int64_t>(
       "leveldown.batch.write", env, callback,
       [=](int64_t& seq) {
@@ -1568,7 +1472,6 @@ NAPI_METHOD(batch_write) {
         return database->db->Write(writeOptions, batch);
       },
       [=](int64_t& seq, auto env, auto& argv) {
-        NAPI_STATUS_RETURN(napi_delete_reference(env, batchRef));
         return napi_ok;
       });
 
@@ -1641,9 +1544,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_seek);
   NAPI_EXPORT_FUNCTION(iterator_close);
   NAPI_EXPORT_FUNCTION(iterator_nextv);
-  NAPI_EXPORT_FUNCTION(iterator_get_sequence);
 
-  NAPI_EXPORT_FUNCTION(batch_do);
   NAPI_EXPORT_FUNCTION(batch_init);
   NAPI_EXPORT_FUNCTION(batch_put);
   NAPI_EXPORT_FUNCTION(batch_del);

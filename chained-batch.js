@@ -59,7 +59,10 @@ class ChainedBatch extends AbstractChainedBatch {
   _write (options, callback) {
     callback = fromCallback(callback, kPromise)
 
-    this[kWrite](this, this[kBatchContext], options ?? EMPTY, callback)
+    // NOTE: `this` needs to be referenced until callback is called
+    this[kWrite](this, this[kBatchContext], options ?? EMPTY, (err) => {
+      callback(err, null, this)
+    })
 
     return callback[kPromise]
   }
