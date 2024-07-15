@@ -289,7 +289,6 @@ class RocksLevel extends AbstractLevel {
         } else {
           resolve({
             rows,
-            sequence: binding.iterator_get_sequence(context),
             finished
           })
         }
