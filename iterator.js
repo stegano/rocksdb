@@ -16,11 +16,16 @@ const kHandleNextv = Symbol('handleNextv')
 const kCallback = Symbol('callback')
 const empty = []
 
+const registry = new FinalizationRegistry((context) => {
+  binding.iterator_close(context)
+})
+
 class Iterator extends AbstractIterator {
   constructor (db, context, options) {
     super(db, options)
 
     this[kContext] = binding.iterator_init(context, options)
+    registry.register(this, this[kContext], this[kContext])
 
     this[kHandleNext] = this[kHandleNext].bind(this)
     this[kHandleNextv] = this[kHandleNextv].bind(this)
@@ -114,6 +119,7 @@ class Iterator extends AbstractIterator {
     this[kCache] = empty
     this[kCallback] = null
 
+    registry.unregister(this[kContext])
     process.nextTick(callback, binding.iterator_close(this[kContext]))
   }
 
