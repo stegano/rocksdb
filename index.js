@@ -156,9 +156,8 @@ class RocksLevel extends AbstractLevel {
 
     try {
       this[kRef]()
-      // NOTE: `keys` needs to be referenced until callback is called
       binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, val) => {
-        callback(err, val, keys)
+        callback(err, val)
         this[kUnref]()
       })
     } catch (err) {

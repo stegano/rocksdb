@@ -980,21 +980,18 @@ NAPI_METHOD(db_get_many) {
   auto snapshot = std::shared_ptr<const rocksdb::Snapshot>(
       database->db->GetSnapshot(), [database](auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
-  // TODO (fix): Ensure lifetime of buffer?
-  std::vector<rocksdb::Slice> keys { size };
+  std::vector<rocksdb::PinnableSlice> keys { size };
 
   for (uint32_t n = 0; n < size; n++) {
     napi_value element;
-    char* buf;
-    size_t length;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-    NAPI_STATUS_THROWS(napi_get_buffer_info(env, element, reinterpret_cast<void**>(&buf), &length));
-    keys[n] = rocksdb::Slice{ buf, length };
+    NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
   }
 
   struct State {
     std::vector<rocksdb::Status> statuses;
     std::vector<rocksdb::PinnableSlice> values;
+    std::vector<rocksdb::Slice> keys;
   };
 
   runAsync<State>(
@@ -1009,8 +1006,13 @@ NAPI_METHOD(db_get_many) {
 
         state.statuses.resize(size);
         state.values.resize(size);
+        state.keys.resize(size);
 
-        database->db->MultiGet(readOptions, column, size, keys.data(), state.values.data(), state.statuses.data());
+        for (auto n = 0; n < size; n++) {
+          state.keys[n] = keys[n];
+        }
+
+        database->db->MultiGet(readOptions, column, size, state.keys.data(), state.values.data(), state.statuses.data());
 
         return rocksdb::Status::OK();
       },
@@ -1032,6 +1034,10 @@ NAPI_METHOD(db_get_many) {
           }
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, element));
         }
+
+        state.statuses.clear();
+        state.values.clear();
+        state.keys.clear();
 
         return napi_ok;
       });
