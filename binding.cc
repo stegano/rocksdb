@@ -445,8 +445,7 @@ struct Iterator final : public BaseIterator {
         values_(values),
         keyEncoding_(keyEncoding),
         valueEncoding_(valueEncoding),
-        highWaterMarkBytes_(highWaterMarkBytes) {
-    }
+        highWaterMarkBytes_(highWaterMarkBytes) {}
 
   void Seek(const rocksdb::Slice& target) override {
     first_ = true;
@@ -980,7 +979,7 @@ NAPI_METHOD(db_get_many) {
   auto snapshot = std::shared_ptr<const rocksdb::Snapshot>(
       database->db->GetSnapshot(), [database](auto ptr) { database->db->ReleaseSnapshot(ptr); });
 
-  std::vector<rocksdb::PinnableSlice> keys { size };
+  std::vector<rocksdb::PinnableSlice> keys{size};
 
   for (uint32_t n = 0; n < size; n++) {
     napi_value element;
@@ -1012,7 +1011,8 @@ NAPI_METHOD(db_get_many) {
           state.keys[n] = keys[n];
         }
 
-        database->db->MultiGet(readOptions, column, size, state.keys.data(), state.values.data(), state.statuses.data());
+        database->db->MultiGet(readOptions, column, size, state.keys.data(), state.values.data(),
+                               state.statuses.data());
 
         return rocksdb::Status::OK();
       },
@@ -1477,9 +1477,7 @@ NAPI_METHOD(batch_write) {
         writeOptions.low_pri = lowPriority;
         return database->db->Write(writeOptions, batch);
       },
-      [=](int64_t& seq, auto env, auto& argv) {
-        return napi_ok;
-      });
+      [=](int64_t& seq, auto env, auto& argv) { return napi_ok; });
 
   return result;
 }
