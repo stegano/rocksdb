@@ -974,10 +974,15 @@ NAPI_METHOD(db_get_many) {
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
+  bool takeSnapshot = true;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "snapshot", takeSnapshot));
+
   auto callback = argv[3];
 
-  auto snapshot = std::shared_ptr<const rocksdb::Snapshot>(
-      database->db->GetSnapshot(), [database](auto ptr) { database->db->ReleaseSnapshot(ptr); });
+  std::shared_ptr<const rocksdb::Snapshot> snapshot;
+  if (takeSnapshot) {
+    snapshot.reset(database->db->GetSnapshot(), [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
+  }
 
   std::vector<rocksdb::PinnableSlice> keys{size};
 
@@ -1230,8 +1235,13 @@ NAPI_METHOD(iterator_init) {
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
-  std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
-                                                    [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
+  bool takeSnapshot = !tailing;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "snapshot", takeSnapshot));
+
+  std::shared_ptr<const rocksdb::Snapshot> snapshot;
+  if (takeSnapshot) {
+    snapshot.reset(database->db->GetSnapshot(), [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
+  }
 
   auto iterator = std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt,
                                                          gte, fillCache, keyEncoding, valueEncoding, highWaterMarkBytes,
