@@ -152,23 +152,25 @@ class RocksLevel extends AbstractLevel {
     const { valueEncoding } = options ?? EMPTY
     try {
       this[kRef]()
-      binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, sizes, buffer) => {
+      binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, sizes, data) => {
         if (err) {
           callback(err)
         } else {
-          buffer ??= Buffer.alloc(0)
+          data ??= Buffer.alloc(0)
+          sizes ??= Buffer.alloc(0)
           const val = []
           let offset = 0
-          for (const size of sizes) {
-            if (size == null) {
+          const sizes32 = new Int32Array(sizes.buffer, sizes.byteOffset, sizes.byteLength / 4)
+          for (const size of sizes32) {
+            if (size < 0) {
               val.push(undefined)
             } else {
               if (!valueEncoding || valueEncoding === 'buffer') {
-                val.push(buffer.subarray(offset, offset + size))
+                val.push(data.subarray(offset, offset + size))
               } else if (valueEncoding === 'slice') {
-                val.push({ buffer, byteOffset: offset, byteLength: size })
+                val.push({ buffer: data, byteOffset: offset, byteLength: size })
               } else {
-                val.push(buffer.toString(valueEncoding, offset, offset + size))
+                val.push(data.toString(valueEncoding, offset, offset + size))
               }
               offset += size
               if (offset & 0x7) {

@@ -5,15 +5,17 @@ function handleNextv (err, sizes, buffer, finished, options, callback) {
     callback(err)
   } else {
     buffer ??= Buffer.alloc(0)
+    sizes ??= Buffer.alloc(0)
 
     const { keyEncoding, valueEncoding } = options ?? {}
 
     const rows = []
     let offset = 0
-    for (let n = 0; n < sizes.length; n++) {
-      const size = sizes[n]
+    const sizes32 = new Int32Array(sizes.buffer, sizes.byteOffset, sizes.byteLength / 4)
+    for (let n = 0; n < sizes32.length; n++) {
+      const size = sizes32[n]
       const encoding = n & 1 ? valueEncoding : keyEncoding
-      if (size == null) {
+      if (size < 0) {
         rows.push(undefined)
       } else {
         if (!encoding || encoding === 'buffer') {
