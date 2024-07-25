@@ -1327,7 +1327,6 @@ NAPI_METHOD(iterator_nextv) {
           }
         };
 
-        auto status = rocksdb::Status::OK();
         while (true) {
           if (!iterator->first_) {
             iterator->Next();
@@ -1336,9 +1335,8 @@ NAPI_METHOD(iterator_nextv) {
           }
 
           if (!iterator->Valid() || !iterator->Increment()) {
-            status = iterator->Status();
             state.finished = true;
-            break;
+            return iterator->Status();
           }
 
           if (iterator->keys_ && iterator->values_) {
@@ -1353,13 +1351,10 @@ NAPI_METHOD(iterator_nextv) {
           }
 
           if (bytesRead > iterator->highWaterMarkBytes_ || state.sizes.size() / 2 >= count) {
-            status = rocksdb::Status::OK();
             state.finished = false;
-            break;
+            return rocksdb::Status::OK();
           }
         }
-
-        return status;
       },
       [=](auto& state, auto env, auto& argv) {
         argv.resize(4);

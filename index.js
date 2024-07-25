@@ -158,19 +158,20 @@ class RocksLevel extends AbstractLevel {
         } else {
           data ??= Buffer.alloc(0)
           sizes ??= Buffer.alloc(0)
-          const val = []
+
+          const rows = []
           let offset = 0
           const sizes32 = new Int32Array(sizes.buffer, sizes.byteOffset, sizes.byteLength / 4)
           for (const size of sizes32) {
             if (size < 0) {
-              val.push(undefined)
+              rows.push(undefined)
             } else {
               if (!valueEncoding || valueEncoding === 'buffer') {
-                val.push(data.subarray(offset, offset + size))
+                rows.push(data.subarray(offset, offset + size))
               } else if (valueEncoding === 'slice') {
-                val.push({ buffer: data, byteOffset: offset, byteLength: size })
+                rows.push({ buffer: data, byteOffset: offset, byteLength: size })
               } else {
-                val.push(data.toString(valueEncoding, offset, offset + size))
+                rows.push(data.toString(valueEncoding, offset, offset + size))
               }
               offset += size
               if (offset & 0x7) {
@@ -178,7 +179,7 @@ class RocksLevel extends AbstractLevel {
               }
             }
           }
-          callback(null, val)
+          callback(null, rows)
         }
         this[kUnref]()
       })

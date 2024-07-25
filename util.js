@@ -1,13 +1,13 @@
 'use strict'
 
 function handleNextv (err, sizes, buffer, finished, options, callback) {
+  const { keyEncoding, valueEncoding } = options ?? {}
+
   if (err) {
     callback(err)
   } else {
     buffer ??= Buffer.alloc(0)
     sizes ??= Buffer.alloc(0)
-
-    const { keyEncoding, valueEncoding } = options ?? {}
 
     const rows = []
     let offset = 0
