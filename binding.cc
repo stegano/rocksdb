@@ -435,16 +435,12 @@ struct Iterator final : public BaseIterator {
            const std::optional<std::string>& gt,
            const std::optional<std::string>& gte,
            const bool fillCache,
-           const Encoding keyEncoding,
-           const Encoding valueEncoding,
            const size_t highWaterMarkBytes,
            std::shared_ptr<const rocksdb::Snapshot> snapshot,
            bool tailing = false)
       : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot, tailing),
         keys_(keys),
         values_(values),
-        keyEncoding_(keyEncoding),
-        valueEncoding_(valueEncoding),
         highWaterMarkBytes_(highWaterMarkBytes) {}
 
   void Seek(const rocksdb::Slice& target) override {
@@ -454,8 +450,6 @@ struct Iterator final : public BaseIterator {
 
   const bool keys_;
   const bool values_;
-  const Encoding keyEncoding_;
-  const Encoding valueEncoding_;
   const size_t highWaterMarkBytes_;
   bool first_ = true;
 };
@@ -1238,12 +1232,6 @@ NAPI_METHOD(iterator_init) {
   bool fillCache = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
-  Encoding keyEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
-
-  Encoding valueEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
-
   int32_t limit = -1;
   NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
 
@@ -1274,7 +1262,7 @@ NAPI_METHOD(iterator_init) {
   }
 
   auto iterator = std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt,
-                                                         gte, fillCache, keyEncoding, valueEncoding, highWaterMarkBytes,
+                                                         gte, fillCache, highWaterMarkBytes,
                                                          snapshot, tailing));
 
   napi_value result;
