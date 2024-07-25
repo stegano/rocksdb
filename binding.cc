@@ -990,9 +990,8 @@ NAPI_METHOD(db_get_many) {
   }
 
   struct State {
-    std::shared_ptr<void> data;
+    std::vector<uint8_t> data;
     std::vector<std::optional<size_t>> sizes;
-    size_t size;
   };
 
   runAsync<State>(
@@ -1015,7 +1014,7 @@ NAPI_METHOD(db_get_many) {
 
         database->db->MultiGet(readOptions, column, count, keys2.data(), values.data(), statuses.data());
 
-        state.size = 0;
+        auto size = 0;
         for (auto n = 0; n < count; n++) {
           auto valueSize = values[n].size();
 
@@ -1024,32 +1023,26 @@ NAPI_METHOD(db_get_many) {
             valueSize++;
           }
 
-          state.size += valueSize;
+          size += valueSize;
         }
 
-        state.data = std::shared_ptr<void>(aligned_alloc(8, state.size), free);
+        state.data.reserve(size);
 
-        auto ptr = reinterpret_cast<uint8_t*>(state.data.get());
+        auto push = [&](rocksdb::Slice* slice){
+          if (slice) {
+            state.sizes.push_back(slice->size());
+            std::copy_n(slice->data(), slice->size(), std::back_inserter(state.data));
+
+            if (state.data.size() & 0x7) {
+              state.data.resize((state.data.size() | 0x7) + 1);
+            }
+          } else {
+            state.sizes.push_back(std::nullopt);
+          }
+        };
 
         for (auto n = 0; n < count; n++) {
-          if (!statuses[n].ok()) {
-            state.sizes.push_back(std::nullopt);
-          } else {
-            auto valueSize = values[n].size();
-
-            if (values[n].size() > 0) {
-              memcpy(ptr, values[n].data(), valueSize);
-            }
-
-            state.sizes.push_back(valueSize);
-
-            if (valueSize & 0x7) {
-              valueSize |= 0x7;
-              valueSize++;
-            }
-
-            ptr += valueSize;
-          }
+          push(statuses[n].ok() ? &values[n] : nullptr);
         }
 
         return rocksdb::Status::OK();
@@ -1073,9 +1066,13 @@ NAPI_METHOD(db_get_many) {
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, element));
         }
 
-        // TODO (fix): This will leak if napi_create_external_buffer fails.
-        auto data = new decltype(state.data)(std::move(state.data));
-        NAPI_STATUS_RETURN(napi_create_external_buffer(env, state.size, data->get(), Finalize<typename std::decay<decltype(data)>::type>, data, &argv[2]));
+        if (state.data.size() > 0) {
+          auto data = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
+          NAPI_STATUS_RETURN(napi_create_external_buffer(env, data->size(), data->data(), Finalize<std::vector<uint8_t>>, data.get(), &argv[2]));
+          data.release();
+        } else {
+          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[2]));
+        }
 
         return napi_ok;
       });
@@ -1318,13 +1315,14 @@ NAPI_METHOD(iterator_nextv) {
   Iterator* iterator;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
 
-  uint32_t size;
-  NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &size));
+  uint32_t count;
+  NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &count));
 
   auto callback = argv[2];
 
   struct State {
-    std::vector<rocksdb::PinnableSlice> cache;
+    std::vector<uint8_t> data;
+    std::vector<std::optional<size_t>> sizes;
     bool finished = false;
   };
 
@@ -1335,61 +1333,88 @@ NAPI_METHOD(iterator_nextv) {
           iterator->SeekToRange();
         }
 
-        state.cache.reserve(size * 2);
-        size_t bytesRead = 0;
+        state.sizes.reserve(count * 2);
+        state.data.reserve(iterator->highWaterMarkBytes_);
 
+        auto bytesRead = 0;
+
+        auto push = [&](const std::optional<rocksdb::Slice>& slice){
+          if (slice) {
+            state.sizes.push_back(slice->size());
+            std::copy_n(slice->data(), slice->size(), std::back_inserter(state.data));
+
+            if (state.data.size() & 0x7) {
+              state.data.resize((state.data.size() | 0x7) + 1);
+            }
+
+            bytesRead += slice->size();
+          } else {
+            state.sizes.push_back(std::nullopt);
+          }
+        };
+
+        auto status = rocksdb::Status::OK();
         while (true) {
-          if (!iterator->first_)
+          if (!iterator->first_) {
             iterator->Next();
-          else
+          } else {
             iterator->first_ = false;
+          }
 
-          if (!iterator->Valid() || !iterator->Increment())
+          if (!iterator->Valid() || !iterator->Increment()) {
+            status = iterator->Status();
+            state.finished = true;
             break;
-
-          auto k = rocksdb::PinnableSlice();
-          auto v = rocksdb::PinnableSlice();
+          }
 
           if (iterator->keys_ && iterator->values_) {
-            k.PinSelf(iterator->CurrentKey());
-            v.PinSelf(iterator->CurrentValue());
+            push(iterator->CurrentKey());
+            push(iterator->CurrentValue());
           } else if (iterator->keys_) {
-            k.PinSelf(iterator->CurrentKey());
+            push(iterator->CurrentKey());
+            push(std::nullopt);
           } else if (iterator->values_) {
-            v.PinSelf(iterator->CurrentValue());
+            push(std::nullopt);
+            push(iterator->CurrentValue());
           }
 
-          bytesRead += k.size() + v.size();
-          state.cache.push_back(std::move(k));
-          state.cache.push_back(std::move(v));
-
-          if (bytesRead > iterator->highWaterMarkBytes_ || state.cache.size() / 2 >= size) {
+          if (bytesRead > iterator->highWaterMarkBytes_ || state.sizes.size() / 2 >= count) {
+            status = rocksdb::Status::OK();
             state.finished = false;
-            return rocksdb::Status::OK();
+            break;
           }
         }
 
-        state.finished = true;
-
-        return iterator->Status();
+        return status;
       },
       [=](auto& state, auto env, auto& argv) {
-        argv.resize(3);
+        argv.resize(4);
 
-        NAPI_STATUS_RETURN(napi_create_array_with_length(env, state.cache.size(), &argv[1]));
+        const auto count = state.sizes.size();
 
-        for (size_t n = 0; n < state.cache.size(); n += 2) {
-          napi_value key;
-          napi_value val;
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, count, &argv[1]));
 
-          NAPI_STATUS_RETURN(Convert(env, &state.cache[n + 0], iterator->keyEncoding_, key));
-          NAPI_STATUS_RETURN(Convert(env, &state.cache[n + 1], iterator->valueEncoding_, val));
+        for (uint32_t idx = 0; idx < count; idx++) {
+          const auto& maybeSize = state.sizes[idx];
 
-          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 0), key));
-          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<int>(n + 1), val));
+          napi_value element;
+          if (maybeSize) {
+            NAPI_STATUS_RETURN(napi_create_uint32(env, *maybeSize, &element));
+          } else {
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
+          }
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, element));
         }
 
-        NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &argv[2]));
+        if (state.data.size() > 0) {
+          auto data = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
+          NAPI_STATUS_RETURN(napi_create_external_buffer(env, data->size(), data->data(), Finalize<std::vector<uint8_t>>, data.get(), &argv[2]));
+          data.release();
+        } else {
+          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[2]));
+        }
+
+        NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &argv[3]));
 
         return napi_ok;
       });

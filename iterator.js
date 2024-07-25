@@ -2,6 +2,7 @@
 
 const { fromCallback } = require('catering')
 const { AbstractIterator } = require('abstract-level')
+const { handleNextv } = require('./util')
 
 const binding = require('./binding')
 
@@ -14,6 +15,7 @@ const kPosition = Symbol('position')
 const kHandleNext = Symbol('handleNext')
 const kHandleNextv = Symbol('handleNextv')
 const kCallback = Symbol('callback')
+const kOptions = Symbol('options')
 const empty = []
 
 const registry = new FinalizationRegistry((context) => {
@@ -27,6 +29,7 @@ class Iterator extends AbstractIterator {
     this[kContext] = binding.iterator_init(context, options)
     registry.register(this, this[kContext], this[kContext])
 
+    this[kOptions] = { ...options }
     this[kHandleNext] = this[kHandleNext].bind(this)
     this[kHandleNextv] = this[kHandleNextv].bind(this)
     this[kCallback] = null
@@ -73,15 +76,19 @@ class Iterator extends AbstractIterator {
     return this
   }
 
-  [kHandleNext] (err, items, finished) {
-    const callback = this[kCallback]
-    if (err) return callback(err)
+  [kHandleNext] (err, sizes, buffer, finished) {
+    handleNextv(err, sizes, buffer, finished, this[kOptions], (err, items, finished) => {
+      const callback = this[kCallback]
+      if (err) {
+        return callback(err)
+      }
 
-    this[kCache] = items
-    this[kFinished] = finished
-    this[kPosition] = 0
+      this[kCache] = items
+      this[kFinished] = finished
+      this[kPosition] = 0
 
-    this._next(callback)
+      this._next(callback)
+    })
   }
 
   _nextv (size, options, callback) {
@@ -98,17 +105,22 @@ class Iterator extends AbstractIterator {
     return callback[kPromise]
   }
 
-  [kHandleNextv] (err, items, finished) {
-    const callback = this[kCallback]
-    if (err) return callback(err)
-    this[kFinished] = finished
+  [kHandleNextv] (err, sizes, buffer, finished) {
+    handleNextv(err, sizes, buffer, finished, this[kOptions], (err, items, finished) => {
+      const callback = this[kCallback]
+      if (err) {
+        return callback(err)
+      }
 
-    const entries = []
-    for (let n = 0; n < items.length; n += 2) {
-      entries.push([items[n + 0], items[n + 1]])
-    }
+      this[kFinished] = finished
 
-    callback(null, entries)
+      const entries = []
+      for (let n = 0; n < items.length; n += 2) {
+        entries.push([items[n + 0], items[n + 1]])
+      }
+
+      callback(null, entries)
+    })
   }
 
   _close (callback) {

@@ -8,6 +8,7 @@ const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
+const { handleNextv } = require('./util')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -152,27 +153,31 @@ class RocksLevel extends AbstractLevel {
     try {
       this[kRef]()
       binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, sizes, buffer) => {
-        const val = []
-        let offset = 0
-        for (const size of sizes) {
-          if (size == null) {
-            val.push(undefined)
-          } else {
-            if (valueEncoding === 'buffer') {
-              val.push(buffer.subarray(offset, offset + size))
-            } else if (valueEncoding === 'slice') {
-              val.push({ buffer, byteOffset: offset, byteLength: size })
+        if (err) {
+          callback(err)
+        } else {
+          buffer ??= Buffer.alloc(0)
+          const val = []
+          let offset = 0
+          for (const size of sizes) {
+            if (size == null) {
+              val.push(undefined)
             } else {
-              val.push(buffer.toString(valueEncoding, offset, offset + size))
-            }
-            offset += size
-            if (offset & 0x7) {
-              offset |= 0x7
-              offset++
+              if (!valueEncoding || valueEncoding === 'buffer') {
+                val.push(buffer.subarray(offset, offset + size))
+              } else if (valueEncoding === 'slice') {
+                val.push({ buffer, byteOffset: offset, byteLength: size })
+              } else {
+                val.push(buffer.toString(valueEncoding, offset, offset + size))
+              }
+              offset += size
+              if (offset & 0x7) {
+                offset = (offset | 0x7) + 1
+              }
             }
           }
+          callback(null, val)
         }
-        callback(err, val)
         this[kUnref]()
       })
     } catch (err) {
@@ -297,15 +302,17 @@ class RocksLevel extends AbstractLevel {
     const context = binding.iterator_init(this[kContext], options ?? {})
     try {
       this[kRef]()
-      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit, (err, rows, finished) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve({
-            rows,
-            finished
-          })
-        }
+      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit, (err, sizes, buffer, finished) => {
+        handleNextv(err, sizes, buffer, finished, options, (err, rows, finished) => {
+          if (err) {
+            reject(err)
+          } else {
+            resolve({
+              rows,
+              finished
+            })
+          }
+        })
       }))
     } finally {
       binding.iterator_close(context)
