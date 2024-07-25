@@ -957,8 +957,8 @@ NAPI_METHOD(db_get_many) {
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
-  uint32_t size;
-  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &size));
+  uint32_t count;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
 
   const auto options = argv[2];
 
@@ -967,9 +967,6 @@ NAPI_METHOD(db_get_many) {
 
   bool ignoreRangeDeletions = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
-
-  Encoding valueEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
@@ -984,18 +981,18 @@ NAPI_METHOD(db_get_many) {
     snapshot.reset(database->db->GetSnapshot(), [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
   }
 
-  std::vector<rocksdb::PinnableSlice> keys{size};
+  std::vector<rocksdb::PinnableSlice> keys{count};
 
-  for (uint32_t n = 0; n < size; n++) {
+  for (uint32_t n = 0; n < count; n++) {
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
     NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
   }
 
   struct State {
-    std::vector<rocksdb::Status> statuses;
-    std::vector<rocksdb::PinnableSlice> values;
-    std::vector<rocksdb::Slice> keys;
+    std::shared_ptr<void> data;
+    std::vector<std::optional<size_t>> sizes;
+    size_t size;
   };
 
   runAsync<State>(
@@ -1008,41 +1005,77 @@ NAPI_METHOD(db_get_many) {
         readOptions.ignore_range_deletions = ignoreRangeDeletions;
         readOptions.optimize_multiget_for_io = true;
 
-        state.statuses.resize(size);
-        state.values.resize(size);
-        state.keys.resize(size);
+        std::vector<rocksdb::Status> statuses{count};
+        std::vector<rocksdb::PinnableSlice> values{count};
+        std::vector<rocksdb::Slice> keys2{count};
 
-        for (auto n = 0; n < size; n++) {
-          state.keys[n] = keys[n];
+        for (auto n = 0; n < count; n++) {
+          keys2[n] = keys[n];
         }
 
-        database->db->MultiGet(readOptions, column, size, state.keys.data(), state.values.data(),
-                               state.statuses.data());
+        database->db->MultiGet(readOptions, column, count, keys2.data(), values.data(), statuses.data());
+
+        state.size = 0;
+        for (auto n = 0; n < count; n++) {
+          auto valueSize = values[n].size();
+
+          if (valueSize & 0x7) {
+            valueSize |= 0x7;
+            valueSize++;
+          }
+
+          state.size += valueSize;
+        }
+
+        state.data = std::shared_ptr<void>(aligned_alloc(8, state.size), free);
+
+        auto ptr = reinterpret_cast<uint8_t*>(state.data.get());
+
+        for (auto n = 0; n < count; n++) {
+          if (!statuses[n].ok()) {
+            state.sizes.push_back(std::nullopt);
+          } else {
+            auto valueSize = values[n].size();
+
+            if (values[n].size() > 0) {
+              memcpy(ptr, values[n].data(), valueSize);
+            }
+
+            state.sizes.push_back(valueSize);
+
+            if (valueSize & 0x7) {
+              valueSize |= 0x7;
+              valueSize++;
+            }
+
+            ptr += valueSize;
+          }
+        }
 
         return rocksdb::Status::OK();
       },
       [=](auto& state, auto env, auto& argv) {
-        argv.resize(2);
+        argv.resize(3);
 
-        NAPI_STATUS_RETURN(napi_create_array_with_length(env, size, &argv[1]));
+        const auto count = state.sizes.size();
 
-        for (uint32_t idx = 0; idx < size; idx++) {
-          const auto& status = state.statuses[idx];
-          const auto& value = state.values[idx];
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, count, &argv[1]));
+
+        for (uint32_t idx = 0; idx < count; idx++) {
+          const auto& maybeSize = state.sizes[idx];
 
           napi_value element;
-          if (status.IsNotFound()) {
-            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
+          if (maybeSize) {
+            NAPI_STATUS_RETURN(napi_create_uint32(env, *maybeSize, &element));
           } else {
-            ROCKS_STATUS_RETURN_NAPI(status);
-            NAPI_STATUS_RETURN(Convert(env, &value, valueEncoding, element));
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
           }
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], idx, element));
         }
 
-        state.statuses.clear();
-        state.values.clear();
-        state.keys.clear();
+        // TODO (fix): This will leak if napi_create_external_buffer fails.
+        auto data = new decltype(state.data)(std::move(state.data));
+        NAPI_STATUS_RETURN(napi_create_external_buffer(env, state.size, data->get(), Finalize<typename std::decay<decltype(data)>::type>, data, &argv[2]));
 
         return napi_ok;
       });
