@@ -1010,14 +1010,8 @@ NAPI_METHOD(db_get_many) {
 
         auto size = 0;
         for (auto n = 0; n < count; n++) {
-          auto valueSize = values[n].size();
-
-          if (valueSize & 0x7) {
-            valueSize |= 0x7;
-            valueSize++;
-          }
-
-          size += valueSize;
+          const auto valueSize = values[n].size();
+          size += valueSize & 0x7 ? (valueSize | 0x7) + 1 : valueSize;
         }
 
         state.data.reserve(size);
