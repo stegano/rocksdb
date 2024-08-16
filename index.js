@@ -41,6 +41,12 @@ class RocksLevel extends AbstractLevel {
     this[kPendingClose] = null
   }
 
+  static async create(...args) {
+    const db = new this(...args)
+    await db.open()
+    return db
+  }
+
   get sequence () {
     return binding.db_get_latest_sequence(this[kContext])
   }
