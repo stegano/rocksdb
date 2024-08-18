@@ -9,7 +9,7 @@ const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
 const { handleNextv } = require('./util')
-const FastBuffer = Buffer[Symbol.species]
+
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kPromise = Symbol('promise')
@@ -158,41 +158,36 @@ class RocksLevel extends AbstractLevel {
     const { valueEncoding } = options ?? EMPTY
     try {
       this[kRef]()
-
-      function bufferHandler (sizes, buffer) {
-        buffer ??= Buffer.alloc(0)
-        sizes ??= Buffer.alloc(0)
-
-        let offset = 0
-        const rows = []
-        const sizes32 = new Int32Array(sizes.buffer, sizes.byteOffset, sizes.byteLength / 4)
-        for (let n = 0; n < sizes32.length; n++) {
-          const size = sizes32[n]
-          const encoding = valueEncoding
-          if (size < 0) {
-            rows.push(undefined)
-          } else {
-            if (encoding === 'slice') {
-              rows.push({ buffer, byteOffset: offset, byteLength: size })
-            } else {
-              rows.push(new FastBuffer(buffer.buffer, offset, size))
-            }
-            offset += size
-            if (offset & 0x7) {
-              offset = (offset | 0x7) + 1
-            }
-          }
-        }
-        callback(null, rows)
-      }
-
-      binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, arg1, arg2) => {
+      binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, sizes, data) => {
         if (err) {
           callback(err)
-        } else if (valueEncoding === 'utf8') {
-          callback(null, arg1)
         } else {
-          bufferHandler(arg1, arg2)
+          data ??= Buffer.alloc(0)
+          sizes ??= Buffer.alloc(0)
+
+          const rows = []
+          let offset = 0
+          const sizes32 = new Int32Array(sizes.buffer, sizes.byteOffset, sizes.byteLength / 4)
+          for (let n = 0; n < sizes32.length; n++) {
+            const size = sizes32[n]
+            const encoding = valueEncoding
+            if (size < 0) {
+              rows.push(undefined)
+            } else {
+              if (!encoding || encoding === 'buffer') {
+                rows.push(data.subarray(offset, offset + size))
+              } else if (encoding === 'slice') {
+                rows.push({ buffer: data, byteOffset: offset, byteLength: size })
+              } else {
+                rows.push(data.toString(encoding, offset, offset + size))
+              }
+              offset += size
+              if (offset & 0x7) {
+                offset = (offset | 0x7) + 1
+              }
+            }
+          }
+          callback(null, rows)
         }
         this[kUnref]()
       })
