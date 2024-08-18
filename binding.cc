@@ -965,6 +965,9 @@ NAPI_METHOD(db_get_many) {
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
+  Encoding valueEncoding = Encoding::Buffer;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
+
   bool takeSnapshot = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "snapshot", takeSnapshot));
 
@@ -1038,20 +1041,43 @@ NAPI_METHOD(db_get_many) {
       [=](auto& state, auto env, auto& argv) {
         argv.resize(3);
 
-        if (state.sizes.size() > 0) {
-          auto sizes = std::make_unique<std::vector<int32_t>>(std::move(state.sizes));
-          NAPI_STATUS_RETURN(napi_create_external_buffer(env, sizes->size() * 4, sizes->data(), Finalize<std::vector<int32_t>>, sizes.get(), &argv[1]));
-          sizes.release();
-        } else {
-          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[1]));
-        }
+        if (valueEncoding == Encoding::String) {
+          napi_value arr;
+          NAPI_STATUS_RETURN(napi_create_array_with_length(env, state.sizes.size(), &argv[1]));
 
-        if (state.data.size() > 0) {
-          auto data = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
-          NAPI_STATUS_RETURN(napi_create_external_buffer(env, data->size(), data->data(), Finalize<std::vector<uint8_t>>, data.get(), &argv[2]));
-          data.release();
-        } else {
+          const auto ptr = reinterpret_cast<char*>(state.data.data());
+          auto offset = 0;
+          for (auto n = 0; n < state.sizes.size(); n++) {
+            napi_value str;
+            const auto size = state.sizes[n];
+            if (size >= 0) {
+              NAPI_STATUS_RETURN(napi_create_string_utf8(env, ptr + offset, static_cast<size_t>(size), &str));
+              offset += size;
+              if (offset & 0x7) {
+                offset = (offset | 0x7) + 1;
+              }
+            } else {
+              NAPI_STATUS_RETURN(napi_get_undefined(env, &str));
+            }
+            NAPI_STATUS_RETURN(napi_set_element(env, argv[1], n, str));
+          }
           NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[2]));
+        } else {
+          if (state.sizes.size() > 0) {
+            auto sizes = std::make_unique<std::vector<int32_t>>(std::move(state.sizes));
+            NAPI_STATUS_RETURN(napi_create_external_buffer(env, sizes->size() * 4, sizes->data(), Finalize<std::vector<int32_t>>, sizes.get(), &argv[1]));
+            sizes.release();
+          } else {
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[1]));
+          }
+
+          if (state.data.size() > 0) {
+            auto data = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
+            NAPI_STATUS_RETURN(napi_create_external_buffer(env, data->size(), data->data(), Finalize<std::vector<uint8_t>>, data.get(), &argv[2]));
+            data.release();
+          } else {
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[2]));
+          };
         }
 
         return napi_ok;
