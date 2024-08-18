@@ -9,7 +9,7 @@ const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
 const { handleNextv } = require('./util')
-
+const FastBuffer = Buffer[Symbol.species]
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kPromise = Symbol('promise')
@@ -175,7 +175,7 @@ class RocksLevel extends AbstractLevel {
             if (encoding === 'slice') {
               rows.push({ buffer, byteOffset: offset, byteLength: size })
             } else {
-              rows.push(buffer.subarray(offset, offset + size))
+              rows.push(new FastBuffer(buffer.buffer, offset, size))
             }
             offset += size
             if (offset & 0x7) {
