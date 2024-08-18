@@ -189,10 +189,10 @@ class RocksLevel extends AbstractLevel {
       binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, arg1, arg2) => {
         if (err) {
           callback(err)
-        } else if (!valueEncoding || valueEncoding === 'buffer') {
-          bufferHandler(arg1, arg2)
-        } else {
+        } else if (valueEncoding === 'utf8') {
           callback(null, arg1)
+        } else {
+          bufferHandler(arg1, arg2)
         }
         this[kUnref]()
       })
