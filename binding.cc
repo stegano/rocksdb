@@ -959,9 +959,6 @@ NAPI_METHOD(db_get_many) {
   bool fillCache = true;
   NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
-  bool ignoreRangeDeletions = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", ignoreRangeDeletions));
-
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
@@ -995,7 +992,6 @@ NAPI_METHOD(db_get_many) {
         readOptions.fill_cache = fillCache;
         readOptions.snapshot = snapshot.get();
         readOptions.async_io = true;
-        readOptions.ignore_range_deletions = ignoreRangeDeletions;
         readOptions.optimize_multiget_for_io = true;
 
         std::vector<rocksdb::Status> statuses{count};
@@ -1072,11 +1068,11 @@ NAPI_METHOD(db_get_many_sync) {
   bool fillCache = true;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", fillCache));
 
-  bool ignoreRangeDeletions = false;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "ignoreRangeDeletions", ignoreRangeDeletions));
-
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
+
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "valueEncoding", valueEncoding));
 
   std::vector<rocksdb::Slice> keys{count};
   std::vector<rocksdb::Status> statuses{count};
@@ -1088,67 +1084,29 @@ NAPI_METHOD(db_get_many_sync) {
     NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
   }
 
-  struct State {
-    std::vector<uint8_t> data;
-    std::vector<int32_t> sizes;
-  } state;
-
   rocksdb::ReadOptions readOptions;
   readOptions.fill_cache = fillCache;
   readOptions.async_io = true;
-  readOptions.ignore_range_deletions = ignoreRangeDeletions;
   readOptions.optimize_multiget_for_io = true;
 
   database->db->MultiGet(readOptions, column, count, keys.data(), values.data(), statuses.data());
 
-  auto size = 0;
+  napi_value rows;
+  NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &rows));
+
   for (auto n = 0; n < count; n++) {
-    const auto valueSize = values[n].size();
-    size += valueSize & 0x7 ? (valueSize | 0x7) + 1 : valueSize;
-  }
-
-  state.data.reserve(size);
-
-  auto push = [&](rocksdb::Slice* slice){
-    if (slice) {
-      state.sizes.push_back(static_cast<int32_t>(slice->size()));
-      std::copy_n(slice->data(), slice->size(), std::back_inserter(state.data));
-
-      if (state.data.size() & 0x7) {
-        state.data.resize((state.data.size() | 0x7) + 1);
-      }
+    napi_value row;
+    if (statuses[n].ok()) {
+      NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
+    } else if (statuses[n].IsNotFound()) {
+      NAPI_STATUS_THROWS(napi_get_undefined(env, &row));
     } else {
-      state.sizes.push_back(-1);
+      ROCKS_STATUS_THROWS_NAPI(statuses[n]);
     }
-  };
-
-  for (auto n = 0; n < count; n++) {
-    push(statuses[n].ok() ? &values[n] : nullptr);
+    NAPI_STATUS_THROWS(napi_set_element(env, rows, n, row));
   }
 
-  napi_value sizes;
-  if (state.sizes.size() > 0) {
-    auto sizes_ptr = std::make_unique<std::vector<int32_t>>(std::move(state.sizes));
-    NAPI_STATUS_THROWS(napi_create_external_buffer(env, sizes_ptr->size() * 4, sizes_ptr->data(), Finalize<std::vector<int32_t>>, sizes_ptr.get(), &sizes));
-    sizes_ptr.release();
-  } else {
-    NAPI_STATUS_THROWS(napi_get_undefined(env, &sizes));
-  }
-
-  napi_value data;
-  if (state.data.size() > 0) {
-    auto data_ptr = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
-    NAPI_STATUS_THROWS(napi_create_external_buffer(env, data_ptr->size(), data_ptr->data(), Finalize<std::vector<uint8_t>>, data_ptr.get(), &data));
-    data_ptr.release();
-  } else {
-    NAPI_STATUS_THROWS(napi_get_undefined(env, &data));
-  }
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_array_with_length(env, 2, &result));
-  NAPI_STATUS_THROWS(napi_set_element(env, result, 0, sizes));
-  NAPI_STATUS_THROWS(napi_set_element(env, result, 1, data));
-  return result;
+  return rows;
 }
 
 NAPI_METHOD(db_clear) {

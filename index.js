@@ -153,9 +153,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _getManySync (keys, options) {
-    const ret = binding.db_get_many_sync(this[kContext], keys, options ?? EMPTY)
-    const [sizes, data] = ret
-    return handleMany(sizes, data, options ?? EMPTY)
+    return binding.db_get_many_sync(this[kContext], keys, options ?? EMPTY)
   }
 
   _getMany (keys, options, callback) {
