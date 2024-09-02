@@ -8,7 +8,7 @@ const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
-const { handleNextv } = require('./util')
+const { handleNextv, handleMany } = require('./util')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -152,40 +152,27 @@ class RocksLevel extends AbstractLevel {
     return callback[kPromise]
   }
 
+  _getManySync (keys, options) {
+    keys = keys.map(key => Buffer.from(key))
+    const ret = binding.db_get_many_sync(this[kContext], keys, options ?? EMPTY)
+    const [sizes, data] = ret
+    return handleMany(sizes, data, options ?? EMPTY)
+  }
+
   _getMany (keys, options, callback) {
     callback = fromCallback(callback, kPromise)
 
-    const { valueEncoding } = options ?? EMPTY
     try {
       this[kRef]()
       binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, sizes, data) => {
         if (err) {
           callback(err)
         } else {
-          data ??= Buffer.alloc(0)
-          sizes ??= Buffer.alloc(0)
-
-          const rows = []
-          let offset = 0
-          const sizes32 = new Int32Array(sizes.buffer, sizes.byteOffset, sizes.byteLength / 4)
-          for (let n = 0; n < sizes32.length; n++) {
-            const size = sizes32[n]
-            const encoding = valueEncoding
-            if (size < 0) {
-              rows.push(undefined)
-            } else {
-              if (!encoding || encoding === 'buffer') {
-                rows.push(data.subarray(offset, offset + size))
-              } else if (encoding === 'slice') {
-                rows.push({ buffer: data, byteOffset: offset, byteLength: size })
-              } else {
-                rows.push(data.toString(encoding, offset, offset + size))
-              }
-              offset += size
-              if (offset & 0x7) {
-                offset = (offset | 0x7) + 1
-              }
-            }
+          let rows
+          try {
+            rows = handleMany(sizes, data, options ?? EMPTY)
+          } catch (err) {
+            callback(err)
           }
           callback(null, rows)
         }

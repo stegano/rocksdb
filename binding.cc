@@ -1060,6 +1060,97 @@ NAPI_METHOD(db_get_many) {
   return 0;
 }
 
+NAPI_METHOD(db_get_many_sync) {
+  NAPI_ARGV(3);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  uint32_t count;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
+
+  bool fillCache = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", fillCache));
+
+  bool ignoreRangeDeletions = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "ignoreRangeDeletions", ignoreRangeDeletions));
+
+  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
+
+  std::vector<rocksdb::Slice> keys{count};
+  std::vector<rocksdb::Status> statuses{count};
+  std::vector<rocksdb::PinnableSlice> values{count};
+
+  for (uint32_t n = 0; n < count; n++) {
+    napi_value element;
+    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
+    NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
+  }
+
+  struct State {
+    std::vector<uint8_t> data;
+    std::vector<int32_t> sizes;
+  } state;
+
+  rocksdb::ReadOptions readOptions;
+  readOptions.fill_cache = fillCache;
+  readOptions.async_io = true;
+  readOptions.ignore_range_deletions = ignoreRangeDeletions;
+  readOptions.optimize_multiget_for_io = true;
+
+  database->db->MultiGet(readOptions, column, count, keys.data(), values.data(), statuses.data());
+
+  auto size = 0;
+  for (auto n = 0; n < count; n++) {
+    const auto valueSize = values[n].size();
+    size += valueSize & 0x7 ? (valueSize | 0x7) + 1 : valueSize;
+  }
+
+  state.data.reserve(size);
+
+  auto push = [&](rocksdb::Slice* slice){
+    if (slice) {
+      state.sizes.push_back(static_cast<int32_t>(slice->size()));
+      std::copy_n(slice->data(), slice->size(), std::back_inserter(state.data));
+
+      if (state.data.size() & 0x7) {
+        state.data.resize((state.data.size() | 0x7) + 1);
+      }
+    } else {
+      state.sizes.push_back(-1);
+    }
+  };
+
+  for (auto n = 0; n < count; n++) {
+    push(statuses[n].ok() ? &values[n] : nullptr);
+  }
+
+  napi_value sizes;
+  if (state.sizes.size() > 0) {
+    auto sizes_ptr = std::make_unique<std::vector<int32_t>>(std::move(state.sizes));
+    NAPI_STATUS_THROWS(napi_create_external_buffer(env, sizes_ptr->size() * 4, sizes_ptr->data(), Finalize<std::vector<int32_t>>, sizes_ptr.get(), &sizes));
+    sizes_ptr.release();
+  } else {
+    NAPI_STATUS_THROWS(napi_get_undefined(env, &sizes));
+  }
+
+  napi_value data;
+  if (state.data.size() > 0) {
+    auto data_ptr = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
+    NAPI_STATUS_THROWS(napi_create_external_buffer(env, data_ptr->size(), data_ptr->data(), Finalize<std::vector<uint8_t>>, data_ptr.get(), &data));
+    data_ptr.release();
+  } else {
+    NAPI_STATUS_THROWS(napi_get_undefined(env, &data));
+  }
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_array_with_length(env, 2, &result));
+  NAPI_STATUS_THROWS(napi_set_element(env, result, 0, sizes));
+  NAPI_STATUS_THROWS(napi_set_element(env, result, 1, data));
+  return result;
+}
+
 NAPI_METHOD(db_clear) {
   NAPI_ARGV(2);
 
@@ -1481,8 +1572,6 @@ NAPI_METHOD(batch_clear) {
 NAPI_METHOD(batch_write) {
   NAPI_ARGV(4);
 
-  napi_value result = 0;
-
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
 
@@ -1508,7 +1597,30 @@ NAPI_METHOD(batch_write) {
       },
       [=](int64_t& seq, auto env, auto& argv) { return napi_ok; });
 
-  return result;
+  return 0;
+}
+
+NAPI_METHOD(batch_write_sync) {
+  NAPI_ARGV(3);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
+
+  auto options = argv[2];
+
+  bool sync = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
+
+  bool lowPriority = false;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
+
+  rocksdb::WriteOptions writeOptions;
+  writeOptions.sync = sync;
+  writeOptions.low_pri = lowPriority;
+  ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
 }
 
 NAPI_METHOD(batch_count) {
@@ -1568,6 +1680,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_get_location);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_many);
+  NAPI_EXPORT_FUNCTION(db_get_many_sync);
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
@@ -1583,6 +1696,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_del);
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);
+  NAPI_EXPORT_FUNCTION(batch_write_sync);
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);
