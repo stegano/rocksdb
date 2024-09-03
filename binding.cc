@@ -1579,6 +1579,8 @@ NAPI_METHOD(batch_write_sync) {
   writeOptions.sync = sync;
   writeOptions.low_pri = lowPriority;
   ROCKS_STATUS_THROWS_NAPI(database->db->Write(writeOptions, batch));
+
+  return 0;
 }
 
 NAPI_METHOD(batch_count) {

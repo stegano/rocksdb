@@ -68,7 +68,7 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _writeSync (options) {
-    binding.batch_write_sync(this[kDbContext], this[kBatchContext], options)
+    binding.batch_write_sync(this[kDbContext], this[kBatchContext], options ?? EMPTY)
   }
 
   _close (callback) {
