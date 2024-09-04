@@ -183,23 +183,6 @@ class RocksLevel extends AbstractLevel {
     return callback[kPromise]
   }
 
-  _getMergeOperands (key, options, callback) {
-    callback = fromCallback(callback, kPromise)
-
-    try {
-      this[kRef]()
-      binding.db_get_merge_operands(this[kContext], key, options ?? EMPTY, (err, val) => {
-        callback(err, val)
-        this[kUnref]()
-      })
-    } catch (err) {
-      process.nextTick(callback, err)
-      this[kUnref]()
-    }
-
-    return callback[kPromise]
-  }
-
   _del (key, options, callback) {
     callback = fromCallback(callback, kPromise)
 

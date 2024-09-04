@@ -702,65 +702,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
   return napi_ok;
-}
-
-NAPI_METHOD(db_get_merge_operands) {
-  NAPI_ARGV(4);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  std::string key;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
-
-  const auto options = argv[2];
-
-  Encoding valueEncoding = Encoding::String;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
-
-  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
-
-  auto callback = argv[3];
-
-  runAsync<std::vector<rocksdb::PinnableSlice>>(
-      "leveldown.get.mergeOperands", env, callback,
-      [=, key = std::move(key)](auto& values) {
-        rocksdb::ReadOptions readOptions;
-
-        values.resize(16);  // TODO (fix): Make option
-
-        rocksdb::GetMergeOperandsOptions mergeOperandsOptions;
-        mergeOperandsOptions.expected_max_number_of_operands = values.size();
-
-        int size = 0;
-        const auto status =
-            database->db->GetMergeOperands(readOptions, column, key, values.data(), &mergeOperandsOptions, &size);
-
-        values.resize(size);
-
-        return status;
-      },
-      [=](auto& values, auto env, auto& argv) {
-        argv.resize(2);
-
-        NAPI_STATUS_RETURN(napi_create_array_with_length(env, values.size(), &argv[1]));
-
-        for (size_t idx = 0; idx < values.size(); idx++) {
-          napi_value element;
-          if (values[idx].GetSelf()) {
-            NAPI_STATUS_RETURN(Convert(env, &values[idx], valueEncoding, element));
-          } else {
-            NAPI_STATUS_RETURN(napi_get_undefined(env, &element));
-          }
-          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], static_cast<uint32_t>(idx), element));
-        }
-
-        return napi_ok;
-      });
-
-  return 0;
-}
+} d
 
 NAPI_METHOD(db_get_identity) {
   NAPI_ARGV(1);
@@ -1628,7 +1570,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
-  NAPI_EXPORT_FUNCTION(db_get_merge_operands);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
