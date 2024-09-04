@@ -5,7 +5,6 @@ const binding = require('./binding')
 const ModuleError = require('module-error')
 const { fromCallback } = require('catering')
 
-const kWrite = Symbol('write')
 const kBatchContext = Symbol('batchContext')
 const kDbContext = Symbol('dbContext')
 const kPromise = Symbol('promise')
@@ -13,10 +12,9 @@ const kPromise = Symbol('promise')
 const EMPTY = {}
 
 class ChainedBatch extends AbstractChainedBatch {
-  constructor (db, context, write) {
+  constructor (db, context) {
     super(db)
 
-    this[kWrite] = write
     this[kDbContext] = context
     this[kBatchContext] = binding.batch_init()
   }
@@ -59,16 +57,18 @@ class ChainedBatch extends AbstractChainedBatch {
   _write (options, callback) {
     callback = fromCallback(callback, kPromise)
 
-    // NOTE: `this` needs to be referenced until callback is called
-    this[kWrite](this, this[kBatchContext], options ?? EMPTY, (err) => {
-      callback(err, null, this)
-    })
+    try {
+      this._writeSync(options)
+      process.nextTick(callback, null)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
 
     return callback[kPromise]
   }
 
   _writeSync (options) {
-    binding.batch_write_sync(this[kDbContext], this[kBatchContext], options ?? EMPTY)
+    binding.batch_write(this[kDbContext], this[kBatchContext], options ?? EMPTY)
   }
 
   _close (callback) {

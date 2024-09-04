@@ -284,15 +284,11 @@ struct BaseIterator : public Closable {
                const std::optional<std::string>& gte,
                const int limit,
                const bool fillCache,
-               std::shared_ptr<const rocksdb::Snapshot> snapshot,
                bool tailing = false)
       : database_(database),
         column_(column),
-        snapshot_(snapshot),
         reverse_(reverse),
-        limit_(limit),
-        fillCache_(fillCache),
-        tailing_(tailing) {
+        limit_(limit) {
     if (lte) {
       upper_bound_ = rocksdb::PinnableSlice();
       *upper_bound_->GetSelf() = std::move(*lte) + '\0';
@@ -312,30 +308,33 @@ struct BaseIterator : public Closable {
       *lower_bound_->GetSelf() = std::move(*gt) + '\0';
       lower_bound_->PinSelf();
     }
-    database_->Attach(this);
-  }
 
-  virtual ~BaseIterator() { assert(!iterator_); }
-
-  bool DidSeek() const { return iterator_ != nullptr; }
-
-  void SeekToRange() {
-    if (!iterator_) {
-      Init();
+    rocksdb::ReadOptions readOptions;
+    if (upper_bound_) {
+      readOptions.iterate_upper_bound = &*upper_bound_;
     }
+    if (lower_bound_) {
+      readOptions.iterate_lower_bound = &*lower_bound_;
+    }
+    readOptions.fill_cache = fillCache;
+    readOptions.async_io = true;
+    readOptions.adaptive_readahead = true;
+    readOptions.tailing = tailing;
+
+    iterator_.reset(database_->db->NewIterator(readOptions, column_));
 
     if (reverse_) {
       iterator_->SeekToLast();
     } else {
       iterator_->SeekToFirst();
     }
+
+    database_->Attach(this);
   }
 
-  virtual void Seek(const rocksdb::Slice& target) {
-    if (!iterator_) {
-      Init();
-    }
+  virtual ~BaseIterator() { assert(!iterator_); }
 
+  virtual void Seek(const rocksdb::Slice& target) {
     if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
       // TODO (fix): Why is this required? Seek should handle it?
       // https://github.com/facebook/rocksdb/issues/9904
@@ -351,7 +350,6 @@ struct BaseIterator : public Closable {
   }
 
   virtual rocksdb::Status Close() override {
-    snapshot_.reset();
     iterator_.reset();
     database_->Detach(this);
     return rocksdb::Status::OK();
@@ -393,25 +391,8 @@ struct BaseIterator : public Closable {
 
   Database* database_;
   rocksdb::ColumnFamilyHandle* column_;
-  std::shared_ptr<const rocksdb::Snapshot> snapshot_;
 
  private:
-  void Init() {
-    rocksdb::ReadOptions readOptions;
-    if (upper_bound_) {
-      readOptions.iterate_upper_bound = &*upper_bound_;
-    }
-    if (lower_bound_) {
-      readOptions.iterate_lower_bound = &*lower_bound_;
-    }
-    readOptions.fill_cache = fillCache_;
-    readOptions.snapshot = snapshot_.get();
-    readOptions.async_io = true;
-    readOptions.adaptive_readahead = true;
-    readOptions.tailing = tailing_;
-
-    iterator_.reset(database_->db->NewIterator(readOptions, column_));
-  }
 
   int count_ = 0;
   std::optional<rocksdb::PinnableSlice> lower_bound_;
@@ -419,8 +400,6 @@ struct BaseIterator : public Closable {
   std::unique_ptr<rocksdb::Iterator> iterator_;
   const bool reverse_;
   const int limit_;
-  const bool fillCache_;
-  const bool tailing_;
 };
 
 struct Iterator final : public BaseIterator {
@@ -436,11 +415,10 @@ struct Iterator final : public BaseIterator {
            const std::optional<std::string>& gte,
            const bool fillCache,
            const size_t highWaterMarkBytes,
-           std::shared_ptr<const rocksdb::Snapshot> snapshot,
            bool tailing = false,
            Encoding keyEncoding = Encoding::Invalid,
            Encoding valueEncoding = Encoding::Invalid)
-      : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot, tailing),
+      : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, tailing),
         keys_(keys),
         values_(values),
         highWaterMarkBytes_(highWaterMarkBytes),
@@ -702,7 +680,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
   return napi_ok;
-} d
+}
 
 NAPI_METHOD(db_get_identity) {
   NAPI_ARGV(1);
@@ -894,117 +872,6 @@ NAPI_METHOD(db_close) {
 }
 
 NAPI_METHOD(db_get_many) {
-  NAPI_ARGV(4);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  uint32_t count;
-  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
-
-  const auto options = argv[2];
-
-  bool fillCache = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
-
-  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
-
-  bool takeSnapshot = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "snapshot", takeSnapshot));
-
-  auto callback = argv[3];
-
-  std::shared_ptr<const rocksdb::Snapshot> snapshot;
-  if (takeSnapshot) {
-    snapshot.reset(database->db->GetSnapshot(), [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
-  }
-
-  std::vector<rocksdb::PinnableSlice> keys{count};
-
-  for (uint32_t n = 0; n < count; n++) {
-    napi_value element;
-    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-    NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
-  }
-
-  struct State {
-    std::vector<uint8_t> data;
-    std::vector<int32_t> sizes;
-  };
-
-  runAsync<State>(
-      "leveldown.get.many", env, callback,
-      [=, keys = std::move(keys), snapshot = std::move(snapshot)](auto& state) {
-        rocksdb::ReadOptions readOptions;
-        readOptions.fill_cache = fillCache;
-        readOptions.snapshot = snapshot.get();
-        readOptions.async_io = true;
-        readOptions.optimize_multiget_for_io = true;
-
-        std::vector<rocksdb::Status> statuses{count};
-        std::vector<rocksdb::PinnableSlice> values{count};
-        std::vector<rocksdb::Slice> keys2{count};
-
-        for (auto n = 0; n < count; n++) {
-          keys2[n] = keys[n];
-        }
-
-        database->db->MultiGet(readOptions, column, count, keys2.data(), values.data(), statuses.data());
-
-        auto size = 0;
-        for (auto n = 0; n < count; n++) {
-          const auto valueSize = values[n].size();
-          size += valueSize & 0x7 ? (valueSize | 0x7) + 1 : valueSize;
-        }
-
-        state.data.reserve(size);
-
-        auto push = [&](rocksdb::Slice* slice){
-          if (slice) {
-            state.sizes.push_back(static_cast<int32_t>(slice->size()));
-            std::copy_n(slice->data(), slice->size(), std::back_inserter(state.data));
-
-            if (state.data.size() & 0x7) {
-              state.data.resize((state.data.size() | 0x7) + 1);
-            }
-          } else {
-            state.sizes.push_back(-1);
-          }
-        };
-
-        for (auto n = 0; n < count; n++) {
-          push(statuses[n].ok() ? &values[n] : nullptr);
-        }
-
-        return rocksdb::Status::OK();
-      },
-      [=](auto& state, auto env, auto& argv) {
-        argv.resize(3);
-
-        if (state.sizes.size() > 0) {
-          auto sizes = std::make_unique<std::vector<int32_t>>(std::move(state.sizes));
-          NAPI_STATUS_RETURN(napi_create_external_buffer(env, sizes->size() * 4, sizes->data(), Finalize<std::vector<int32_t>>, sizes.get(), &argv[1]));
-          sizes.release();
-        } else {
-          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[1]));
-        }
-
-        if (state.data.size() > 0) {
-          auto data = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
-          NAPI_STATUS_RETURN(napi_create_external_buffer(env, data->size(), data->data(), Finalize<std::vector<uint8_t>>, data.get(), &argv[2]));
-          data.release();
-        } else {
-          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[2]));
-        }
-
-        return napi_ok;
-      });
-
-  return 0;
-}
-
-NAPI_METHOD(db_get_many_sync) {
   NAPI_ARGV(3);
 
   Database* database;
@@ -1019,7 +886,7 @@ NAPI_METHOD(db_get_many_sync) {
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
 
-  Encoding valueEncoding = Encoding::String;
+  Encoding valueEncoding = Encoding::Buffer;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "valueEncoding", valueEncoding));
 
   std::vector<rocksdb::Slice> keys{count};
@@ -1042,6 +909,9 @@ NAPI_METHOD(db_get_many_sync) {
   napi_value rows;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &rows));
 
+  napi_value finished;
+  NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
+
   for (auto n = 0; n < count; n++) {
     napi_value row;
     if (statuses[n].IsNotFound()) {
@@ -1053,7 +923,11 @@ NAPI_METHOD(db_get_many_sync) {
     NAPI_STATUS_THROWS(napi_set_element(env, rows, n, row));
   }
 
-  return rows;
+  napi_value ret;
+  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
+  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
+  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", finished));
+  return ret;
 }
 
 NAPI_METHOD(db_clear) {
@@ -1116,11 +990,7 @@ NAPI_METHOD(db_clear) {
     // TODO (fix): Error handling.
     // TODO (fix): This should be async...
 
-    std::shared_ptr<const rocksdb::Snapshot> snapshot(database->db->GetSnapshot(),
-                                                      [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
-    BaseIterator it(database, column, reverse, lt, lte, gt, gte, limit, false, snapshot);
-
-    it.SeekToRange();
+    BaseIterator it(database, column, reverse, lt, lte, gt, gte, limit, false);
 
     rocksdb::WriteBatch batch;
     rocksdb::WriteOptions writeOptions;
@@ -1235,23 +1105,15 @@ NAPI_METHOD(iterator_init) {
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
-  bool takeSnapshot = !tailing;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "snapshot", takeSnapshot));
-
   Encoding keyEncoding;
   NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
 
   Encoding valueEncoding;
   NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
-  std::shared_ptr<const rocksdb::Snapshot> snapshot;
-  if (takeSnapshot) {
-    snapshot.reset(database->db->GetSnapshot(), [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
-  }
-
   auto iterator = std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt,
                                                          gte, fillCache, highWaterMarkBytes,
-                                                         snapshot, tailing, keyEncoding, valueEncoding));
+                                                         tailing, keyEncoding, valueEncoding));
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
@@ -1299,10 +1161,6 @@ NAPI_METHOD(iterator_nextv) {
 
   napi_value rows;
   NAPI_STATUS_THROWS(napi_create_array(env, &rows));
-
-  if (!iterator->DidSeek()) {
-    iterator->SeekToRange();
-  }
 
   size_t idx = 0;
   size_t bytesRead = 0;
@@ -1354,15 +1212,15 @@ NAPI_METHOD(iterator_nextv) {
   NAPI_STATUS_THROWS(napi_create_object(env, &ret));
   NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
   NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", finished));
-
   return ret;
 }
 
 NAPI_METHOD(batch_init) {
-  auto batch = new rocksdb::WriteBatch();
+  auto batch = std::make_unique<rocksdb::WriteBatch>();
 
   napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, batch, Finalize<rocksdb::WriteBatch>, batch, &result));
+  NAPI_STATUS_THROWS(napi_create_external(env, batch.get(), Finalize<rocksdb::WriteBatch>, batch.get(), &result));
+  batch.release();
 
   return result;
 }
@@ -1471,36 +1329,6 @@ NAPI_METHOD(batch_write) {
   bool lowPriority = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
 
-  runAsync<int64_t>(
-      "leveldown.batch.write", env, callback,
-      [=](int64_t& seq) {
-        rocksdb::WriteOptions writeOptions;
-        writeOptions.sync = sync;
-        writeOptions.low_pri = lowPriority;
-        return database->db->Write(writeOptions, batch);
-      },
-      [=](int64_t& seq, auto env, auto& argv) { return napi_ok; });
-
-  return 0;
-}
-
-NAPI_METHOD(batch_write_sync) {
-  NAPI_ARGV(3);
-
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  rocksdb::WriteBatch* batch;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
-
-  auto options = argv[2];
-
-  bool sync = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
-
-  bool lowPriority = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
-
   rocksdb::WriteOptions writeOptions;
   writeOptions.sync = sync;
   writeOptions.low_pri = lowPriority;
@@ -1566,7 +1394,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_get_location);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_many);
-  NAPI_EXPORT_FUNCTION(db_get_many_sync);
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
@@ -1581,7 +1408,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_del);
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);
-  NAPI_EXPORT_FUNCTION(batch_write_sync);
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);

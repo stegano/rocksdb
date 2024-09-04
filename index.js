@@ -8,7 +8,6 @@ const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
-const { handleMany } = require('./util')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -152,35 +151,27 @@ class RocksLevel extends AbstractLevel {
     return callback[kPromise]
   }
 
-  _getManySync (keys, options) {
-    return binding.db_get_many_sync(this[kContext], keys, options ?? kEmpty)
-  }
-
   _getMany (keys, options, callback) {
     callback = fromCallback(callback, kPromise)
 
     try {
-      this[kRef]()
-      binding.db_get_many(this[kContext], keys, options ?? kEmpty, (err, sizes, data) => {
-        if (err) {
-          callback(err)
-        } else {
-          let rows
-          try {
-            rows = handleMany(sizes, data, options ?? kEmpty)
-          } catch (err) {
-            callback(err)
-          }
-          callback(null, rows)
-        }
-        this[kUnref]()
-      })
+      // TODO (fix): highWaterMark and limit with async between...
+      process.nextTick(callback, null, this._getManySync(keys, options ?? kEmpty))
     } catch (err) {
       process.nextTick(callback, err)
-      this[kUnref]()
     }
 
     return callback[kPromise]
+  }
+
+  _getManySync (keys, options) {
+    if (keys.some(key => typeof key === 'string')) {
+      keys = keys.map(key => typeof key === 'string' ? Buffer.from(key) : key)
+    }
+
+    const { rows, finished } = binding.db_get_many(this[kContext], keys, options ?? kEmpty)
+    assert(finished)
+    return rows
   }
 
   _del (key, options, callback) {
@@ -212,17 +203,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _chainedBatch () {
-    return new ChainedBatch(this, this[kContext], (batch, context, options, callback) => {
-      try {
-        this[kRef]()
-        binding.batch_write(this[kContext], context, options, (err) => {
-          this[kUnref]()
-          callback(err)
-        })
-      } catch (err) {
-        process.nextTick(callback, err)
-      }
-    })
+    return new ChainedBatch(this, this[kContext])
   }
 
   _batch (operations, options, callback) {
