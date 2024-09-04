@@ -263,23 +263,6 @@ static napi_status GetProperty(napi_env env,
   return GetValue(env, value, result);
 }
 
-// NOTE: napi_create_external_buffer is slow with finalizer...
-// template <typename T>
-// napi_status Convert(napi_env env, rocksdb::PinnableSlice* s, Encoding encoding, napi_value& result) {
-//   if (!s || !s->IsPinned()) {
-//     return napi_get_null(env, &result);
-//   } else if (encoding == Encoding::Buffer) {
-//     auto ptr = new rocksdb::PinnableSlice(std::move(*s));
-//     return napi_create_external_buffer(env, ptr->size(), const_cast<char*>(ptr->data()),
-//                                        Finalize<rocksdb::PinnableSlice>, ptr, &result);
-//     return napi_create_buffer_copy(env, s->size(), s->data(), nullptr, &result);
-//   } else if (encoding == Encoding::String) {
-//     return napi_create_string_utf8(env, s->data(), s->size(), &result);
-//   } else {
-//     return napi_invalid_arg;
-//   }
-// }
-
 template <typename T>
 napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) {
   if (!s) {

@@ -437,11 +437,15 @@ struct Iterator final : public BaseIterator {
            const bool fillCache,
            const size_t highWaterMarkBytes,
            std::shared_ptr<const rocksdb::Snapshot> snapshot,
-           bool tailing = false)
+           bool tailing = false,
+           Encoding keyEncoding = Encoding::Invalid,
+           Encoding valueEncoding = Encoding::Invalid)
       : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, snapshot, tailing),
         keys_(keys),
         values_(values),
-        highWaterMarkBytes_(highWaterMarkBytes) {}
+        highWaterMarkBytes_(highWaterMarkBytes),
+        keyEncoding_(keyEncoding),
+        valueEncoding_(valueEncoding) {}
 
   void Seek(const rocksdb::Slice& target) override {
     first_ = true;
@@ -452,6 +456,8 @@ struct Iterator final : public BaseIterator {
   const bool values_;
   const size_t highWaterMarkBytes_;
   bool first_ = true;
+  const Encoding keyEncoding_;
+  const Encoding valueEncoding_;
 };
 
 /**
@@ -1096,12 +1102,11 @@ NAPI_METHOD(db_get_many_sync) {
 
   for (auto n = 0; n < count; n++) {
     napi_value row;
-    if (statuses[n].ok()) {
-      NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
-    } else if (statuses[n].IsNotFound()) {
+    if (statuses[n].IsNotFound()) {
       NAPI_STATUS_THROWS(napi_get_undefined(env, &row));
     } else {
       ROCKS_STATUS_THROWS_NAPI(statuses[n]);
+      NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
     }
     NAPI_STATUS_THROWS(napi_set_element(env, rows, n, row));
   }
@@ -1291,6 +1296,12 @@ NAPI_METHOD(iterator_init) {
   bool takeSnapshot = !tailing;
   NAPI_STATUS_THROWS(GetProperty(env, options, "snapshot", takeSnapshot));
 
+  Encoding keyEncoding;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
+
+  Encoding valueEncoding;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
+
   std::shared_ptr<const rocksdb::Snapshot> snapshot;
   if (takeSnapshot) {
     snapshot.reset(database->db->GetSnapshot(), [=](const auto ptr) { database->db->ReleaseSnapshot(ptr); });
@@ -1298,7 +1309,7 @@ NAPI_METHOD(iterator_init) {
 
   auto iterator = std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt,
                                                          gte, fillCache, highWaterMarkBytes,
-                                                         snapshot, tailing));
+                                                         snapshot, tailing, keyEncoding, valueEncoding));
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
@@ -1332,8 +1343,8 @@ NAPI_METHOD(iterator_close) {
   return 0;
 }
 
-NAPI_METHOD(iterator_nextv) {
-  NAPI_ARGV(3);
+NAPI_METHOD(iterator_nextv_sync) {
+  NAPI_ARGV(2);
 
   Iterator* iterator;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
@@ -1341,95 +1352,68 @@ NAPI_METHOD(iterator_nextv) {
   uint32_t count;
   NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &count));
 
-  auto callback = argv[2];
+  napi_value finished;
+  NAPI_STATUS_THROWS(napi_get_boolean(env, false, &finished));
 
-  struct State {
-    std::vector<uint8_t> data;
-    std::vector<int32_t> sizes;
-    bool finished = false;
-  };
+  napi_value rows;
+  NAPI_STATUS_THROWS(napi_create_array(env, &rows));
 
-  runAsync<State>(
-      std::string("leveldown.iterator.next"), env, callback,
-      [=](auto& state) {
-        if (!iterator->DidSeek()) {
-          iterator->SeekToRange();
-        }
+  if (!iterator->DidSeek()) {
+    iterator->SeekToRange();
+  }
 
-        state.sizes.reserve(count * 2);
-        state.data.reserve(iterator->highWaterMarkBytes_);
+  size_t idx = 0;
+  size_t bytesRead = 0;
+  while (true) {
+    if (!iterator->first_) {
+      iterator->Next();
+    } else {
+      iterator->first_ = false;
+    }
 
-        auto bytesRead = 0;
+    if (!iterator->Valid() || !iterator->Increment()) {
+      ROCKS_STATUS_THROWS_NAPI(iterator->Status());
+      NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
+      break;
+    }
 
-        auto push = [&](const std::optional<rocksdb::Slice>& slice){
-          if (slice) {
-            state.sizes.push_back(static_cast<int32_t>(slice->size()));
-            std::copy_n(slice->data(), slice->size(), std::back_inserter(state.data));
+    napi_value key;
+    napi_value val;
 
-            if (state.data.size() & 0x7) {
-              state.data.resize((state.data.size() | 0x7) + 1);
-            }
+    if (iterator->keys_ && iterator->values_) {
+      const auto k = iterator->CurrentKey();
+      const auto v = iterator->CurrentValue();
+      NAPI_STATUS_THROWS(Convert(env, &k, iterator->keyEncoding_, key));
+      NAPI_STATUS_THROWS(Convert(env, &v, iterator->valueEncoding_, val));
+      bytesRead += k.size() + v.size();
+    } else if (iterator->keys_) {
+      const auto k = iterator->CurrentKey();
+      NAPI_STATUS_THROWS(Convert(env, &k, iterator->keyEncoding_, key));
+      NAPI_STATUS_THROWS(napi_get_undefined(env, &val));
+      bytesRead += k.size();
+    } else if (iterator->values_) {
+      const auto v = iterator->CurrentValue();
+      NAPI_STATUS_THROWS(napi_get_undefined(env, &key));
+      NAPI_STATUS_THROWS(Convert(env, &v, iterator->valueEncoding_, val));
+      bytesRead += v.size();
+    } else {
+      assert(false);
+    }
 
-            bytesRead += slice->size();
-          } else {
-            state.sizes.push_back(-1);
-          }
-        };
+    NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
+    NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
 
-        while (true) {
-          if (!iterator->first_) {
-            iterator->Next();
-          } else {
-            iterator->first_ = false;
-          }
+    if (bytesRead > iterator->highWaterMarkBytes_ || idx / 2 >= count) {
+      break;
+    }
+  }
 
-          if (!iterator->Valid() || !iterator->Increment()) {
-            state.finished = true;
-            return iterator->Status();
-          }
+  napi_value ret;
+  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
+  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
+  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", finished));
 
-          if (iterator->keys_ && iterator->values_) {
-            push(iterator->CurrentKey());
-            push(iterator->CurrentValue());
-          } else if (iterator->keys_) {
-            push(iterator->CurrentKey());
-            push(std::nullopt);
-          } else if (iterator->values_) {
-            push(std::nullopt);
-            push(iterator->CurrentValue());
-          }
-
-          if (bytesRead > iterator->highWaterMarkBytes_ || state.sizes.size() / 2 >= count) {
-            state.finished = false;
-            return rocksdb::Status::OK();
-          }
-        }
-      },
-      [=](auto& state, auto env, auto& argv) {
-        argv.resize(4);
-
-        if (state.sizes.size() > 0) {
-          auto sizes = std::make_unique<std::vector<int32_t>>(std::move(state.sizes));
-          NAPI_STATUS_RETURN(napi_create_external_buffer(env, sizes->size() * 4, sizes->data(), Finalize<std::vector<int32_t>>, sizes.get(), &argv[1]));
-          sizes.release();
-        } else {
-          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[1]));
-        }
-
-        if (state.data.size() > 0) {
-          auto data = std::make_unique<std::vector<uint8_t>>(std::move(state.data));
-          NAPI_STATUS_RETURN(napi_create_external_buffer(env, data->size(), data->data(), Finalize<std::vector<uint8_t>>, data.get(), &argv[2]));
-          data.release();
-        } else {
-          NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[2]));
-        }
-
-        NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &argv[3]));
-
-        return napi_ok;
-      });
-
-  return 0;
+  return ret;
 }
 
 NAPI_METHOD(batch_init) {
@@ -1649,7 +1633,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
   NAPI_EXPORT_FUNCTION(iterator_close);
-  NAPI_EXPORT_FUNCTION(iterator_nextv);
+  NAPI_EXPORT_FUNCTION(iterator_nextv_sync);
 
   NAPI_EXPORT_FUNCTION(batch_init);
   NAPI_EXPORT_FUNCTION(batch_put);

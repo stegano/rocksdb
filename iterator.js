@@ -2,7 +2,6 @@
 
 const { fromCallback } = require('catering')
 const { AbstractIterator } = require('abstract-level')
-const { handleNextv } = require('./util')
 
 const binding = require('./binding')
 
@@ -12,29 +11,16 @@ const kCache = Symbol('cache')
 const kFinished = Symbol('finished')
 const kFirst = Symbol('first')
 const kPosition = Symbol('position')
-const kHandleNext = Symbol('handleNext')
-const kHandleNextv = Symbol('handleNextv')
-const kCallback = Symbol('callback')
-const kOptions = Symbol('options')
-const empty = []
-
-const registry = new FinalizationRegistry((context) => {
-  binding.iterator_close(context)
-})
+const kEmpty = []
 
 class Iterator extends AbstractIterator {
   constructor (db, context, options) {
     super(db, options)
 
     this[kContext] = binding.iterator_init(context, options)
-    registry.register(this, this[kContext], this[kContext])
 
-    this[kOptions] = { ...options }
-    this[kHandleNext] = this[kHandleNext].bind(this)
-    this[kHandleNextv] = this[kHandleNextv].bind(this)
-    this[kCallback] = null
     this[kFirst] = true
-    this[kCache] = empty
+    this[kCache] = kEmpty
     this[kFinished] = false
     this[kPosition] = 0
   }
@@ -45,7 +31,7 @@ class Iterator extends AbstractIterator {
     }
 
     this[kFirst] = true
-    this[kCache] = empty
+    this[kCache] = kEmpty
     this[kFinished] = false
     this[kPosition] = 0
 
@@ -60,35 +46,22 @@ class Iterator extends AbstractIterator {
     } else if (this[kFinished]) {
       process.nextTick(callback)
     } else {
-      this[kCallback] = callback
+      const size = this[kFirst] ? 1 : 1000
+      this[kFirst] = false
 
-      if (this[kFirst]) {
-        // It's common to only want one entry initially or after a seek()
-        this[kFirst] = false
-        binding.iterator_nextv(this[kContext], 1, this[kHandleNext])
-      } else {
-        // Limit the size of the cache to prevent starving the event loop
-        // while we're recursively calling process.nextTick().
-        binding.iterator_nextv(this[kContext], 1000, this[kHandleNext])
+      try {
+        const { rows, finished } = binding.iterator_nextv_sync(this[kContext], size)
+        this[kCache] = rows
+        this[kFinished] = finished
+        this[kPosition] = 0
+
+        setImmediate(() => this._next(callback))
+      } catch (err) {
+        process.nextTick(callback, err)
       }
     }
 
     return this
-  }
-
-  [kHandleNext] (err, sizes, buffer, finished) {
-    handleNextv(err, sizes, buffer, finished, this[kOptions], (err, items, finished) => {
-      const callback = this[kCallback]
-      if (err) {
-        return callback(err)
-      }
-
-      this[kCache] = items
-      this[kFinished] = finished
-      this[kPosition] = 0
-
-      this._next(callback)
-    })
   }
 
   _nextv (size, options, callback) {
@@ -97,38 +70,43 @@ class Iterator extends AbstractIterator {
     if (this[kFinished]) {
       process.nextTick(callback, null, [])
     } else {
-      this[kCallback] = callback
       this[kFirst] = false
-      binding.iterator_nextv(this[kContext], size, this[kHandleNextv])
+
+      setImmediate(() => {
+        try {
+          const { rows, finished } = binding.iterator_nextv_sync(this[kContext], size)
+
+          const entries = []
+          for (let n = 0; n < rows.length; n += 2) {
+            entries.push([rows[n + 0], rows[n + 1]])
+          }
+
+          this[kFinished] = finished
+
+          callback(null, entries, finished)
+        } catch (err) {
+          callback(err)
+        }
+      })
     }
 
     return callback[kPromise]
   }
 
-  [kHandleNextv] (err, sizes, buffer, finished) {
-    handleNextv(err, sizes, buffer, finished, this[kOptions], (err, items, finished) => {
-      const callback = this[kCallback]
-      if (err) {
-        return callback(err)
-      }
-
-      this[kFinished] = finished
-
-      const entries = []
-      for (let n = 0; n < items.length; n += 2) {
-        entries.push([items[n + 0], items[n + 1]])
-      }
-
-      callback(null, entries)
-    })
+  _nextvSync (size, options) {
+    this[kFirst] = false
+    return binding.iterator_nextv_sync(this[kContext], size)
   }
 
   _close (callback) {
-    this[kCache] = empty
-    this[kCallback] = null
+    this[kCache] = kEmpty
 
-    registry.unregister(this[kContext])
-    process.nextTick(callback, binding.iterator_close(this[kContext]))
+    try {
+      binding.iterator_close(this[kContext])
+      process.nextTick(callback)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
   }
 
   _end (callback) {
