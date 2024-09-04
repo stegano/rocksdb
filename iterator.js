@@ -50,7 +50,7 @@ class Iterator extends AbstractIterator {
       this[kFirst] = false
 
       try {
-        const { rows, finished } = binding.iterator_nextv_sync(this[kContext], size)
+        const { rows, finished } = binding.iterator_nextv(this[kContext], size)
         this[kCache] = rows
         this[kFinished] = finished
         this[kPosition] = 0
@@ -74,7 +74,7 @@ class Iterator extends AbstractIterator {
 
       setImmediate(() => {
         try {
-          const { rows, finished } = binding.iterator_nextv_sync(this[kContext], size)
+          const { rows, finished } = binding.iterator_nextv(this[kContext], size)
 
           const entries = []
           for (let n = 0; n < rows.length; n += 2) {
@@ -95,7 +95,7 @@ class Iterator extends AbstractIterator {
 
   _nextvSync (size, options) {
     this[kFirst] = false
-    return binding.iterator_nextv_sync(this[kContext], size)
+    return binding.iterator_nextv(this[kContext], size)
   }
 
   _close (callback) {

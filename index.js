@@ -8,7 +8,7 @@ const { ChainedBatch } = require('./chained-batch')
 const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
-const { handleNextv, handleMany } = require('./util')
+const { handleMany } = require('./util')
 
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
@@ -18,7 +18,7 @@ const kUnref = Symbol('unref')
 const kRefs = Symbol('refs')
 const kPendingClose = Symbol('pendingClose')
 
-const EMPTY = {}
+const kEmpty = {}
 
 class RocksLevel extends AbstractLevel {
   constructor (locationOrHandle, options) {
@@ -125,7 +125,7 @@ class RocksLevel extends AbstractLevel {
 
     try {
       const batch = this.batch()
-      batch.put(key, value, options ?? EMPTY)
+      batch.put(key, value, options ?? kEmpty)
       batch.write(callback)
     } catch (err) {
       process.nextTick(callback, err)
@@ -137,7 +137,7 @@ class RocksLevel extends AbstractLevel {
   _get (key, options, callback) {
     callback = fromCallback(callback, kPromise)
 
-    this._getMany([key], options ?? EMPTY, (err, val) => {
+    this._getMany([key], options ?? kEmpty, (err, val) => {
       if (err) {
         callback(err)
       } else if (val[0] === undefined) {
@@ -153,7 +153,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _getManySync (keys, options) {
-    return binding.db_get_many_sync(this[kContext], keys, options ?? EMPTY)
+    return binding.db_get_many_sync(this[kContext], keys, options ?? kEmpty)
   }
 
   _getMany (keys, options, callback) {
@@ -161,13 +161,13 @@ class RocksLevel extends AbstractLevel {
 
     try {
       this[kRef]()
-      binding.db_get_many(this[kContext], keys, options ?? EMPTY, (err, sizes, data) => {
+      binding.db_get_many(this[kContext], keys, options ?? kEmpty, (err, sizes, data) => {
         if (err) {
           callback(err)
         } else {
           let rows
           try {
-            rows = handleMany(sizes, data, options ?? EMPTY)
+            rows = handleMany(sizes, data, options ?? kEmpty)
           } catch (err) {
             callback(err)
           }
@@ -188,7 +188,7 @@ class RocksLevel extends AbstractLevel {
 
     try {
       const batch = this.batch()
-      batch.del(key, options ?? EMPTY)
+      batch.del(key, options ?? kEmpty)
       batch.write(callback)
     } catch (err) {
       process.nextTick(callback, err)
@@ -202,7 +202,7 @@ class RocksLevel extends AbstractLevel {
 
     try {
       // TODO (fix): Use batch + DeleteRange...
-      binding.db_clear(this[kContext], options ?? EMPTY)
+      binding.db_clear(this[kContext], options ?? kEmpty)
       process.nextTick(callback, null)
     } catch (err) {
       process.nextTick(callback, err)
@@ -244,7 +244,7 @@ class RocksLevel extends AbstractLevel {
   }
 
   _iterator (options) {
-    return new Iterator(this, this[kContext], options ?? EMPTY)
+    return new Iterator(this, this[kContext], options ?? kEmpty)
   }
 
   get identity () {
@@ -273,24 +273,22 @@ class RocksLevel extends AbstractLevel {
       })
     }
 
-    const context = binding.iterator_init(this[kContext], options ?? {})
+    // TOOD (perf): Merge into single call...
+    const context = binding.iterator_init(this[kContext], options ?? kEmpty)
     try {
-      this[kRef]()
-      return await new Promise((resolve, reject) => binding.iterator_nextv(context, options.limit, (err, sizes, buffer, finished) => {
-        handleNextv(err, sizes, buffer, finished, options, (err, rows, finished) => {
-          if (err) {
-            reject(err)
-          } else {
-            resolve({
-              rows,
-              finished
-            })
-          }
-        })
-      }))
+      return binding.iterator_nextv(context, options.limit)
     } finally {
       binding.iterator_close(context)
-      this[kUnref]()
+    }
+  }
+
+  querySync (options) {
+    // TOOD (perf): Merge into single call...
+    const context = binding.iterator_init(this[kContext], options ?? kEmpty)
+    try {
+      return binding.iterator_nextv(context, options.limit)
+    } finally {
+      binding.iterator_close(context)
     }
   }
 }
