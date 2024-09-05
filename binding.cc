@@ -889,6 +889,9 @@ NAPI_METHOD(db_get_many) {
   Encoding valueEncoding = Encoding::Buffer;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "valueEncoding", valueEncoding));
 
+  int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
+
   std::vector<rocksdb::Slice> keys{count};
   std::vector<rocksdb::Status> statuses{count};
   std::vector<rocksdb::PinnableSlice> values{count};
@@ -903,6 +906,7 @@ NAPI_METHOD(db_get_many) {
   readOptions.fill_cache = fillCache;
   readOptions.async_io = true;
   readOptions.optimize_multiget_for_io = true;
+  readOptions.value_size_soft_limit = highWaterMarkBytes;
 
   database->db->MultiGet(readOptions, column, count, keys.data(), values.data(), statuses.data());
 
@@ -916,6 +920,8 @@ NAPI_METHOD(db_get_many) {
     napi_value row;
     if (statuses[n].IsNotFound()) {
       NAPI_STATUS_THROWS(napi_get_null(env, &row));
+    } else if (statuses[n].IsAborted()) {
+      NAPI_STATUS_THROWS(napi_get_undefined(env, &row));
     } else {
       ROCKS_STATUS_THROWS_NAPI(statuses[n]);
       NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
