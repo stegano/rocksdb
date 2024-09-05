@@ -915,7 +915,7 @@ NAPI_METHOD(db_get_many) {
   for (auto n = 0; n < count; n++) {
     napi_value row;
     if (statuses[n].IsNotFound()) {
-      NAPI_STATUS_THROWS(napi_get_undefined(env, &row));
+      NAPI_STATUS_THROWS(napi_get_null(env, &row));
     } else {
       ROCKS_STATUS_THROWS_NAPI(statuses[n]);
       NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
