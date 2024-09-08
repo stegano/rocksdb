@@ -1264,10 +1264,8 @@ NAPI_METHOD(batch_put) {
   rocksdb::Slice val;
   NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
-  const auto options = argv[3];
-
   rocksdb::ColumnFamilyHandle* column = nullptr;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[3], "column", column));
 
   if (column) {
     ROCKS_STATUS_THROWS_NAPI(batch->Put(column, key, val));
@@ -1287,10 +1285,8 @@ NAPI_METHOD(batch_del) {
   rocksdb::Slice key;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
 
-  const auto options = argv[2];
-
   rocksdb::ColumnFamilyHandle* column = nullptr;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
 
   if (column) {
     ROCKS_STATUS_THROWS_NAPI(batch->Delete(column, key));
@@ -1313,10 +1309,8 @@ NAPI_METHOD(batch_merge) {
   rocksdb::Slice val;
   NAPI_STATUS_THROWS(GetValue(env, argv[2], val));
 
-  const auto options = argv[3];
-
   rocksdb::ColumnFamilyHandle* column = nullptr;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[3], "column", column));
 
   if (column) {
     ROCKS_STATUS_THROWS_NAPI(batch->Merge(column, key, val));
@@ -1339,7 +1333,7 @@ NAPI_METHOD(batch_clear) {
 }
 
 NAPI_METHOD(batch_write) {
-  NAPI_ARGV(4);
+  NAPI_ARGV(3);
 
   Database* database;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
@@ -1347,14 +1341,11 @@ NAPI_METHOD(batch_write) {
   rocksdb::WriteBatch* batch;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[1], reinterpret_cast<void**>(&batch)));
 
-  auto options = argv[2];
-  auto callback = argv[3];
-
   bool sync = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "sync", sync));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "sync", sync));
 
   bool lowPriority = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "lowPriority", lowPriority));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "lowPriority", lowPriority));
 
   rocksdb::WriteOptions writeOptions;
   writeOptions.sync = sync;
