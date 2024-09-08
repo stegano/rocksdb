@@ -285,10 +285,7 @@ struct BaseIterator : public Closable {
                const int limit,
                const bool fillCache,
                bool tailing = false)
-      : database_(database),
-        column_(column),
-        reverse_(reverse),
-        limit_(limit) {
+      : database_(database), column_(column), reverse_(reverse), limit_(limit) {
     if (lte) {
       upper_bound_ = rocksdb::PinnableSlice();
       *upper_bound_->GetSelf() = std::move(*lte) + '\0';
@@ -393,7 +390,6 @@ struct BaseIterator : public Closable {
   rocksdb::ColumnFamilyHandle* column_;
 
  private:
-
   int count_ = 0;
   std::optional<rocksdb::PinnableSlice> lower_bound_;
   std::optional<rocksdb::PinnableSlice> upper_bound_;
@@ -1118,9 +1114,9 @@ NAPI_METHOD(iterator_init) {
   Encoding valueEncoding;
   NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
-  auto iterator = std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt,
-                                                         gte, fillCache, highWaterMarkBytes,
-                                                         tailing, keyEncoding, valueEncoding));
+  auto iterator =
+      std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
+                                             fillCache, highWaterMarkBytes, tailing, keyEncoding, valueEncoding));
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
