@@ -37,7 +37,7 @@ class NullLogger : public rocksdb::Logger {
 };
 
 struct Database;
-struct Iterator;
+class Iterator;
 
 struct ColumnFamily {
   rocksdb::ColumnFamilyHandle* handle;
@@ -398,7 +398,15 @@ struct BaseIterator : public Closable {
   const int limit_;
 };
 
-struct Iterator final : public BaseIterator {
+class Iterator final : public BaseIterator {
+  const bool keys_;
+  const bool values_;
+  const size_t highWaterMarkBytes_;
+  bool first_ = true;
+  const Encoding keyEncoding_;
+  const Encoding valueEncoding_;
+
+ public:
   Iterator(Database* database,
            rocksdb::ColumnFamilyHandle* column,
            const bool reverse,
@@ -426,12 +434,115 @@ struct Iterator final : public BaseIterator {
     return BaseIterator::Seek(target);
   }
 
-  const bool keys_;
-  const bool values_;
-  const size_t highWaterMarkBytes_;
-  bool first_ = true;
-  const Encoding keyEncoding_;
-  const Encoding valueEncoding_;
+  static std::unique_ptr<Iterator> create(napi_env env, napi_value db, napi_value options) {
+    Database* database;
+    NAPI_STATUS_THROWS(napi_get_value_external(env, db, reinterpret_cast<void**>(&database)));
+
+    bool reverse = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "reverse", reverse));
+
+    bool keys = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
+
+    bool values = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
+
+    bool tailing = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "tailing", tailing));
+
+    bool fillCache = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
+
+    int32_t limit = -1;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
+
+    int32_t highWaterMarkBytes = 64 * 1024;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "highWaterMarkBytes", highWaterMarkBytes));
+
+    std::optional<std::string> lt;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "lt", lt));
+
+    std::optional<std::string> lte;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "lte", lte));
+
+    std::optional<std::string> gt;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "gt", gt));
+
+    std::optional<std::string> gte;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "gte", gte));
+
+    rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+    NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+
+    Encoding keyEncoding;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
+
+    Encoding valueEncoding;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
+
+    return std::make_unique<Iterator>(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache,
+                                      highWaterMarkBytes, tailing, keyEncoding, valueEncoding);
+  }
+
+  napi_value nextv(napi_env env, uint32_t count) {
+    napi_value finished;
+    NAPI_STATUS_THROWS(napi_get_boolean(env, false, &finished));
+
+    napi_value rows;
+    NAPI_STATUS_THROWS(napi_create_array(env, &rows));
+
+    size_t idx = 0;
+    size_t bytesRead = 0;
+    while (true) {
+      if (!first_) {
+        Next();
+      } else {
+        first_ = false;
+      }
+
+      if (!Valid() || !Increment()) {
+        ROCKS_STATUS_THROWS_NAPI(Status());
+        NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
+        break;
+      }
+
+      napi_value key;
+      napi_value val;
+
+      if (keys_ && values_) {
+        const auto k = CurrentKey();
+        const auto v = CurrentValue();
+        NAPI_STATUS_THROWS(Convert(env, &k, keyEncoding_, key));
+        NAPI_STATUS_THROWS(Convert(env, &v, valueEncoding_, val));
+        bytesRead += k.size() + v.size();
+      } else if (keys_) {
+        const auto k = CurrentKey();
+        NAPI_STATUS_THROWS(Convert(env, &k, keyEncoding_, key));
+        NAPI_STATUS_THROWS(napi_get_undefined(env, &val));
+        bytesRead += k.size();
+      } else if (values_) {
+        const auto v = CurrentValue();
+        NAPI_STATUS_THROWS(napi_get_undefined(env, &key));
+        NAPI_STATUS_THROWS(Convert(env, &v, valueEncoding_, val));
+        bytesRead += v.size();
+      } else {
+        assert(false);
+      }
+
+      NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
+      NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
+
+      if (bytesRead > highWaterMarkBytes_ || idx / 2 >= count) {
+        break;
+      }
+    }
+
+    napi_value ret;
+    NAPI_STATUS_THROWS(napi_create_object(env, &ret));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
+    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", finished));
+    return ret;
+  }
 };
 
 /**
@@ -1067,56 +1178,7 @@ NAPI_METHOD(db_get_latest_sequence) {
 NAPI_METHOD(iterator_init) {
   NAPI_ARGV(2);
 
-  Database* database;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
-
-  const auto options = argv[1];
-
-  bool reverse = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "reverse", reverse));
-
-  bool keys = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
-
-  bool values = true;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
-
-  bool tailing = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "tailing", tailing));
-
-  bool fillCache = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
-
-  int32_t limit = -1;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
-
-  int32_t highWaterMarkBytes = 64 * 1024;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "highWaterMarkBytes", highWaterMarkBytes));
-
-  std::optional<std::string> lt;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "lt", lt));
-
-  std::optional<std::string> lte;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "lte", lte));
-
-  std::optional<std::string> gt;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "gt", gt));
-
-  std::optional<std::string> gte;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "gte", gte));
-
-  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
-  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
-
-  Encoding keyEncoding;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
-
-  Encoding valueEncoding;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
-
-  auto iterator =
-      std::unique_ptr<Iterator>(new Iterator(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
-                                             fillCache, highWaterMarkBytes, tailing, keyEncoding, valueEncoding));
+  auto iterator = Iterator::create(env, argv[0], argv[1]);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, iterator.get(), Finalize<Iterator>, iterator.get(), &result));
@@ -1159,63 +1221,7 @@ NAPI_METHOD(iterator_nextv) {
   uint32_t count;
   NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &count));
 
-  napi_value finished;
-  NAPI_STATUS_THROWS(napi_get_boolean(env, false, &finished));
-
-  napi_value rows;
-  NAPI_STATUS_THROWS(napi_create_array(env, &rows));
-
-  size_t idx = 0;
-  size_t bytesRead = 0;
-  while (true) {
-    if (!iterator->first_) {
-      iterator->Next();
-    } else {
-      iterator->first_ = false;
-    }
-
-    if (!iterator->Valid() || !iterator->Increment()) {
-      ROCKS_STATUS_THROWS_NAPI(iterator->Status());
-      NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
-      break;
-    }
-
-    napi_value key;
-    napi_value val;
-
-    if (iterator->keys_ && iterator->values_) {
-      const auto k = iterator->CurrentKey();
-      const auto v = iterator->CurrentValue();
-      NAPI_STATUS_THROWS(Convert(env, &k, iterator->keyEncoding_, key));
-      NAPI_STATUS_THROWS(Convert(env, &v, iterator->valueEncoding_, val));
-      bytesRead += k.size() + v.size();
-    } else if (iterator->keys_) {
-      const auto k = iterator->CurrentKey();
-      NAPI_STATUS_THROWS(Convert(env, &k, iterator->keyEncoding_, key));
-      NAPI_STATUS_THROWS(napi_get_undefined(env, &val));
-      bytesRead += k.size();
-    } else if (iterator->values_) {
-      const auto v = iterator->CurrentValue();
-      NAPI_STATUS_THROWS(napi_get_undefined(env, &key));
-      NAPI_STATUS_THROWS(Convert(env, &v, iterator->valueEncoding_, val));
-      bytesRead += v.size();
-    } else {
-      assert(false);
-    }
-
-    NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
-    NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
-
-    if (bytesRead > iterator->highWaterMarkBytes_ || idx / 2 >= count) {
-      break;
-    }
-  }
-
-  napi_value ret;
-  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
-  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
-  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", finished));
-  return ret;
+  return iterator->nextv(env, count);
 }
 
 NAPI_METHOD(batch_init) {
