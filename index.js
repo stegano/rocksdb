@@ -248,29 +248,17 @@ class RocksLevel extends AbstractLevel {
   }
 
   async query (options) {
+    return this.querySync(options)
+  }
+
+  querySync (options) {
     if (this.status !== 'open') {
       throw new ModuleError('Database is not open', {
         code: 'LEVEL_DATABASE_NOT_OPEN'
       })
     }
 
-    // TOOD (perf): Merge into single call...
-    const context = binding.iterator_init(this[kContext], options ?? kEmpty)
-    try {
-      return binding.iterator_nextv(context, options.limit)
-    } finally {
-      binding.iterator_close(context)
-    }
-  }
-
-  querySync (options) {
-    // TOOD (perf): Merge into single call...
-    const context = binding.iterator_init(this[kContext], options ?? kEmpty)
-    try {
-      return binding.iterator_nextv(context, options.limit)
-    } finally {
-      binding.iterator_close(context)
-    }
+    return binding.db_query(this[kContext], options ?? kEmpty)
   }
 }
 

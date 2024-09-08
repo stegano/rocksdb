@@ -632,6 +632,13 @@ NAPI_METHOD(db_get_location) {
   return result;
 }
 
+
+NAPI_METHOD(db_query) {
+  NAPI_ARGV(2);
+
+  return Iterator::create(env, argv[0], argv[1])->nextv(env, std::numeric_limits<uint32_t>::max());
+}
+
 template <typename T, typename U>
 napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::ConfigOptions configOptions;
@@ -1406,6 +1413,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
+  NAPI_EXPORT_FUNCTION(db_query);
 
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
