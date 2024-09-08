@@ -307,12 +307,15 @@ struct BaseIterator : public Closable {
     }
 
     rocksdb::ReadOptions readOptions;
+
     if (upper_bound_) {
       readOptions.iterate_upper_bound = &*upper_bound_;
     }
+
     if (lower_bound_) {
       readOptions.iterate_lower_bound = &*lower_bound_;
     }
+
     readOptions.fill_cache = fillCache;
     readOptions.async_io = true;
     readOptions.adaptive_readahead = true;
@@ -329,9 +332,15 @@ struct BaseIterator : public Closable {
     database_->Attach(this);
   }
 
-  virtual ~BaseIterator() { assert(!iterator_); }
+  virtual ~BaseIterator() {
+    if (iterator_) {
+      database_->Detach(this);
+    }
+  }
 
   virtual void Seek(const rocksdb::Slice& target) {
+    assert(iterator_);
+
     if ((upper_bound_ && target.compare(*upper_bound_) >= 0) || (lower_bound_ && target.compare(*lower_bound_) < 0)) {
       // TODO (fix): Why is this required? Seek should handle it?
       // https://github.com/facebook/rocksdb/issues/9904
@@ -347,8 +356,10 @@ struct BaseIterator : public Closable {
   }
 
   virtual rocksdb::Status Close() override {
-    iterator_.reset();
-    database_->Detach(this);
+    if (iterator_) {
+      iterator_.reset();
+      database_->Detach(this);
+    }
     return rocksdb::Status::OK();
   }
 
