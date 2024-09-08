@@ -98,7 +98,7 @@ class Iterator extends AbstractIterator {
       return []
     }
 
-    const { rows, finished } =  binding.iterator_nextv(this[kContext], size)
+    const { rows, finished } = binding.iterator_nextv(this[kContext], size)
 
     this[kFirst] = false
     this[kFinished] = finished
