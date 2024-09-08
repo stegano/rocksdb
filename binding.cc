@@ -673,6 +673,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
   tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
+  tableOptions.decouple_partitioned_filters = true;
 
   tableOptions.optimize_filters_for_memory = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory));
