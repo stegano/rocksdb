@@ -72,6 +72,7 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _close (callback) {
+    binding.batch_clear(this[kBatchContext])
     process.nextTick(callback)
   }
 
