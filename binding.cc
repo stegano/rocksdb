@@ -1077,37 +1077,38 @@ NAPI_METHOD(db_get_many) {
 
   auto callback = argv[3];
 
-  std::vector<rocksdb::PinnableSlice> keys{count};
+  struct State {
+    std::vector<rocksdb::Status> statuses;
+    std::vector<rocksdb::PinnableSlice> values;
+    std::vector<rocksdb::PinnableSlice> keys;
+  } state;
+
+  state.keys.resize(count);
 
   for (uint32_t n = 0; n < count; n++) {
     napi_value element;
     NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
-    NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
+    NAPI_STATUS_THROWS(GetValue(env, element, state.keys[n]));
   }
 
-  struct State {
-    std::vector<rocksdb::Status> statuses;
-    std::vector<rocksdb::PinnableSlice> values;
-  };
-
-  runAsync<State>(
+  runAsync(std::move(state),
       "leveldown.get_many", env, callback,
-      [=, keys = std::move(keys)](auto& state) {
-        std::vector<rocksdb::Slice> keys2{count};
-        for (uint32_t n = 0; n < count; n++) {
-          keys2[n] = keys[n];
-        }
-
+      [=](auto& state) {
         rocksdb::ReadOptions readOptions;
         readOptions.fill_cache = fillCache;
         readOptions.async_io = true;
         readOptions.optimize_multiget_for_io = true;
         readOptions.value_size_soft_limit = highWaterMarkBytes;
 
+        std::vector<rocksdb::Slice> keys{count};
+        for (uint32_t n = 0; n < count; n++) {
+          keys[n] = state.keys[n];
+        }
+
         state.statuses.resize(count);
         state.values.resize(count);
 
-        database->db->MultiGet(readOptions, column, count, keys2.data(), state.values.data(), state.statuses.data());
+        database->db->MultiGet(readOptions, column, count, keys.data(), state.values.data(), state.statuses.data());
 
         return rocksdb::Status::OK();
       },
