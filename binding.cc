@@ -670,6 +670,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
       columnOptions.compaction_style = rocksdb::kCompactionStyleUniversal;
       columnOptions.compaction_options_universal.compression_size_percent = 80;
     } else if (*compactionOpt == "level") {
+      columnOptions.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
       // merge two memtables when flushing to L0
       columnOptions.min_write_buffer_number_to_merge = 2;
       // this means we'll use 50% extra memory in the worst case, but will reduce
