@@ -152,11 +152,14 @@ class RocksLevel extends AbstractLevel {
   }
 
   _getMany (keys, options, callback) {
+    if (keys.some(key => typeof key === 'string')) {
+      keys = keys.map(key => typeof key === 'string' ? Buffer.from(key) : key)
+    }
+
     callback = fromCallback(callback, kPromise)
 
     try {
-      // TODO (fix): highWaterMark and limit with async between...
-      process.nextTick(callback, null, this._getManySync(keys, options ?? kEmpty))
+      binding.db_get_many(this[kContext], keys, options ?? kEmpty, callback)
     } catch (err) {
       process.nextTick(callback, err)
     }
@@ -169,9 +172,7 @@ class RocksLevel extends AbstractLevel {
       keys = keys.map(key => typeof key === 'string' ? Buffer.from(key) : key)
     }
 
-    const { rows, finished } = binding.db_get_many(this[kContext], keys, options ?? kEmpty)
-    assert(finished)
-    return rows
+    return binding.db_get_many_sync(this[kContext], keys, options ?? kEmpty)
   }
 
   _del (key, options, callback) {

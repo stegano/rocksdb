@@ -643,7 +643,6 @@ NAPI_METHOD(db_get_location) {
   return result;
 }
 
-
 NAPI_METHOD(db_query) {
   NAPI_ARGV(2);
 
@@ -997,7 +996,7 @@ NAPI_METHOD(db_close) {
   return 0;
 }
 
-NAPI_METHOD(db_get_many) {
+NAPI_METHOD(db_get_many_sync) {
   NAPI_ARGV(3);
 
   Database* database;
@@ -1039,9 +1038,6 @@ NAPI_METHOD(db_get_many) {
   napi_value rows;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &rows));
 
-  napi_value finished;
-  NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
-
   for (auto n = 0; n < count; n++) {
     napi_value row;
     if (statuses[n].IsNotFound()) {
@@ -1055,11 +1051,88 @@ NAPI_METHOD(db_get_many) {
     NAPI_STATUS_THROWS(napi_set_element(env, rows, n, row));
   }
 
-  napi_value ret;
-  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
-  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
-  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", finished));
-  return ret;
+  return rows;
+}
+
+NAPI_METHOD(db_get_many) {
+  NAPI_ARGV(4);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  uint32_t count;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
+
+  bool fillCache = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", fillCache));
+
+  rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
+
+  Encoding valueEncoding = Encoding::Buffer;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "valueEncoding", valueEncoding));
+
+  int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
+
+  auto callback = argv[3];
+
+  std::vector<rocksdb::PinnableSlice> keys{count};
+
+  for (uint32_t n = 0; n < count; n++) {
+    napi_value element;
+    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &element));
+    NAPI_STATUS_THROWS(GetValue(env, element, keys[n]));
+  }
+
+  struct State {
+    std::vector<rocksdb::Status> statuses;
+    std::vector<rocksdb::PinnableSlice> values;
+  };
+
+  runAsync<State>(
+      "leveldown.get_many", env, callback,
+      [=, keys = std::move(keys)](auto& state) {
+        std::vector<rocksdb::Slice> keys2{count};
+        for (uint32_t n = 0; n < count; n++) {
+          keys2[n] = keys[n];
+        }
+
+        rocksdb::ReadOptions readOptions;
+        readOptions.fill_cache = fillCache;
+        readOptions.async_io = true;
+        readOptions.optimize_multiget_for_io = true;
+        readOptions.value_size_soft_limit = highWaterMarkBytes;
+
+        state.statuses.resize(count);
+        state.values.resize(count);
+
+        database->db->MultiGet(readOptions, column, count, keys2.data(), state.values.data(), state.statuses.data());
+
+        return rocksdb::Status::OK();
+      },
+      [=](auto& state, auto env, auto& argv) {
+        argv.resize(2);
+
+        NAPI_STATUS_RETURN(napi_create_array_with_length(env, count, &argv[1]));
+
+        for (auto n = 0; n < count; n++) {
+          napi_value row;
+          if (state.statuses[n].IsNotFound()) {
+            NAPI_STATUS_RETURN(napi_get_undefined(env, &row));
+          } else if (state.statuses[n].IsAborted()) {
+            NAPI_STATUS_RETURN(napi_get_null(env, &row));
+          } else {
+            ROCKS_STATUS_RETURN_NAPI(state.statuses[n]);
+            NAPI_STATUS_RETURN(Convert(env, &state.values[n], valueEncoding, row));
+          }
+          NAPI_STATUS_RETURN(napi_set_element(env, argv[1], n, row));
+        }
+
+        return napi_ok;
+      });
+
+  return 0;
 }
 
 NAPI_METHOD(db_clear) {
@@ -1412,6 +1485,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_get_location);
   NAPI_EXPORT_FUNCTION(db_close);
   NAPI_EXPORT_FUNCTION(db_get_many);
+  NAPI_EXPORT_FUNCTION(db_get_many_sync);
   NAPI_EXPORT_FUNCTION(db_clear);
   NAPI_EXPORT_FUNCTION(db_get_property);
   NAPI_EXPORT_FUNCTION(db_get_latest_sequence);
