@@ -107,14 +107,17 @@ class Iterator extends AbstractIterator {
   }
 
   _close (callback) {
-    this[kCache] = kEmpty
-
     try {
-      binding.iterator_close(this[kContext])
+      this._syncClose()
       process.nextTick(callback)
     } catch (err) {
       process.nextTick(callback, err)
     }
+  }
+
+  _syncClose () {
+    this[kCache] = kEmpty
+    binding.iterator_close(this[kContext])
   }
 
   _end (callback) {
