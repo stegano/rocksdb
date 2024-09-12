@@ -1505,7 +1505,7 @@ NAPI_METHOD(regex_test) {
   rocksdb::Slice value;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], value));
 
-  const bool match = std::regex_match(value.data(), value.data() + value.size(), *regex);
+  const bool match = std::regex_search(value.data(), value.data() + value.size(), *regex);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_get_boolean(env, match, &result));
@@ -1532,7 +1532,7 @@ NAPI_METHOD(regex_test_many) {
     rocksdb::Slice value;
     NAPI_STATUS_THROWS(GetValue(env, valueElement, value));
 
-    const bool match = std::regex_match(value.data(), value.data() + value.size(), *regex);
+    const bool match = std::regex_search(value.data(), value.data() + value.size(), *regex);
 
     napi_value matchElement;
     NAPI_STATUS_THROWS(napi_get_boolean(env, match, &matchElement));
