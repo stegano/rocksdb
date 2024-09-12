@@ -18,10 +18,12 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
+
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <set>
+#include <regex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1479,6 +1481,69 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
+NAPI_METHOD(regex_init) {
+  NAPI_ARGV(1);
+
+  std::string pattern;
+  NAPI_STATUS_THROWS(GetString(env, argv[0], pattern));
+
+  auto batch = std::make_unique<std::regex>(pattern);
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_external(env, batch.get(), Finalize<std::regex>, batch.get(), &result));
+  batch.release();
+
+  return result;
+}
+
+NAPI_METHOD(regex_test) {
+  NAPI_ARGV(2);
+
+  std::regex* regex;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&regex)));
+
+  rocksdb::Slice value;
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], value));
+
+  const bool match = std::regex_match(value.data(), value.data() + value.size(), *regex);
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_get_boolean(env, match, &result));
+
+  return result;
+}
+
+NAPI_METHOD(regex_test_many) {
+  NAPI_ARGV(2);
+
+  std::regex* regex;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&regex)));
+
+  uint32_t count;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &result));
+
+  for (uint32_t n = 0; n < count; n++) {
+    napi_value valueElement;
+    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &valueElement));
+
+    rocksdb::Slice value;
+    NAPI_STATUS_THROWS(GetValue(env, valueElement, value));
+
+    const bool match = std::regex_match(value.data(), value.data() + value.size(), *regex);
+
+    napi_value matchElement;
+    NAPI_STATUS_THROWS(napi_get_boolean(env, match, &matchElement));
+
+    NAPI_STATUS_THROWS(napi_set_element(env, result, n, matchElement));
+  }
+
+  return result;
+}
+
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1506,4 +1571,8 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);
+
+  NAPI_EXPORT_FUNCTION(regex_init);
+  NAPI_EXPORT_FUNCTION(regex_test_many);
+  NAPI_EXPORT_FUNCTION(regex_test);
 }
