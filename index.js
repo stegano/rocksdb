@@ -5,7 +5,6 @@ const { AbstractLevel } = require('abstract-level')
 const ModuleError = require('module-error')
 const binding = require('./binding')
 const { ChainedBatch } = require('./chained-batch')
-const { Regex } = require('./regex')
 const { Iterator } = require('./iterator')
 const fs = require('node:fs')
 const assert = require('node:assert')
@@ -265,4 +264,3 @@ class RocksLevel extends AbstractLevel {
 }
 
 exports.RocksLevel = RocksLevel
-exports.Regex = Regex

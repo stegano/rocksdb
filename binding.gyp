@@ -55,7 +55,7 @@
                 ]
             ],
             "dependencies": ["<(module_root_dir)/deps/rocksdb/rocksdb.gyp:rocksdb"],
-            "include_dirs": ["<!(node -e \"require('napi-macros')\")", "/opt/homebrew/Cellar/boost/1.86.0/include"],
+            "include_dirs": ["<!(node -e \"require('napi-macros')\")"],
             "sources": ["binding.cc"]
         }
     ]

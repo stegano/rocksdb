@@ -18,8 +18,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
-#include <boost/regex.hpp>
-
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -1481,56 +1479,6 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
-NAPI_METHOD(regex_init) {
-  NAPI_ARGV(1);
-
-  std::string pattern;
-  NAPI_STATUS_THROWS(GetString(env, argv[0], pattern));
-
-  try {
-    auto regex = std::make_unique<boost::regex>(pattern, boost::regex::optimize | boost::regex::ECMAScript);
-
-    napi_value result;
-    NAPI_STATUS_THROWS(napi_create_external(env, regex.get(), Finalize<boost::regex>, regex.get(), &result));
-    regex.release();
-
-    return result;
-  } catch (const std::exception& e) {
-    napi_throw_error(env, nullptr, e.what());
-    return 0;
-  }
-}
-
-NAPI_METHOD(regex_test) {
-  NAPI_ARGV(4);
-
-  boost::regex* regex;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&regex)));
-
-  rocksdb::Slice value;
-  NAPI_STATUS_THROWS(GetValue(env, argv[1], value));
-
-  int offset = 0;
-  NAPI_STATUS_THROWS(GetValue(env, argv[2], offset));
-  offset = std::max(0, std::min<int>(offset, value.size()));
-
-  int length = 0;
-  NAPI_STATUS_THROWS(GetValue(env, argv[3], length));
-  length = std::max(0, std::min<int>(length, value.size() - offset));
-
-  try {
-    const bool match = boost::regex_search(value.data() + offset, value.data() + offset + length, *regex);
-
-    napi_value result;
-    NAPI_STATUS_THROWS(napi_get_boolean(env, match, &result));
-
-    return result;
-  } catch (const std::exception& e) {
-    napi_throw_error(env, nullptr, e.what());
-    return 0;
-  }
-}
-
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1558,7 +1506,4 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);
-
-  NAPI_EXPORT_FUNCTION(regex_init);
-  NAPI_EXPORT_FUNCTION(regex_test);
 }
