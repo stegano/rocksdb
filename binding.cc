@@ -18,12 +18,12 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
+#include <boost/regex.hpp>
 
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <set>
-#include <regex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -1488,10 +1488,10 @@ NAPI_METHOD(regex_init) {
   NAPI_STATUS_THROWS(GetString(env, argv[0], pattern));
 
   try {
-    auto regex = std::make_unique<std::regex>(pattern, std::regex::optimize | std::regex::ECMAScript);
+    auto regex = std::make_unique<boost::regex>(pattern, boost::regex::optimize | boost::regex::ECMAScript);
 
     napi_value result;
-    NAPI_STATUS_THROWS(napi_create_external(env, regex.get(), Finalize<std::regex>, regex.get(), &result));
+    NAPI_STATUS_THROWS(napi_create_external(env, regex.get(), Finalize<boost::regex>, regex.get(), &result));
     regex.release();
 
     return result;
@@ -1504,7 +1504,7 @@ NAPI_METHOD(regex_init) {
 NAPI_METHOD(regex_test) {
   NAPI_ARGV(4);
 
-  std::regex* regex;
+  boost::regex* regex;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&regex)));
 
   rocksdb::Slice value;
@@ -1519,7 +1519,7 @@ NAPI_METHOD(regex_test) {
   length = std::max(0, std::min<int>(length, value.size() - offset));
 
   try {
-    const bool match = std::regex_search(value.data() + offset, value.data() + offset + length, *regex);
+    const bool match = boost::regex_search(value.data() + offset, value.data() + offset + length, *regex);
 
     napi_value result;
     NAPI_STATUS_THROWS(napi_get_boolean(env, match, &result));
@@ -1534,7 +1534,7 @@ NAPI_METHOD(regex_test) {
 NAPI_METHOD(regex_test_many) {
   NAPI_ARGV(2);
 
-  std::regex* regex;
+  boost::regex* regex;
   NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&regex)));
 
   uint32_t count;
@@ -1544,19 +1544,26 @@ NAPI_METHOD(regex_test_many) {
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &result));
 
   try {
+    std::vector<rocksdb::Slice> keys;
+    keys.resize(count);
+
+    std::vector<bool> matches;
+    matches.resize(count);
+
     for (uint32_t n = 0; n < count; n++) {
       napi_value valueElement;
       NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &valueElement));
+      NAPI_STATUS_THROWS(GetValue(env, valueElement, keys[n]))
+    }
 
-      rocksdb::Slice value;
-      NAPI_STATUS_THROWS(GetValue(env, valueElement, value));
+    for (uint32_t n = 0; n < count; n++) {
+      matches[n] = boost::regex_search(keys[n].data(), keys[n].data() + keys[n].size(), *regex);
+    }
 
-      const bool match = std::regex_search(value.data(), value.data() + value.size(), *regex);
-
-      napi_value matchElement;
-      NAPI_STATUS_THROWS(napi_get_boolean(env, match, &matchElement));
-
-      NAPI_STATUS_THROWS(napi_set_element(env, result, n, matchElement));
+    for (uint32_t n = 0; n < count; n++) {
+      napi_value element;
+      NAPI_STATUS_THROWS(napi_get_boolean(env, matches[n], &element));
+      NAPI_STATUS_THROWS(napi_set_element(env, result, n, element));
     }
 
     return result;

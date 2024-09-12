@@ -3,6 +3,9 @@
     "targets": [
         {
             "target_name": "leveldown",
+            "defines": [
+              "BOOST_REGEX_STANDALONE=yes"
+            ],
             "conditions": [
                 [
                     "OS == 'linux'",
@@ -52,7 +55,7 @@
                 ]
             ],
             "dependencies": ["<(module_root_dir)/deps/rocksdb/rocksdb.gyp:rocksdb"],
-            "include_dirs": ["<!(node -e \"require('napi-macros')\")"],
+            "include_dirs": ["<!(node -e \"require('napi-macros')\")", "/opt/homebrew/Cellar/boost/1.86.0/include"],
             "sources": ["binding.cc"]
         }
     ]
