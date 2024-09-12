@@ -20,10 +20,6 @@ class Regex {
 
     return binding.regex_test(this.#context, buffer, byteOffset, byteLength)
   }
-
-  testMany (values) {
-    return binding.regex_test_many(this.#context, values)
-  }
 }
 
 exports.Regex = Regex

@@ -1531,49 +1531,6 @@ NAPI_METHOD(regex_test) {
   }
 }
 
-NAPI_METHOD(regex_test_many) {
-  NAPI_ARGV(2);
-
-  boost::regex* regex;
-  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&regex)));
-
-  uint32_t count;
-  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &result));
-
-  try {
-    std::vector<rocksdb::Slice> keys;
-    keys.resize(count);
-
-    std::vector<bool> matches;
-    matches.resize(count);
-
-    for (uint32_t n = 0; n < count; n++) {
-      napi_value valueElement;
-      NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &valueElement));
-      NAPI_STATUS_THROWS(GetValue(env, valueElement, keys[n]))
-    }
-
-    for (uint32_t n = 0; n < count; n++) {
-      matches[n] = boost::regex_search(keys[n].data(), keys[n].data() + keys[n].size(), *regex);
-    }
-
-    for (uint32_t n = 0; n < count; n++) {
-      napi_value element;
-      NAPI_STATUS_THROWS(napi_get_boolean(env, matches[n], &element));
-      NAPI_STATUS_THROWS(napi_set_element(env, result, n, element));
-    }
-
-    return result;
-  } catch (const std::exception& e) {
-    napi_throw_error(env, nullptr, e.what());
-    return 0;
-  }
-}
-
-
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1603,6 +1560,5 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_iterate);
 
   NAPI_EXPORT_FUNCTION(regex_init);
-  NAPI_EXPORT_FUNCTION(regex_test_many);
   NAPI_EXPORT_FUNCTION(regex_test);
 }
