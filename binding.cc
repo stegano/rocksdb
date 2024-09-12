@@ -1505,14 +1505,13 @@ NAPI_METHOD(regex_test) {
   rocksdb::Slice value;
   NAPI_STATUS_THROWS(GetValue(env, argv[1], value));
 
-  size_t offset = 0;
+  int offset = 0;
   NAPI_STATUS_THROWS(GetValue(env, argv[2], offset));
-  length = std::min(offset, value.size());
+  offset = std::max(0, std::min<int>(offset, value.size()));
 
-
-  size_t length = 0;
+  int length = 0;
   NAPI_STATUS_THROWS(GetValue(env, argv[3], length));
-  length = std::min(length, value.size() - offset);
+  length = std::max(0, std::min<int>(length, value.size() - offset));
 
   const bool match = std::regex_search(value.data() + offset, value.data() + offset + length, *regex);
 
