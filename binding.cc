@@ -1487,7 +1487,7 @@ NAPI_METHOD(regex_init) {
   std::string pattern;
   NAPI_STATUS_THROWS(GetString(env, argv[0], pattern));
 
-  auto batch = std::make_unique<std::regex>(pattern);
+  auto batch = std::make_unique<std::regex>(pattern, std::regex::optimize | std::regex::ECMAScript);
 
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_external(env, batch.get(), Finalize<std::regex>, batch.get(), &result));
