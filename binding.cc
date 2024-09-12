@@ -1487,13 +1487,18 @@ NAPI_METHOD(regex_init) {
   std::string pattern;
   NAPI_STATUS_THROWS(GetString(env, argv[0], pattern));
 
-  auto batch = std::make_unique<std::regex>(pattern, std::regex::optimize | std::regex::ECMAScript);
+  try {
+    auto regex = std::make_unique<std::regex>(pattern, std::regex::optimize | std::regex::ECMAScript);
 
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, batch.get(), Finalize<std::regex>, batch.get(), &result));
-  batch.release();
+    napi_value result;
+    NAPI_STATUS_THROWS(napi_create_external(env, regex.get(), Finalize<std::regex>, regex.get(), &result));
+    regex.release();
 
-  return result;
+    return result;
+  } catch (const std::exception& e) {
+    napi_throw_error(env, nullptr, e.what());
+    return 0;
+  }
 }
 
 NAPI_METHOD(regex_test) {
@@ -1513,12 +1518,17 @@ NAPI_METHOD(regex_test) {
   NAPI_STATUS_THROWS(GetValue(env, argv[3], length));
   length = std::max(0, std::min<int>(length, value.size() - offset));
 
-  const bool match = std::regex_search(value.data() + offset, value.data() + offset + length, *regex);
+  try {
+    const bool match = std::regex_search(value.data() + offset, value.data() + offset + length, *regex);
 
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_get_boolean(env, match, &result));
+    napi_value result;
+    NAPI_STATUS_THROWS(napi_get_boolean(env, match, &result));
 
-  return result;
+    return result;
+  } catch (const std::exception& e) {
+    napi_throw_error(env, nullptr, e.what());
+    return 0;
+  }
 }
 
 NAPI_METHOD(regex_test_many) {
@@ -1533,22 +1543,27 @@ NAPI_METHOD(regex_test_many) {
   napi_value result;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &result));
 
-  for (uint32_t n = 0; n < count; n++) {
-    napi_value valueElement;
-    NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &valueElement));
+  try {
+    for (uint32_t n = 0; n < count; n++) {
+      napi_value valueElement;
+      NAPI_STATUS_THROWS(napi_get_element(env, argv[1], n, &valueElement));
 
-    rocksdb::Slice value;
-    NAPI_STATUS_THROWS(GetValue(env, valueElement, value));
+      rocksdb::Slice value;
+      NAPI_STATUS_THROWS(GetValue(env, valueElement, value));
 
-    const bool match = std::regex_search(value.data(), value.data() + value.size(), *regex);
+      const bool match = std::regex_search(value.data(), value.data() + value.size(), *regex);
 
-    napi_value matchElement;
-    NAPI_STATUS_THROWS(napi_get_boolean(env, match, &matchElement));
+      napi_value matchElement;
+      NAPI_STATUS_THROWS(napi_get_boolean(env, match, &matchElement));
 
-    NAPI_STATUS_THROWS(napi_set_element(env, result, n, matchElement));
+      NAPI_STATUS_THROWS(napi_set_element(env, result, n, matchElement));
+    }
+
+    return result;
+  } catch (const std::exception& e) {
+    napi_throw_error(env, nullptr, e.what());
+    return 0;
   }
-
-  return result;
 }
 
 
