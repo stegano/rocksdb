@@ -10,14 +10,7 @@
                 [
                     "OS == 'linux'",
                     {
-                        "cflags": [
-                            "-msse4.2",
-                            "-mpclmul",
-                            "-mavx",
-                            "-mavx2",
-                            "-mbmi",
-                            "-mlzcnt"
-                        ],
+                        "cflags": ["-march=znver1"],
 						"include_dirs": [
 							"/usr/lib/x86_64-linux-gnu/include",
 							"/usr/lib/include",
