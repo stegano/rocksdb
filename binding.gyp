@@ -13,7 +13,7 @@
                             "/usr/lib/x86_64-linux-gnu/include",
                             "/usr/lib/include",
                         ],
-                        "ccflags": ["-flto"],
+                        "ccflags": ["-flto", '-march=znver1'],
                         "cflags!": ["-fno-exceptions"],
                         "cflags_cc!": ["-fno-exceptions"],
                         "ldflags": ["-flto", "-fuse-linker-plugin"],
