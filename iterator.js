@@ -95,7 +95,7 @@ class Iterator extends AbstractIterator {
 
   _nextvSync (size, options) {
     if (this[kFinished]) {
-      return []
+      return { rows: [], finished: true }
     }
 
     const result = binding.iterator_nextv(this[kContext], size)
