@@ -2,6 +2,7 @@
 
 const { fromCallback } = require('catering')
 const { AbstractIterator } = require('abstract-level')
+const assert = require('node:assert')
 
 const binding = require('./binding')
 
@@ -26,6 +27,8 @@ class Iterator extends AbstractIterator {
   }
 
   _seek (target) {
+    assert(this[kContext])
+
     if (target.length === 0) {
       throw new Error('cannot seek() to an empty target')
     }
@@ -39,6 +42,8 @@ class Iterator extends AbstractIterator {
   }
 
   _next (callback) {
+    assert(this[kContext])
+
     if (this[kPosition] < this[kCache].length) {
       const key = this[kCache][this[kPosition]++]
       const val = this[kCache][this[kPosition]++]
@@ -65,6 +70,8 @@ class Iterator extends AbstractIterator {
   }
 
   _nextv (size, options, callback) {
+    assert(this[kContext])
+
     callback = fromCallback(callback, kPromise)
 
     if (this[kFinished]) {
@@ -72,28 +79,28 @@ class Iterator extends AbstractIterator {
     } else {
       this[kFirst] = false
 
-      setImmediate(() => {
-        try {
-          const { rows, finished } = binding.iterator_nextv(this[kContext], size)
+      try {
+        const { rows, finished } = binding.iterator_nextv(this[kContext], size)
 
-          const entries = []
-          for (let n = 0; n < rows.length; n += 2) {
-            entries.push([rows[n + 0], rows[n + 1]])
-          }
-
-          this[kFinished] = finished
-
-          callback(null, entries, finished)
-        } catch (err) {
-          callback(err)
+        const entries = []
+        for (let n = 0; n < rows.length; n += 2) {
+          entries.push([rows[n + 0], rows[n + 1]])
         }
-      })
+
+        this[kFinished] = finished
+
+        process.nextTick(callback, null, entries, finished)
+      } catch (err) {
+        process.nextTick(callback, err)
+      }
     }
 
     return callback[kPromise]
   }
 
   _nextvSync (size, options) {
+    assert(this[kContext])
+
     if (this[kFinished]) {
       return { rows: [], finished: true }
     }
@@ -107,6 +114,8 @@ class Iterator extends AbstractIterator {
   }
 
   _close (callback) {
+    assert(this[kContext])
+
     try {
       this._closeSync()
       process.nextTick(callback)
@@ -116,8 +125,11 @@ class Iterator extends AbstractIterator {
   }
 
   _closeSync () {
+    assert(this[kContext])
+
     this[kCache] = kEmpty
     binding.iterator_close(this[kContext])
+    this[kContext] = null
   }
 
   _end (callback) {

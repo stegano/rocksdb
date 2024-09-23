@@ -4,6 +4,7 @@ const { AbstractChainedBatch } = require('abstract-level')
 const binding = require('./binding')
 const ModuleError = require('module-error')
 const { fromCallback } = require('catering')
+const assert = require('node:assert')
 
 const kBatchContext = Symbol('batchContext')
 const kDbContext = Symbol('dbContext')
@@ -20,6 +21,8 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _put (key, value, options) {
+    assert(this[kBatchContext])
+
     if (key === null || key === undefined) {
       throw new ModuleError('Key cannot be null or undefined', {
         code: 'LEVEL_INVALID_KEY'
@@ -39,6 +42,8 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _del (key, options) {
+    assert(this[kBatchContext])
+
     if (key === null || key === undefined) {
       throw new ModuleError('Key cannot be null or undefined', {
         code: 'LEVEL_INVALID_KEY'
@@ -51,10 +56,14 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _clear () {
+    assert(this[kBatchContext])
+
     binding.batch_clear(this[kBatchContext])
   }
 
   _write (options, callback) {
+    assert(this[kBatchContext])
+
     callback = fromCallback(callback, kPromise)
 
     try {
@@ -68,19 +77,29 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _writeSync (options) {
+    assert(this[kBatchContext])
+
     binding.batch_write(this[kDbContext], this[kBatchContext], options ?? EMPTY)
   }
 
   _close (callback) {
+    assert(this[kBatchContext])
+
     binding.batch_clear(this[kBatchContext])
+    this[kBatchContext] = null
+
     process.nextTick(callback)
   }
 
   get length () {
+    assert(this[kBatchContext])
+
     return binding.batch_count(this[kBatchContext])
   }
 
   _merge (key, value, options) {
+    assert(this[kBatchContext])
+
     if (key === null || key === undefined) {
       throw new ModuleError('Key cannot be null or undefined', {
         code: 'LEVEL_INVALID_KEY'
@@ -111,6 +130,8 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   toArray (options) {
+    assert(this[kBatchContext])
+
     return binding.batch_iterate(this[kDbContext], this[kBatchContext], {
       keys: true,
       values: true,
