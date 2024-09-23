@@ -152,10 +152,6 @@ class RocksLevel extends AbstractLevel {
   }
 
   _getMany (keys, options, callback) {
-    if (keys.some(key => typeof key === 'string')) {
-      keys = keys.map(key => typeof key === 'string' ? Buffer.from(key) : key)
-    }
-
     callback = fromCallback(callback, kPromise)
 
     try {

@@ -133,10 +133,6 @@ static napi_status GetString(napi_env env, napi_value from, std::string& to) {
   return napi_ok;
 }
 
-void CleanupString(void* env, void* ref) {
-  napi_delete_reference(static_cast<napi_env>(env), static_cast<napi_ref>(ref));
-}
-
 static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSlice& to) {
   napi_valuetype type;
   NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
@@ -156,8 +152,7 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSli
       size_t length = 0;
       napi_ref ref;
       NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
-      NAPI_STATUS_RETURN(napi_create_reference(env, from, 1, &ref));
-      to.PinSlice(rocksdb::Slice{buf,length}, CleanupString, env, ref);
+      to.PinSelf(rocksdb::Slice{buf,length});
     } else {
       return napi_invalid_arg;
     }
