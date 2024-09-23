@@ -798,7 +798,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockRestartInterval", tableOptions.block_restart_interval));
 
-  tableOptions.format_version = 5;
   tableOptions.checksum = rocksdb::kXXH3;
   tableOptions.decouple_partitioned_filters = true;
 
