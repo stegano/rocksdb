@@ -114,8 +114,6 @@ class Iterator extends AbstractIterator {
   }
 
   _close (callback) {
-    assert(this[kContext])
-
     try {
       this._closeSync()
       process.nextTick(callback)
@@ -125,11 +123,12 @@ class Iterator extends AbstractIterator {
   }
 
   _closeSync () {
-    assert(this[kContext])
-
     this[kCache] = kEmpty
-    binding.iterator_close(this[kContext])
-    this[kContext] = null
+
+    if (this[kContext]) {
+      binding.iterator_close(this[kContext])
+      this[kContext] = null
+    }
   }
 
   _end (callback) {

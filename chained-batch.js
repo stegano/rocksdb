@@ -83,12 +83,16 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   _close (callback) {
-    assert(this[kBatchContext])
-
-    binding.batch_clear(this[kBatchContext])
-    this[kBatchContext] = null
+    this._closeSync()
 
     process.nextTick(callback)
+  }
+
+  _closeSync () {
+    if (this[kBatchContext]) {
+      binding.batch_clear(this[kBatchContext])
+      this[kBatchContext] = null
+    }
   }
 
   get length () {
