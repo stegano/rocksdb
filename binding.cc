@@ -357,6 +357,8 @@ struct BaseIterator : public Closable {
 
   virtual rocksdb::Status Close() override {
     if (iterator_) {
+      lower_bound_.reset();
+      upper_bound_.reset();
       iterator_.reset();
       database_->Detach(this);
     }
