@@ -1020,9 +1020,12 @@ NAPI_METHOD(db_get_many_sync) {
   int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
 
-  std::vector<rocksdb::Slice> keys{count};
-  std::vector<rocksdb::Status> statuses{count};
-  std::vector<rocksdb::PinnableSlice> values{count};
+  std::vector<rocksdb::Slice> keys;
+  keys.resize(count);
+  std::vector<rocksdb::Status> statuses;
+  statuses.resize(count);
+  std::vector<rocksdb::PinnableSlice> values;
+  values.resize(count);
 
   for (uint32_t n = 0; n < count; n++) {
     napi_value element;
@@ -1103,9 +1106,10 @@ NAPI_METHOD(db_get_many) {
         readOptions.optimize_multiget_for_io = true;
         readOptions.value_size_soft_limit = highWaterMarkBytes;
 
-        std::vector<rocksdb::Slice> keys{count};
+        std::vector<rocksdb::Slice> keys;
+        keys.reserve(count);
         for (uint32_t n = 0; n < count; n++) {
-          keys[n] = state.keys[n];
+          keys.emplace_back(state.keys[n]);
         }
 
         state.statuses.resize(count);
