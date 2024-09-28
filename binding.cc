@@ -1053,7 +1053,7 @@ NAPI_METHOD(db_get_many_sync) {
       NAPI_STATUS_THROWS(napi_get_null(env, &row));
     } else {
       ROCKS_STATUS_THROWS_NAPI(statuses[n]);
-      NAPI_STATUS_THROWS(Convert(env, std::move(values[n]), valueEncoding, row));
+      NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
     }
     NAPI_STATUS_THROWS(napi_set_element(env, rows, n, row));
   }
@@ -1133,7 +1133,7 @@ NAPI_METHOD(db_get_many) {
             NAPI_STATUS_RETURN(napi_get_null(env, &row));
           } else {
             ROCKS_STATUS_RETURN_NAPI(state.statuses[n]);
-            NAPI_STATUS_RETURN(Convert(env, std::move(state.values[n]), valueEncoding, row));
+            NAPI_STATUS_RETURN(Convert(env, &state.values[n], valueEncoding, row));
           }
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], n, row));
         }
