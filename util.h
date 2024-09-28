@@ -271,6 +271,18 @@ napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) 
   }
 }
 
+
+napi_status Convert(napi_env env, rocksdb::PinnableSlice&& s, Encoding encoding, napi_value& result) {
+  if (encoding == Encoding::Buffer) {
+    auto s2 = new rocksdb::PinnableSlice(std::move(s));
+    return napi_create_external_buffer(env, s2->size(), const_cast<char*>(s2->data()), Finalize<rocksdb::PinnableSlice>, s2, &result);
+  } else if (encoding == Encoding::String) {
+    return napi_create_string_utf8(env, s.data(), s.size(), &result);
+  } else {
+    return napi_invalid_arg;
+  }
+}
+
 template <typename State, typename T1, typename T2>
 napi_status runAsync(State&& state,
                      const std::string& name,
