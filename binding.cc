@@ -1021,6 +1021,9 @@ NAPI_METHOD(db_get_many_sync) {
   int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
 
+  bool unsafe = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "unsafe", unsafe));
+
   std::vector<rocksdb::Slice> keys;
   keys.resize(count);
   std::vector<rocksdb::Status> statuses;
@@ -1053,7 +1056,11 @@ NAPI_METHOD(db_get_many_sync) {
       NAPI_STATUS_THROWS(napi_get_null(env, &row));
     } else {
       ROCKS_STATUS_THROWS_NAPI(statuses[n]);
-      NAPI_STATUS_THROWS(Convert(env, &values[n], valueEncoding, row));
+      if (unsafe && values[n].size() > 32) {
+        NAPI_STATUS_THROWS(ConvertUnsafe(env, std::move(values[n]), valueEncoding, row));
+      } else {
+        NAPI_STATUS_THROWS(Convert(env, std::move(values[n]), valueEncoding, row));
+      }
     }
     NAPI_STATUS_THROWS(napi_set_element(env, rows, n, row));
   }
@@ -1081,6 +1088,9 @@ NAPI_METHOD(db_get_many) {
 
   int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
+
+  bool unsafe = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "unsafe", unsafe));
 
   auto callback = argv[3];
 
@@ -1133,7 +1143,11 @@ NAPI_METHOD(db_get_many) {
             NAPI_STATUS_RETURN(napi_get_null(env, &row));
           } else {
             ROCKS_STATUS_RETURN_NAPI(state.statuses[n]);
-            NAPI_STATUS_RETURN(Convert(env, &state.values[n], valueEncoding, row));
+            if (unsafe && state.values[n].size() > 32) {
+              NAPI_STATUS_RETURN(ConvertUnsafe(env, std::move(state.values[n]), valueEncoding, row));
+            } else {
+              NAPI_STATUS_RETURN(Convert(env, std::move(state.values[n]), valueEncoding, row));
+            }
           }
           NAPI_STATUS_RETURN(napi_set_element(env, argv[1], n, row));
         }
