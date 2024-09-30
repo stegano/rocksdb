@@ -8,11 +8,11 @@
                 [
                     "OS == 'linux'",
                     {
-                        "cflags": ["-march=znver1"],
                         "include_dirs": [
                             "/usr/lib/x86_64-linux-gnu/include",
                             "/usr/lib/include",
                         ],
+                        "cflags": ["-march=znver1"],
                         "ccflags": ["-flto", '-march=znver1'],
                         "cflags!": ["-fno-exceptions"],
                         "cflags_cc!": ["-fno-exceptions"],

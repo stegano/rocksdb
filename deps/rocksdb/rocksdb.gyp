@@ -111,15 +111,8 @@
               "/usr/lib/include",
               # "/usr/local/Cellar/jemalloc/5.3.0/include"
             ],
-            "cflags": [
-              "-msse4.2",
-              "-mpclmul",
-              "-mavx",
-              "-mavx2",
-              "-mbmi",
-              "-mlzcnt"
-            ],
-            "ccflags": ["-flto"],
+            "cflags": ["-march=znver1"],
+            "ccflags": ["-flto", "-march=znver1"],
             "cflags!": ["-fno-exceptions"],
             "cflags_cc!": ["-fno-exceptions"],
             "ldflags": ["-flto", "-fuse-linker-plugin"],
