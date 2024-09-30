@@ -1,4 +1,4 @@
-import { bench, run } from 'mitata'
+import { bench, run, group } from 'mitata'
 import { RocksLevel } from '../index.js'
 
 const db = new RocksLevel('./tmp', {
@@ -25,7 +25,14 @@ const getOpts = {
   fillCache: true
 }
 
-for (let size = 1024 * 8; size <= 256 * 1024; size *= 2) {
+const getUnsafeOpts = {
+  keyEncoding: 'buffer',
+  valueEncoding: 'buffer',
+  fillCache: true,
+  unsafe: true
+}
+
+for (let size = 1024; size <= 256 * 1024; size *= 2) {
   const keys = []
   for (let n = 0; n < 1024; n++) {
     const key = `${n}-${size}`
@@ -33,9 +40,16 @@ for (let size = 1024 * 8; size <= 256 * 1024; size *= 2) {
     await db.put(key, Buffer.allocUnsafe(size))
   }
 
-  bench('_getManySync ' + size / 1024, async () => {
-    db._getManySync(keys, getOpts).length
+  group(String(size / 1024) + 'KB', () => {
+    bench('_getManySync', async () => {
+      db._getManySync(keys, getOpts).length
+    })
+
+    bench('_getManySync unsafe', async () => {
+      db._getManySync(keys, getUnsafeOpts).length
+    })
   })
+
 }
 
 await run()
