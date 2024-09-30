@@ -1056,7 +1056,7 @@ NAPI_METHOD(db_get_many_sync) {
       NAPI_STATUS_THROWS(napi_get_null(env, &row));
     } else {
       ROCKS_STATUS_THROWS_NAPI(statuses[n]);
-      if (unsafe && values[n].size() > 32) {
+      if (unsafe) {
         NAPI_STATUS_THROWS(ConvertUnsafe(env, std::move(values[n]), valueEncoding, row));
       } else {
         NAPI_STATUS_THROWS(Convert(env, std::move(values[n]), valueEncoding, row));
@@ -1143,7 +1143,7 @@ NAPI_METHOD(db_get_many) {
             NAPI_STATUS_RETURN(napi_get_null(env, &row));
           } else {
             ROCKS_STATUS_RETURN_NAPI(state.statuses[n]);
-            if (unsafe && state.values[n].size() > 32) {
+            if (unsafe) {
               NAPI_STATUS_RETURN(ConvertUnsafe(env, std::move(state.values[n]), valueEncoding, row));
             } else {
               NAPI_STATUS_RETURN(Convert(env, std::move(state.values[n]), valueEncoding, row));
