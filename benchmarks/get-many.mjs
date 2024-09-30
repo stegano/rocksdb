@@ -1,4 +1,4 @@
-import { bench, run, group } from 'mitata'
+import { bench, run, group, boxplot } from 'mitata'
 import { RocksLevel } from '../index.js'
 
 const db = new RocksLevel('./tmp', {
@@ -40,7 +40,7 @@ for (let size = 1024; size <= 256 * 1024; size *= 2) {
     await db.put(key, Buffer.allocUnsafe(size))
   }
 
-  group(String(size / 1024) + 'KB', () => {
+  group(() => {
     bench('_getManySync', async () => {
       db._getManySync(keys, getOpts).length
     })
