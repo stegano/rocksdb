@@ -18,15 +18,12 @@ const db = new RocksLevel('./tmp', {
 })
 await db.open()
 
-
 const getOpts = {
-  keyEncoding: 'buffer',
   valueEncoding: 'buffer',
   fillCache: true
 }
 
 const getUnsafeOpts = {
-  keyEncoding: 'buffer',
   valueEncoding: 'buffer',
   fillCache: true,
   unsafe: true
@@ -39,14 +36,15 @@ for (let size = 1024; size <= 256 * 1024; size *= 2) {
     keys.push(Buffer.from(key))
     await db.put(key, Buffer.allocUnsafe(size))
   }
+  db._getManySync(keys, getOpts)
 
   group(() => {
-    bench('_getManySync', async () => {
-      db._getManySync(keys, getOpts).length
+    bench('_getManySync ' + size / 1024, () => {
+      db._getManySync(keys, getOpts)
     })
 
-    bench('_getManySync unsafe', async () => {
-      db._getManySync(keys, getUnsafeOpts).length
+    bench('_getManySync ' + size / 1024 + ' unsafe', () => {
+      db._getManySync(keys, getUnsafeOpts)
     })
   })
 
