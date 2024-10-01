@@ -1,9 +1,14 @@
 .git
 .github
 .dockerignore
+.vscode
+.nyc_output
+.tap
 /node_modules
 /prebuilds
 /build
+/tmp
+/test
 Dockerfile
 build.sh
 *.md
