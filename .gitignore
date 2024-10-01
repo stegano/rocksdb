@@ -21,7 +21,7 @@ yarn.lock
 package-lock.json
 .nyc_output/
 .benchmarks/
-.vscode
-.tap
-tmp
+.vscode/
+.tap/
+tmp/
 yarn-error.log
