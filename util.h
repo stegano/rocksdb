@@ -100,11 +100,53 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::Slice& to) 
     size_t length = 0;
     NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
     to = {buf, length};
-  } else {
-    return napi_invalid_arg;
+    return napi_ok;
   }
 
-  return napi_ok;
+  napi_valuetype type;
+  NAPI_STATUS_RETURN(napi_typeof(env, from, &type));
+
+  if (type == napi_object) {
+    // Slice
+    napi_value value;
+    NAPI_STATUS_RETURN(napi_get_named_property(env, from, "buffer", &value));
+
+    char* buf = nullptr;
+    size_t length = 0;
+    NAPI_STATUS_RETURN(napi_get_buffer_info(env, value, reinterpret_cast<void**>(&buf), &length));
+
+    int pos = 0;
+    {
+      napi_value property;
+      NAPI_STATUS_RETURN(napi_get_named_property(env, from, "byteOffset", &property));
+      NAPI_STATUS_RETURN(napi_get_value_int32(env, property, &pos));
+    }
+
+    if (pos < 0 || pos > length) {
+      return napi_invalid_arg;
+    }
+
+    int len = length;
+    {
+      napi_value property;
+      NAPI_STATUS_RETURN(napi_get_named_property(env, from, "byteLength", &property));
+      NAPI_STATUS_RETURN(napi_get_value_int32(env, property, &pos));
+    }
+
+    if (len < 0 || len > length) {
+      return napi_invalid_arg;
+    }
+
+    if (pos + len > length) {
+      return napi_invalid_arg;
+    }
+
+    to = {buf + pos, static_cast<size_t>(len)};
+
+    return napi_ok;
+  }
+
+  return napi_invalid_arg;
 }
 
 static napi_status GetString(napi_env env, napi_value from, std::string& to) {
@@ -114,20 +156,14 @@ static napi_status GetString(napi_env env, napi_value from, std::string& to) {
   if (type == napi_string) {
     size_t length = 0;
     NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, nullptr, 0, &length));
+    // TODO (perf): Avoid zero initialization...
     to.resize(length, '\0');
     NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, &to[0], length + 1, &length));
+    to[length] = 0;
   } else {
-    bool isBuffer;
-    NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
-
-    if (isBuffer) {
-      char* buf = nullptr;
-      size_t length = 0;
-      NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
-      to.assign(buf, length);
-    } else {
-      return napi_invalid_arg;
-    }
+    rocksdb::Slice slice;
+    NAPI_STATUS_RETURN(GetString(env, from, slice));
+    to = slice.ToString();
   }
 
   return napi_ok;
@@ -144,18 +180,9 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::PinnableSli
     NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, from, to.GetSelf()->data(), length + 1, &length));
     to.PinSelf();
   } else {
-    bool isBuffer;
-    NAPI_STATUS_RETURN(napi_is_buffer(env, from, &isBuffer));
-
-    if (isBuffer) {
-      char* buf = nullptr;
-      size_t length = 0;
-      napi_ref ref;
-      NAPI_STATUS_RETURN(napi_get_buffer_info(env, from, reinterpret_cast<void**>(&buf), &length));
-      to.PinSelf(rocksdb::Slice{buf,length});
-    } else {
-      return napi_invalid_arg;
-    }
+    rocksdb::Slice slice;
+    NAPI_STATUS_RETURN(GetString(env, from, slice));
+    to.PinSelf(std::move(slice));
   }
 
   return napi_ok;
@@ -274,7 +301,8 @@ napi_status Convert(napi_env env, T&& s, Encoding encoding, napi_value& result) 
 napi_status ConvertUnsafe(napi_env env, rocksdb::PinnableSlice&& s, Encoding encoding, napi_value& result) {
   if (encoding == Encoding::Buffer) {
     auto s2 = new rocksdb::PinnableSlice(std::move(s));
-    return napi_create_external_buffer(env, s2->size(), const_cast<char*>(s2->data()), Finalize<rocksdb::PinnableSlice>, s2, &result);
+    return napi_create_external_buffer(env, s2->size(), const_cast<char*>(s2->data()), Finalize<rocksdb::PinnableSlice>,
+                                       s2, &result);
   } else if (encoding == Encoding::String) {
     return napi_create_string_utf8(env, s.data(), s.size(), &result);
   } else {
