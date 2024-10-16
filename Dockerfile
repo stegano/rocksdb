@@ -27,4 +27,4 @@ RUN cd deps/rocksdb/rocksdb && make libzstd.a && \
   cp libzstd.a /usr/lib/x86_64-linux-gnu/
 
 # This will build rocksdb (deps/rocksdb/rocksdb.gyp) and then the rocks-level bindings (binding.gyp)
-RUN yarn && npx prebuildify --napi --strip --arch x64
+RUN yarn && npx prebuildify -t 22.9.0 --napi --strip --arch x64
