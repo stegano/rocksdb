@@ -3,16 +3,21 @@
 const { fromCallback } = require('catering')
 const { AbstractIterator } = require('abstract-level')
 const assert = require('node:assert')
+const { kRef, kUnref } = require('./util')
 
 const binding = require('./binding')
 
 const kPromise = Symbol('promise')
+const kDB = Symbol('db')
 const kContext = Symbol('context')
 const kCache = Symbol('cache')
 const kFinished = Symbol('finished')
 const kFirst = Symbol('first')
 const kPosition = Symbol('position')
+const kBusy = Symbol('busy')
+
 const kEmpty = []
+const kForceSync = false
 
 class Iterator extends AbstractIterator {
   constructor (db, context, options) {
@@ -24,9 +29,30 @@ class Iterator extends AbstractIterator {
     this[kCache] = kEmpty
     this[kFinished] = false
     this[kPosition] = 0
+    this[kDB] = db
+    this[kBusy] = false
   }
 
   _seek (target) {
+    this._seekSync(target)
+  }
+
+  _close (callback) {
+    return this._closeAsync(callback)
+  }
+
+  _end (callback) {
+    this._close(callback)
+  }
+
+  // Undocumented, exposed for tests only
+  get cached () {
+    return (this[kCache].length - this[kPosition]) / 2
+  }
+
+  // nxt API
+
+  _seekSync (target) {
     assert(this[kContext])
 
     if (target.length === 0) {
@@ -39,6 +65,21 @@ class Iterator extends AbstractIterator {
     this[kPosition] = 0
 
     binding.iterator_seek(this[kContext], target)
+  }
+
+  _seekAsync (target, callback) {
+    assert(this[kContext])
+
+    callback = fromCallback(callback, kPromise)
+
+    try {
+      this._seekSync(target)
+      process.nextTick(callback)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
+
+    return callback[kPromise]
   }
 
   _next (callback) {
@@ -80,22 +121,31 @@ class Iterator extends AbstractIterator {
       this[kFirst] = false
 
       try {
-        this._nextvAsync(size, options, (err, val) => {
-          if (err) {
-            process.nextTick(callback, err)
-          } else {
-            const { rows, finished } = val
+        if (kForceSync) {
+          const { rows, finished } = this._nextvSync(size, options)
 
-            const entries = []
-            for (let n = 0; n < rows.length; n += 2) {
-              entries.push([rows[n + 0], rows[n + 1]])
-            }
-
-            this[kFinished] = finished
-
-            callback(null, entries, finished)
+          const entries = []
+          for (let n = 0; n < rows.length; n += 2) {
+            entries.push([rows[n + 0], rows[n + 1]])
           }
-        })
+
+          process.nextTick(callback, null, entries, finished)
+        } else {
+          this._nextvAsync(size, options, (err, val) => {
+            if (err) {
+              process.nextTick(callback, err)
+            } else {
+              const { rows, finished } = val
+
+              const entries = []
+              for (let n = 0; n < rows.length; n += 2) {
+                entries.push([rows[n + 0], rows[n + 1]])
+              }
+
+              callback(null, entries, finished)
+            }
+          })
+        }
       } catch (err) {
         process.nextTick(callback, err)
       }
@@ -111,9 +161,8 @@ class Iterator extends AbstractIterator {
       return { rows: [], finished: true }
     }
 
-    const result = binding.iterator_nextv_sync(this[kContext], size)
-
     this[kFirst] = false
+    const result = binding.iterator_nextv_sync(this[kContext], size)
     this[kFinished] = result.finished
 
     return result
@@ -124,32 +173,31 @@ class Iterator extends AbstractIterator {
 
     callback = fromCallback(callback, kPromise)
 
-    if (this[kFinished]) {
-      process.nextTick(callback, null, [])
-    } else {
-      this[kFirst] = false
-
-      try {
-        const result = binding.iterator_nextv_sync(this[kContext], size)
-
-        this[kFinished] = result.finished
-
-        process.nextTick(callback, null, result)
-      } catch (err) {
-        process.nextTick(callback, err)
-      }
-    }
-
-    return callback[kPromise]
-  }
-
-  _close (callback) {
     try {
-      this._closeSync()
-      process.nextTick(callback)
+      if (this[kFinished]) {
+        process.nextTick(callback, null, { rows: [], finished: true })
+      } else {
+        assert(!this[kBusy])
+
+        this[kFirst] = false
+        this[kBusy] = true
+        this[kDB][kRef]()
+        binding.iterator_nextv(this[kContext], size, (err, result) => {
+          this[kBusy] = false
+          this[kDB][kUnref]()
+          if (err) {
+            callback(err)
+          } else {
+            this[kFinished] = result.finished
+            callback(null, result)
+          }
+        })
+      }
     } catch (err) {
       process.nextTick(callback, err)
     }
+
+    return callback[kPromise]
   }
 
   _closeSync () {
@@ -161,13 +209,17 @@ class Iterator extends AbstractIterator {
     }
   }
 
-  _end (callback) {
-    this._close(callback)
-  }
+  _closeAsync (callback) {
+    callback = fromCallback(callback, kPromise)
 
-  // Undocumented, exposed for tests only
-  get cached () {
-    return (this[kCache].length - this[kPosition]) / 2
+    try {
+      this._closeSync()
+      process.nextTick(callback)
+    } catch (err) {
+      process.nextTick(callback, err)
+    }
+
+    return callback[kPromise]
   }
 }
 

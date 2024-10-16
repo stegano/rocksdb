@@ -12,10 +12,10 @@ const assert = require('node:assert')
 const kContext = Symbol('context')
 const kColumns = Symbol('columns')
 const kPromise = Symbol('promise')
-const kRef = Symbol('ref')
-const kUnref = Symbol('unref')
 const kRefs = Symbol('refs')
 const kPendingClose = Symbol('pendingClose')
+
+const { kRef, kUnref } = require('./util')
 
 const kEmpty = {}
 
@@ -159,7 +159,15 @@ class RocksLevel extends AbstractLevel {
     callback = fromCallback(callback, kPromise)
 
     try {
-      binding.db_get_many(this[kContext], keys, options ?? kEmpty, callback)
+      this[kRef]()
+      binding.db_get_many(this[kContext], keys, options ?? kEmpty, (err, val) => {
+        this[kUnref]()
+        if (err) {
+          callback(err)
+        } else {
+          callback(null, val)
+        }
+      })
     } catch (err) {
       process.nextTick(callback, err)
     }

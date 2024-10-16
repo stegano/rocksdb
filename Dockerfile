@@ -1,6 +1,9 @@
-FROM node:22.4.0
+FROM node:22.9.0
 
 ENV CMAKE_BUILD_PARALLEL_LEVEL=16 MAKEFLAGS=-j16 JOBS=16
+
+# liburing-dev
+RUN apt update && apt install liburing-dev -y
 
 # Clone and build folly
 RUN apt update && apt install sudo -y
@@ -22,9 +25,6 @@ COPY . .
 # Build libzstd using makefile in rocksdb
 RUN cd deps/rocksdb/rocksdb && make libzstd.a && \
   cp libzstd.a /usr/lib/x86_64-linux-gnu/
-
-# liburing-dev
-RUN apt update && apt install liburing-dev -y
 
 # This will build rocksdb (deps/rocksdb/rocksdb.gyp) and then the rocks-level bindings (binding.gyp)
 RUN yarn && npx prebuildify --napi --strip --arch x64

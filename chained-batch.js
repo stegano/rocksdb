@@ -134,7 +134,9 @@ class ChainedBatch extends AbstractChainedBatch {
   }
 
   toArray (options) {
-    assert(this[kBatchContext])
+    if (!this[kBatchContext]) {
+      return []
+    }
 
     return binding.batch_iterate(this[kDbContext], this[kBatchContext], {
       keys: true,

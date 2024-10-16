@@ -497,6 +497,107 @@ class Iterator final : public BaseIterator {
                                       highWaterMarkBytes, tailing, keyEncoding, valueEncoding);
   }
 
+  napi_value nextv(napi_env env, uint32_t count, napi_value callback) {
+    struct State {
+      std::vector<rocksdb::PinnableSlice> keys;
+      std::vector<rocksdb::PinnableSlice> values;
+      size_t count = 0;
+      bool finished = false;
+    };
+
+    runAsync<State>("iterator.nextv", env, callback,
+        [=](auto& state) {
+          state.keys.reserve(count);
+          state.values.reserve(count);
+
+          size_t bytesRead = 0;
+          while (true) {
+            if (!first_) {
+              Next();
+            } else {
+              first_ = false;
+            }
+
+            ROCKS_STATUS_RETURN(Status());
+
+            if (!Valid() || !Increment()) {
+              state.finished = true;
+              break;
+            }
+
+            if (keys_ && values_) {
+              rocksdb::PinnableSlice k;
+              k.PinSelf(CurrentKey());
+              bytesRead += k.size();
+              state.keys.push_back(std::move(k));
+
+              rocksdb::PinnableSlice v;
+              v.PinSelf(CurrentValue());
+              bytesRead += v.size();
+              state.values.push_back(std::move(v));
+            } else if (keys_) {
+              rocksdb::PinnableSlice k;
+              k.PinSelf(CurrentKey());
+              bytesRead += k.size();
+              state.keys.push_back(std::move(k));
+            } else if (values_) {
+              rocksdb::PinnableSlice v;
+              v.PinSelf(CurrentValue());
+              bytesRead += v.size();
+              state.values.push_back(std::move(v));
+            } else {
+              assert(false);
+            }
+
+            state.count += 1;
+
+            if (bytesRead > highWaterMarkBytes_ || state.count >= count) {
+              break;
+            }
+          }
+
+          return rocksdb::Status::OK();
+        },
+        [=](auto& state, auto env, auto& argv) {
+          argv.resize(2);
+
+          napi_value finished;
+          NAPI_STATUS_RETURN(napi_get_boolean(env, state.finished, &finished));
+
+          napi_value rows;
+          NAPI_STATUS_RETURN(napi_create_array(env, &rows));
+
+          for (size_t n = 0; n < state.count; n++) {
+            napi_value key;
+            napi_value val;
+
+            if (keys_ && values_) {
+              NAPI_STATUS_RETURN(Convert(env, std::move(state.keys[n]), keyEncoding_, key));
+              NAPI_STATUS_RETURN(Convert(env, std::move(state.values[n]), valueEncoding_, val));
+            } else if (keys_) {
+              NAPI_STATUS_RETURN(Convert(env, std::move(state.keys[n]), keyEncoding_, key));
+              NAPI_STATUS_RETURN(napi_get_undefined(env, &val));
+            } else if (values_) {
+              NAPI_STATUS_RETURN(napi_get_undefined(env, &key));
+              NAPI_STATUS_RETURN(Convert(env, std::move(state.values[n]), valueEncoding_, val));
+            } else {
+              assert(false);
+            }
+
+            NAPI_STATUS_RETURN(napi_set_element(env, rows, n * 2 + 0, key));
+            NAPI_STATUS_RETURN(napi_set_element(env, rows, n * 2 + 1, val));
+          }
+
+          NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
+          NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], "rows", rows));
+          NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], "finished", finished));
+
+          return napi_ok;
+        });
+
+    return 0;
+  }
+
   napi_value nextv(napi_env env, uint32_t count) {
     napi_value finished;
     NAPI_STATUS_THROWS(napi_get_boolean(env, false, &finished));
@@ -513,8 +614,9 @@ class Iterator final : public BaseIterator {
         first_ = false;
       }
 
+      ROCKS_STATUS_THROWS_NAPI(Status());
+
       if (!Valid() || !Increment()) {
-        ROCKS_STATUS_THROWS_NAPI(Status());
         NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
         break;
       }
@@ -1048,7 +1150,7 @@ NAPI_METHOD(db_get_many_sync) {
   napi_value rows;
   NAPI_STATUS_THROWS(napi_create_array_with_length(env, count, &rows));
 
-  for (auto n = 0; n < count; n++) {
+  for (uint32_t n = 0; n < count; n++) {
     napi_value row;
     if (statuses[n].IsNotFound()) {
       NAPI_STATUS_THROWS(napi_get_undefined(env, &row));
@@ -1326,6 +1428,18 @@ NAPI_METHOD(iterator_close) {
   return 0;
 }
 
+NAPI_METHOD(iterator_nextv) {
+  NAPI_ARGV(3);
+
+  Iterator* iterator;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&iterator)));
+
+  uint32_t count;
+  NAPI_STATUS_THROWS(napi_get_value_uint32(env, argv[1], &count));
+
+  return iterator->nextv(env, count, argv[2]);
+}
+
 NAPI_METHOD(iterator_nextv_sync) {
   NAPI_ARGV(2);
 
@@ -1517,6 +1631,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
   NAPI_EXPORT_FUNCTION(iterator_close);
+  NAPI_EXPORT_FUNCTION(iterator_nextv);
   NAPI_EXPORT_FUNCTION(iterator_nextv_sync);
 
   NAPI_EXPORT_FUNCTION(batch_init);

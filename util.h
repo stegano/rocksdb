@@ -38,6 +38,14 @@
     }                                         \
   }
 
+#define ROCKS_STATUS_RETURN(call)        \
+  {                                           \
+    auto _status = (call);                    \
+    if (!_status.ok()) {                      \
+      return _status;                         \
+    }                                         \
+  }
+
 template <typename T>
 static void Finalize(napi_env env, void* data, void* hint) {
   if (hint) {
