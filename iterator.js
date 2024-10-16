@@ -55,7 +55,7 @@ class Iterator extends AbstractIterator {
       this[kFirst] = false
 
       try {
-        const { rows, finished } = binding.iterator_nextv(this[kContext], size)
+        const { rows, finished } = binding.iterator_nextv_sync(this[kContext], size)
         this[kCache] = rows
         this[kFinished] = finished
         this[kPosition] = 0
@@ -80,16 +80,22 @@ class Iterator extends AbstractIterator {
       this[kFirst] = false
 
       try {
-        const { rows, finished } = binding.iterator_nextv(this[kContext], size)
+        this._nextvAsync(size, options, (err, val) => {
+          if (err) {
+            process.nextTick(callback, err)
+          } else {
+            const { rows, finished } = val
 
-        const entries = []
-        for (let n = 0; n < rows.length; n += 2) {
-          entries.push([rows[n + 0], rows[n + 1]])
-        }
+            const entries = []
+            for (let n = 0; n < rows.length; n += 2) {
+              entries.push([rows[n + 0], rows[n + 1]])
+            }
 
-        this[kFinished] = finished
+            this[kFinished] = finished
 
-        process.nextTick(callback, null, entries, finished)
+            callback(null, entries, finished)
+          }
+        })
       } catch (err) {
         process.nextTick(callback, err)
       }
@@ -105,12 +111,36 @@ class Iterator extends AbstractIterator {
       return { rows: [], finished: true }
     }
 
-    const result = binding.iterator_nextv(this[kContext], size)
+    const result = binding.iterator_nextv_sync(this[kContext], size)
 
     this[kFirst] = false
     this[kFinished] = result.finished
 
     return result
+  }
+
+  _nextvAsync (size, options, callback) {
+    assert(this[kContext])
+
+    callback = fromCallback(callback, kPromise)
+
+    if (this[kFinished]) {
+      process.nextTick(callback, null, [])
+    } else {
+      this[kFirst] = false
+
+      try {
+        const result = binding.iterator_nextv_sync(this[kContext], size)
+
+        this[kFinished] = result.finished
+
+        process.nextTick(callback, null, result)
+      } catch (err) {
+        process.nextTick(callback, err)
+      }
+    }
+
+    return callback[kPromise]
   }
 
   _close (callback) {

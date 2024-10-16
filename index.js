@@ -152,6 +152,10 @@ class RocksLevel extends AbstractLevel {
   }
 
   _getMany (keys, options, callback) {
+    return this._getManyAsync(keys, options, callback)
+  }
+
+  _getManyAsync (keys, options, callback) {
     callback = fromCallback(callback, kPromise)
 
     try {

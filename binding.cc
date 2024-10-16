@@ -1326,7 +1326,7 @@ NAPI_METHOD(iterator_close) {
   return 0;
 }
 
-NAPI_METHOD(iterator_nextv) {
+NAPI_METHOD(iterator_nextv_sync) {
   NAPI_ARGV(2);
 
   Iterator* iterator;
@@ -1517,7 +1517,7 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_init);
   NAPI_EXPORT_FUNCTION(iterator_seek);
   NAPI_EXPORT_FUNCTION(iterator_close);
-  NAPI_EXPORT_FUNCTION(iterator_nextv);
+  NAPI_EXPORT_FUNCTION(iterator_nextv_sync);
 
   NAPI_EXPORT_FUNCTION(batch_init);
   NAPI_EXPORT_FUNCTION(batch_put);
