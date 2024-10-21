@@ -57,6 +57,7 @@ benchmarks/
 *.csv
 
 # Misc
+.tap/
 .nyc_output/
 .github/
 yarn.lock
