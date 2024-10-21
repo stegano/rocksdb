@@ -58,6 +58,7 @@ benchmarks/
 
 # Misc
 .tap/
+.vscode/
 .nyc_output/
 .github/
 yarn.lock
