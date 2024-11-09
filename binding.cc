@@ -1123,6 +1123,9 @@ NAPI_METHOD(db_get_many_sync) {
   int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
 
+  uint32_t timeout = 0;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "timeout", timeout));
+
   bool unsafe = false;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "unsafe", unsafe));
 
@@ -1144,6 +1147,9 @@ NAPI_METHOD(db_get_many_sync) {
   readOptions.async_io = true;
   readOptions.optimize_multiget_for_io = true;
   readOptions.value_size_soft_limit = highWaterMarkBytes;
+  readOptions.deadline = timeout
+    ? std::chrono::microseconds(database->db->GetEnv()->NowMicros() + timeout * 1000)
+    : std::chrono::microseconds::zero();
 
   database->db->MultiGet(readOptions, column, count, keys.data(), values.data(), statuses.data());
 
