@@ -17,6 +17,8 @@
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
+#include <folly/FBVector.h>
+#include <folly/small_vector.h>
 
 #include <iostream>
 #include <memory>
@@ -24,7 +26,6 @@
 #include <set>
 #include <string>
 #include <thread>
-#include <vector>
 
 #include "max_rev_operator.h"
 #include "util.h"
@@ -271,7 +272,7 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
   const rocksdb::ColumnFamilyHandle* column_;
   const Encoding keyEncoding_;
   const Encoding valueEncoding_;
-  std::vector<BatchEntry> cache_;
+  folly::fbvector<BatchEntry> cache_;
 };
 
 struct BaseIterator : public Closable {
@@ -499,8 +500,8 @@ class Iterator final : public BaseIterator {
 
   napi_value nextv(napi_env env, uint32_t count, napi_value callback) {
     struct State {
-      std::vector<rocksdb::PinnableSlice> keys;
-      std::vector<rocksdb::PinnableSlice> values;
+      folly::small_vector<rocksdb::PinnableSlice, 256> keys;
+      folly::small_vector<rocksdb::PinnableSlice, 256> values;
       size_t count = 0;
       bool finished = false;
     };
@@ -1129,11 +1130,11 @@ NAPI_METHOD(db_get_many_sync) {
   bool unsafe = false;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "unsafe", unsafe));
 
-  std::vector<rocksdb::Slice> keys;
+  folly::small_vector<rocksdb::Slice, 256> keys;
   keys.resize(count);
-  std::vector<rocksdb::Status> statuses;
+  folly::small_vector<rocksdb::Status, 256> statuses;
   statuses.resize(count);
-  std::vector<rocksdb::PinnableSlice> values;
+  folly::small_vector<rocksdb::PinnableSlice, 256> values;
   values.resize(count);
 
   for (uint32_t n = 0; n < count; n++) {
@@ -1203,9 +1204,9 @@ NAPI_METHOD(db_get_many) {
   auto callback = argv[3];
 
   struct State {
-    std::vector<rocksdb::Status> statuses;
-    std::vector<rocksdb::PinnableSlice> values;
-    std::vector<rocksdb::PinnableSlice> keys;
+    folly::small_vector<rocksdb::Status, 256> statuses;
+    folly::small_vector<rocksdb::PinnableSlice, 256> values;
+    folly::small_vector<rocksdb::PinnableSlice, 256> keys;
   } state;
 
   state.keys.resize(count);
@@ -1225,7 +1226,7 @@ NAPI_METHOD(db_get_many) {
         readOptions.optimize_multiget_for_io = true;
         readOptions.value_size_soft_limit = highWaterMarkBytes;
 
-        std::vector<rocksdb::Slice> keys;
+        folly::small_vector<rocksdb::Slice, 256> keys;
         keys.reserve(count);
         for (uint32_t n = 0; n < count; n++) {
           keys.emplace_back(state.keys[n]);
