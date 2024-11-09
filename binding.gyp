@@ -22,10 +22,6 @@
                 [
                     "OS == 'mac'",
                     {
-                        "include_dirs": [
-                          "/opt/homebrew/Cellar/folly/2024.11.04.00/include",
-                          "/opt/homebrew/Cellar/boost/1.86.0_2/include",
-                        ],
                         "xcode_settings": {
                             "WARNING_CFLAGS": [
                                 "-Wno-sign-compare",
