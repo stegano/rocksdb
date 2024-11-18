@@ -964,7 +964,7 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(GetProperty(env, options, "walTotalSizeLimit", walSizeLimit));
     dbOptions.max_total_wal_size = maxTotalWalSize / 1e6;
 
-    bool walCompression = false;
+    bool walCompression = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "walCompression", walCompression));
     dbOptions.wal_compression =
         walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
