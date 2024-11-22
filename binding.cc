@@ -977,6 +977,7 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
     NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
     NAPI_STATUS_THROWS(GetProperty(env, options, "pipelinedWrite", dbOptions.enable_pipelined_write));
+    NAPI_STATUS_THROWS(GetProperty(env, options, "dailyOffpeakTime",  dbOptions.daily_offpeak_time_utc));
 
     // TODO (feat): dbOptions.listeners
 
