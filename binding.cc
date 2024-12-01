@@ -536,7 +536,7 @@ class Iterator final : public BaseIterator {
               first_ = false;
             }
 
-            if (Status().IsTimedOut() || Status().Incomplete()) {
+            if (Status().IsTimedOut()) {
               break;
             }
 
@@ -573,12 +573,7 @@ class Iterator final : public BaseIterator {
 
             state.count += 1;
 
-            if (state.count >= count) {
-              state.finished = true;
-              break;
-            }
-
-            if (bytesRead > highWaterMarkBytes_) {
+            if (bytesRead > highWaterMarkBytes_ || state.count >= count) {
               break;
             }
           }
@@ -641,7 +636,7 @@ class Iterator final : public BaseIterator {
         first_ = false;
       }
 
-      if (Status().IsTimedOut() || Status().Incomplete()) {
+      if (Status().IsTimedOut()) {
         break;
       }
 
@@ -678,12 +673,7 @@ class Iterator final : public BaseIterator {
       NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
       NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
 
-      if (idx / 2 >= count) {
-        NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
-        break;
-      }
-
-      if (bytesRead > highWaterMarkBytes_) {
+      if (bytesRead > highWaterMarkBytes_ || idx / 2 >= count) {
         break;
       }
     }

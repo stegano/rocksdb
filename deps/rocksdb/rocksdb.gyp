@@ -70,7 +70,8 @@
             "ccflags": [
               "-fno-omit-frame-pointer",
               "-momit-leaf-frame-pointer",
-              "-fno-builtin-memcmp"
+              "-fno-builtin-memcmp",
+              "-fcoroutines",
             ],
             "cflags": ["-std=c++20", "-march=znver1"],
             "cflags!": ["-fno-rtti"],
@@ -90,6 +91,7 @@
               "ROCKSDB_SCHED_GETCPU_PRESENT=1",
               "ROCKSDB_IOURING_PRESENT=1",
               "USE_FOLLY=1",
+              "USE_COROUTINES=1",
               "HAVE_UINT128_EXTENSION=1",
               "HAVE_ALIGNED_NEW=1",
               # "HAVE_FULLFSYNC=1",

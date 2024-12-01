@@ -3,12 +3,18 @@ FROM node:22.9.0
 ENV CMAKE_BUILD_PARALLEL_LEVEL=16 MAKEFLAGS=-j16 JOBS=16
 
 # liburing-dev
-RUN apt update && apt install liburing-dev -y
+RUN apt update && apt install liburing-dev cmake -y
+
+RUN git clone https://github.com/fmtlib/fmt.git && cd fmt && \
+  cmake . && \
+  make -j16 && \
+  cp -rv include/ /usr/lib/x86_64-linux-gnu && \
+  cp libfmt.a /usr/lib/x86_64-linux-gnu/
 
 # Clone and build folly
 RUN apt update && apt install sudo -y
 RUN mkdir -p /opt/folly && cd /opt/folly && \
-  git clone --depth 1 --branch v2024.09.09.00 https://github.com/facebook/folly . && \
+  git clone --depth 1 --branch v2024.11.25.00 https://github.com/facebook/folly . && \
   ./build/fbcode_builder/getdeps.py install-system-deps --recursive && \
   ./build/fbcode_builder/getdeps.py build --no-tests --extra-cmake-defines='{"CMAKE_CXX_FLAGS": "-fPIC"}'
 
