@@ -17,7 +17,7 @@ test('get-many w/ timeout', async function (t) {
     await batch.write()
   }
 
-  const values = db._getManySync(keys, {
+  db._getManySync(keys, {
     timeout: 1
   })
 
