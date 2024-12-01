@@ -496,7 +496,7 @@ class Iterator final : public BaseIterator {
     NAPI_STATUS_THROWS(GetProperty(env, options, "adaptiveReadahead", readOptions.adaptive_readahead));
 
     readOptions.readahead_size = 0;
-    NAPI_STATUS_THROWS(GetProperty(env, options, "readaheadSize", readOptions.auto_readahead_size));
+    NAPI_STATUS_THROWS(GetProperty(env, options, "readaheadSize", readOptions.readahead_size));
 
     readOptions.auto_readahead_size = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "autoReadaheadSize", readOptions.auto_readahead_size));

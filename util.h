@@ -221,6 +221,13 @@ static napi_status GetValue(napi_env env, napi_value value, uint64_t& result) {
   return napi_ok;
 }
 
+static napi_status GetValue(napi_env env, napi_value value, size_t& result) {
+  int64_t result2;
+  NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
+  result = static_cast<size_t>(result2);
+  return napi_ok;
+}
+
 static napi_status GetValue(napi_env env, napi_value value, std::string& result) {
   return GetString(env, value, result);
 }
