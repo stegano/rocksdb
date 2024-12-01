@@ -454,7 +454,7 @@ class Iterator final : public BaseIterator {
     int32_t limit = -1;
     NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
 
-    int32_t highWaterMarkBytes = 64 * 1024;
+    int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
     NAPI_STATUS_THROWS(GetProperty(env, options, "highWaterMarkBytes", highWaterMarkBytes));
 
     std::optional<std::string> lt;
@@ -504,6 +504,13 @@ class Iterator final : public BaseIterator {
     readOptions.ignore_range_deletions = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", readOptions.ignore_range_deletions));
 
+    uint32_t timeout = 0;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "timeout", timeout));
+
+    readOptions.deadline = timeout
+      ? std::chrono::microseconds(database->db->GetEnv()->NowMicros() + timeout * 1000)
+      : std::chrono::microseconds::zero();
+
     return std::make_unique<Iterator>(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
                                       highWaterMarkBytes, keyEncoding, valueEncoding, readOptions);
   }
@@ -527,6 +534,10 @@ class Iterator final : public BaseIterator {
               Next();
             } else {
               first_ = false;
+            }
+
+            if (Status().IsTimedOut() || Status().Incomplete()) {
+              break;
             }
 
             ROCKS_STATUS_RETURN(Status());
@@ -562,7 +573,12 @@ class Iterator final : public BaseIterator {
 
             state.count += 1;
 
-            if (bytesRead > highWaterMarkBytes_ || state.count >= count) {
+            if (state.count >= count) {
+              state.finished = true;
+              break;
+            }
+
+            if (bytesRead > highWaterMarkBytes_) {
               break;
             }
           }
@@ -625,6 +641,10 @@ class Iterator final : public BaseIterator {
         first_ = false;
       }
 
+      if (Status().IsTimedOut() || Status().Incomplete()) {
+        break;
+      }
+
       ROCKS_STATUS_THROWS_NAPI(Status());
 
       if (!Valid() || !Increment()) {
@@ -658,7 +678,12 @@ class Iterator final : public BaseIterator {
       NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
       NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
 
-      if (bytesRead > highWaterMarkBytes_ || idx / 2 >= count) {
+      if (idx / 2 >= count) {
+        NAPI_STATUS_THROWS(napi_get_boolean(env, true, &finished));
+        break;
+      }
+
+      if (bytesRead > highWaterMarkBytes_) {
         break;
       }
     }
