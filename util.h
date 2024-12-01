@@ -202,29 +202,45 @@ static napi_status GetValue(napi_env env, napi_value value, bool& result) {
   return napi_get_value_bool(env, value, &result);
 }
 
-static napi_status GetValue(napi_env env, napi_value value, uint32_t& result) {
-  return napi_get_value_uint32(env, value, &result);
-}
-
-static napi_status GetValue(napi_env env, napi_value value, int32_t& result) {
-  return napi_get_value_int32(env, value, &result);
-}
-
-static napi_status GetValue(napi_env env, napi_value value, int64_t& result) {
-  return napi_get_value_int64(env, value, &result);
-}
-
-static napi_status GetValue(napi_env env, napi_value value, uint64_t& result) {
+static napi_status GetValue(napi_env env, napi_value value, int& result) {
   int64_t result2;
   NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
-  result = static_cast<uint64_t>(result2);
+  result = static_cast<int>(result2);
   return napi_ok;
 }
 
-static napi_status GetValue(napi_env env, napi_value value, size_t& result) {
+static napi_status GetValue(napi_env env, napi_value value, long& result) {
   int64_t result2;
   NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
-  result = static_cast<size_t>(result2);
+  result = static_cast<long>(result2);
+  return napi_ok;
+}
+
+static napi_status GetValue(napi_env env, napi_value value, long long& result) {
+  int64_t result2;
+  NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
+  result = static_cast<long long>(result2);
+  return napi_ok;
+}
+
+static napi_status GetValue(napi_env env, napi_value value, unsigned int& result) {
+  int64_t result2;
+  NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
+  result = static_cast<unsigned int>(result2);
+  return napi_ok;
+}
+
+static napi_status GetValue(napi_env env, napi_value value, unsigned long& result) {
+  int64_t result2;
+  NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
+  result = static_cast<unsigned long>(result2);
+  return napi_ok;
+}
+
+static napi_status GetValue(napi_env env, napi_value value, unsigned long long& result) {
+  int64_t result2;
+  NAPI_STATUS_RETURN(napi_get_value_int64(env, value, &result2));
+  result = static_cast<unsigned long long>(result2);
   return napi_ok;
 }
 
