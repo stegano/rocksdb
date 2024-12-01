@@ -283,8 +283,7 @@ struct BaseIterator : public Closable {
                const std::optional<std::string>& gt,
                const std::optional<std::string>& gte,
                const int limit,
-               const bool fillCache,
-               bool tailing = false)
+               rocksdb::ReadOptions readOptions = {})
       : database_(database), column_(column), reverse_(reverse), limit_(limit) {
     if (lte) {
       upper_bound_ = rocksdb::PinnableSlice();
@@ -306,8 +305,6 @@ struct BaseIterator : public Closable {
       lower_bound_->PinSelf();
     }
 
-    rocksdb::ReadOptions readOptions;
-
     if (upper_bound_) {
       readOptions.iterate_upper_bound = &*upper_bound_;
     }
@@ -315,11 +312,6 @@ struct BaseIterator : public Closable {
     if (lower_bound_) {
       readOptions.iterate_lower_bound = &*lower_bound_;
     }
-
-    readOptions.fill_cache = fillCache;
-    readOptions.async_io = true;
-    readOptions.adaptive_readahead = true;
-    readOptions.tailing = tailing;
 
     iterator_.reset(database_->db->NewIterator(readOptions, column_));
 
@@ -430,12 +422,11 @@ class Iterator final : public BaseIterator {
            const std::optional<std::string>& lte,
            const std::optional<std::string>& gt,
            const std::optional<std::string>& gte,
-           const bool fillCache,
            const size_t highWaterMarkBytes,
-           bool tailing = false,
            Encoding keyEncoding = Encoding::Invalid,
-           Encoding valueEncoding = Encoding::Invalid)
-      : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, fillCache, tailing),
+           Encoding valueEncoding = Encoding::Invalid,
+           rocksdb::ReadOptions readOptions = {})
+      : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, readOptions),
         keys_(keys),
         values_(values),
         highWaterMarkBytes_(highWaterMarkBytes),
@@ -459,12 +450,6 @@ class Iterator final : public BaseIterator {
 
     bool values = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
-
-    bool tailing = false;
-    NAPI_STATUS_THROWS(GetProperty(env, options, "tailing", tailing));
-
-    bool fillCache = false;
-    NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", fillCache));
 
     int32_t limit = -1;
     NAPI_STATUS_THROWS(GetProperty(env, options, "limit", limit));
@@ -493,8 +478,34 @@ class Iterator final : public BaseIterator {
     Encoding valueEncoding;
     NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
-    return std::make_unique<Iterator>(database, column, reverse, keys, values, limit, lt, lte, gt, gte, fillCache,
-                                      highWaterMarkBytes, tailing, keyEncoding, valueEncoding);
+    rocksdb::ReadOptions readOptions;
+
+    readOptions.background_purge_on_iterator_cleanup = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "backgroundPurgeOnIteratorCleanup", readOptions.background_purge_on_iterator_cleanup));
+
+    readOptions.tailing = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "tailing", readOptions.tailing));
+
+    readOptions.fill_cache = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "fillCache", readOptions.fill_cache));
+
+    readOptions.async_io = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "asyncIO", readOptions.async_io));
+
+    readOptions.adaptive_readahead = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "adaptiveReadahead", readOptions.adaptive_readahead));
+
+    readOptions.readahead_size = 0;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "readaheadSize", readOptions.auto_readahead_size));
+
+    readOptions.auto_readahead_size = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "autoReadaheadSize", readOptions.auto_readahead_size));
+
+    readOptions.ignore_range_deletions = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", readOptions.ignore_range_deletions));
+
+    return std::make_unique<Iterator>(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
+                                      highWaterMarkBytes, keyEncoding, valueEncoding, readOptions);
   }
 
   napi_value nextv(napi_env env, uint32_t count, napi_value callback) {
@@ -1327,7 +1338,7 @@ NAPI_METHOD(db_clear) {
     // TODO (fix): Error handling.
     // TODO (fix): This should be async...
 
-    BaseIterator it(database, column, reverse, lt, lte, gt, gte, limit, false);
+    BaseIterator it(database, column, reverse, lt, lte, gt, gte, limit);
 
     rocksdb::WriteBatch batch;
     rocksdb::WriteOptions writeOptions;
