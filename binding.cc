@@ -934,6 +934,9 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.optimize_filters_for_memory = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory));
 
+  tableOptions.enable_index_compression = false;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "enableIndexCompression", tableOptions.enable_index_compression));
+
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
   return napi_ok;
@@ -996,13 +999,42 @@ NAPI_METHOD(db_open) {
         walCompression ? rocksdb::CompressionType::kZSTD : rocksdb::CompressionType::kNoCompression;
 
     dbOptions.avoid_unnecessary_blocking_io = true;
-    dbOptions.write_dbid_to_manifest = true;
-    dbOptions.create_missing_column_families = true;
-    dbOptions.fail_if_options_file_error = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "avoidUnnecessaryBlockingIO", dbOptions.avoid_unnecessary_blocking_io));
 
+    dbOptions.write_dbid_to_manifest = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "writeDbIdToManifest", dbOptions.write_dbid_to_manifest));
+
+    dbOptions.create_missing_column_families = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "createMissingColumnFamilies", dbOptions.create_missing_column_families));
+
+    dbOptions.fail_if_options_file_error = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "failIfOptionsFileError", dbOptions.fail_if_options_file_error));
+
+    dbOptions.advise_random_on_open = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "adviseRandomOnOpen", dbOptions.advise_random_on_open));
+
+    dbOptions.optimize_filters_for_hits = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "optimizeFiltersForHits", dbOptions.optimize_filters_for_hits));
+
+    dbOptions.bytes_per_sync = 1024 * 1024;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "bytesPerSync", dbOptions.bytes_per_sync));
+
+    dbOptions.wal_bytes_per_sync = 1024 * 1024;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "walBytesPerSync", dbOptions.wal_bytes_per_sync));
+
+    dbOptions.strict_bytes_per_sync = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "strictBytesPerSync", dbOptions.strict_bytes_per_sync));
+
+    dbOptions.create_if_missing = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
+
+    dbOptions.enable_pipelined_write = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
+
+    dbOptions.enable_pipelined_write = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "pipelinedWrite", dbOptions.enable_pipelined_write));
+
+    dbOptions.daily_offpeak_time_utc = "";
     NAPI_STATUS_THROWS(GetProperty(env, options, "dailyOffpeakTime",  dbOptions.daily_offpeak_time_utc));
 
     // TODO (feat): dbOptions.listeners
