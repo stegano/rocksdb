@@ -24,6 +24,11 @@ RUN git clone https://github.com/fmtlib/fmt.git && cd fmt && \
   cp -rv include/ /usr/lib/x86_64-linux-gnu && \
   cp libfmt.a /usr/lib/x86_64-linux-gnu/
 
+RUN git clone https://github.com/google/glog.git && cd glog && \
+  cmake -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE -DBUILD_SHARED_LIBS=FALSE . && \
+  make && \
+  cp libglog.a /usr/lib/x86_64-linux-gnu/
+
 # Copy source
 WORKDIR /rocks-level
 COPY . .
