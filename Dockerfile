@@ -29,7 +29,7 @@ WORKDIR /rocks-level
 COPY . .
 
 # Build libzstd using makefile in rocksdb
-RUN cd deps/rocksdb/rocksdb && make libzstd.a && \
+RUN cd deps/rocksdb/rocksdb && DEBUG_LEVEL=0 make libzstd.a && \
   cp libzstd.a /usr/lib/x86_64-linux-gnu/
 
 # This will build rocksdb (deps/rocksdb/rocksdb.gyp) and then the rocks-level bindings (binding.gyp)
