@@ -44,11 +44,11 @@ RUN git clone https://github.com/gflags/gflags.git && cd gflags && \
   make && \
   cp lib/libgflags.a /usr/lib/x86_64-linux-gnu/
 
-RUN git clone https://github.com/jemalloc/jemalloc.git && cd jemalloc && \
-  ./autogen.sh && ./configure CFLAGS="-fPIC" --disable-initial-exec-tls && \
-  make && \
-  cp lib/libjemalloc.a /usr/lib/x86_64-linux-gnu/ && \
-  cp -rv include/jemalloc /usr/include/
+# RUN git clone https://github.com/jemalloc/jemalloc.git && cd jemalloc && \
+#   ./autogen.sh && ./configure CFLAGS="-fPIC" --disable-initial-exec-tls && \
+#   make && \
+#   cp lib/libjemalloc.a /usr/lib/x86_64-linux-gnu/ && \
+#   cp -rv include/jemalloc /usr/include/
 
 # Copy source
 WORKDIR /rocks-level
