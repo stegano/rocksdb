@@ -19,7 +19,7 @@ RUN cd `cd /opt/folly && ./build/fbcode_builder/getdeps.py show-inst-dir folly` 
   cp -rv ../boost*/include/ /usr/lib/x86_64-linux-gnu
 
 RUN git clone https://github.com/fmtlib/fmt.git && cd fmt && \
-  cmake . && \
+  cmake -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE . && \
   make -j16 && \
   cp -rv include/ /usr/lib/x86_64-linux-gnu && \
   cp libfmt.a /usr/lib/x86_64-linux-gnu/
