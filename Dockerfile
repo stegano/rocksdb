@@ -45,7 +45,7 @@ RUN git clone https://github.com/gflags/gflags.git && cd gflags && \
   cp lib/libgflags.a /usr/lib/x86_64-linux-gnu/
 
 RUN git clone https://github.com/jemalloc/jemalloc.git && cd jemalloc && \
-  ./autogen.sh && ./configure CFLAGS="-fPIC" CXXFLAGS="-fPIC" && \
+  ./autogen.sh && ./configure --disable-initial-exec-tls CFLAGS="-fPIC" && \
   make && \
   cp lib/libjemalloc.a /usr/lib/x86_64-linux-gnu/ && \
   cp -rv include/jemalloc /usr/include/
