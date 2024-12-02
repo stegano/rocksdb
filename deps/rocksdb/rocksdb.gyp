@@ -106,6 +106,9 @@
                 "/usr/lib/x86_64-linux-gnu/liburing.a",
                 "/usr/lib/x86_64-linux-gnu/libfmt.a",
                 "/usr/lib/x86_64-linux-gnu/libglog.a",
+                "/usr/lib/x86_64-linux-gnu/libiberty.a",
+                "/usr/lib/x86_64-linux-gnu/libunwind.a",
+                "/usr/lib/x86_64-linux-gnu/libgflags.a"
               ],
             },
             "include_dirs": [

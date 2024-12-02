@@ -2,7 +2,6 @@ FROM node:22.9.0
 
 ENV CMAKE_BUILD_PARALLEL_LEVEL=16 MAKEFLAGS=-j16 JOBS=16 DEBUG_LEVEL=0
 
-# liburing-dev
 RUN apt update && apt install liburing-dev cmake -y
 
 # Clone and build folly
@@ -28,6 +27,22 @@ RUN git clone https://github.com/google/glog.git && cd glog && \
   cmake -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE -DBUILD_SHARED_LIBS=FALSE . && \
   make && \
   cp libglog.a /usr/lib/x86_64-linux-gnu/
+
+RUN git clone https://github.com/libunwind/libunwind.git && cd libunwind && \
+  autoreconf -i && ./configure CFLAGS="-fPIC" CXXFLAGS="-fPIC" && make && \
+  cp src/.libs/libunwind.a /usr/lib/x86_64-linux-gnu/
+
+RUN wget https://ftp.gnu.org/gnu/binutils/binutils-2.43.tar.gz && \
+  tar -xvf binutils-2.43.tar.gz && \
+  cd binutils-2.43/libiberty && \
+  ./configure CFLAGS="-fPIC" && \
+  make && \
+  cp libiberty.a /usr/lib/x86_64-linux-gnu/
+
+RUN git clone https://github.com/gflags/gflags.git && cd gflags && \
+  cmake . -DCMAKE_POSITION_INDEPENDENT_CODE=TRUE -DBUILD_SHARED_LIBS=OFF && \
+  make && \
+  cp lib/libgflags.a /usr/lib/x86_64-linux-gnu/
 
 # Copy source
 WORKDIR /rocks-level
