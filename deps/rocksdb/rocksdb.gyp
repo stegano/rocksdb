@@ -149,7 +149,7 @@
         ]
       ],
       "sources": [
-				"rocksdb/cache/cache.cc",
+        "rocksdb/cache/cache.cc",
         "rocksdb/cache/cache_entry_roles.cc",
         "rocksdb/cache/cache_key.cc",
         "rocksdb/cache/cache_helpers.cc",
@@ -201,6 +201,7 @@
         "rocksdb/db/db_impl/db_impl_write.cc",
         "rocksdb/db/db_impl/db_impl_compaction_flush.cc",
         "rocksdb/db/db_impl/db_impl_files.cc",
+        "rocksdb/db/db_impl/db_impl_follower.cc",
         "rocksdb/db/db_impl/db_impl_open.cc",
         "rocksdb/db/db_impl/db_impl_debug.cc",
         "rocksdb/db/db_impl/db_impl_experimental.cc",
@@ -258,6 +259,7 @@
         "rocksdb/env/env_encryption.cc",
         "rocksdb/env/file_system.cc",
         "rocksdb/env/file_system_tracer.cc",
+        "rocksdb/env/fs_on_demand.cc",
         "rocksdb/env/fs_remap.cc",
         "rocksdb/env/mock_env.cc",
         "rocksdb/env/unique_id_gen.cc",
@@ -446,6 +448,7 @@
         "rocksdb/utilities/persistent_cache/volatile_tier_impl.cc",
         "rocksdb/utilities/simulator_cache/cache_simulator.cc",
         "rocksdb/utilities/simulator_cache/sim_cache.cc",
+        "rocksdb/utilities/table_properties_collectors/compact_for_tiering_collector.cc",
         "rocksdb/utilities/table_properties_collectors/compact_on_deletion_collector.cc",
         "rocksdb/utilities/trace/file_trace_reader_writer.cc",
         "rocksdb/utilities/trace/replayer_impl.cc",
