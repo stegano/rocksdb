@@ -1,15 +1,9 @@
 FROM node:22.9.0
 
-ENV CMAKE_BUILD_PARALLEL_LEVEL=16 MAKEFLAGS=-j16 JOBS=16
+ENV CMAKE_BUILD_PARALLEL_LEVEL=16 MAKEFLAGS=-j16 JOBS=16 DEBUG_LEVEL=0
 
 # liburing-dev
 RUN apt update && apt install liburing-dev cmake -y
-
-RUN git clone https://github.com/fmtlib/fmt.git && cd fmt && \
-  cmake . && \
-  make -j16 && \
-  cp -rv include/ /usr/lib/x86_64-linux-gnu && \
-  cp libfmt.a /usr/lib/x86_64-linux-gnu/
 
 # Clone and build folly
 RUN apt update && apt install sudo -y
@@ -24,12 +18,18 @@ RUN cd `cd /opt/folly && ./build/fbcode_builder/getdeps.py show-inst-dir folly` 
   cp -rv include/ /usr/lib/x86_64-linux-gnu && \
   cp -rv ../boost*/include/ /usr/lib/x86_64-linux-gnu
 
+RUN git clone https://github.com/fmtlib/fmt.git && cd fmt && \
+  cmake . && \
+  make -j16 && \
+  cp -rv include/ /usr/lib/x86_64-linux-gnu && \
+  cp libfmt.a /usr/lib/x86_64-linux-gnu/
+
 # Copy source
 WORKDIR /rocks-level
 COPY . .
 
 # Build libzstd using makefile in rocksdb
-RUN cd deps/rocksdb/rocksdb && DEBUG_LEVEL=0 make libzstd.a && \
+RUN cd deps/rocksdb/rocksdb && make libzstd.a && \
   cp libzstd.a /usr/lib/x86_64-linux-gnu/
 
 # This will build rocksdb (deps/rocksdb/rocksdb.gyp) and then the rocks-level bindings (binding.gyp)
