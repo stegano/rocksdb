@@ -915,6 +915,9 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
   }
 
+  tableOptions.enable_index_compression = false;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "enableIndexCompression", tableOptions.enable_index_compression));
+
   std::optional<std::string> filterPolicyOpt;
   NAPI_STATUS_RETURN(GetProperty(env, options, "filterPolicy", filterPolicyOpt));
   if (filterPolicyOpt) {
