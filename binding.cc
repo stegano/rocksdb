@@ -940,6 +940,9 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.enable_index_compression = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "enableIndexCompression", tableOptions.enable_index_compression));
 
+  tableOptions.max_auto_readahead_size = 256 * 1024;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "maxAutoReadaheadSize", tableOptions.max_auto_readahead_size));
+
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
   return napi_ok;
