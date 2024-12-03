@@ -995,9 +995,7 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(GetProperty(env, options, "walSizeLimit", walSizeLimit));
     dbOptions.WAL_size_limit_MB = walSizeLimit / 1e6;
 
-    uint32_t maxTotalWalSize = 0;
-    NAPI_STATUS_THROWS(GetProperty(env, options, "walTotalSizeLimit", walSizeLimit));
-    dbOptions.max_total_wal_size = maxTotalWalSize / 1e6;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "maxTotalWalSize", dbOptions.max_total_wal_size));
 
     bool walCompression = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "walCompression", walCompression));
