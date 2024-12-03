@@ -8,8 +8,7 @@
 /prebuilds
 /build
 /tmp
-/test
 Dockerfile
 build.sh
 *.md
-prebuilds.iid
+prebuilds.*
