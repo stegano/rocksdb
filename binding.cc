@@ -892,11 +892,8 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
   if (cacheSize) {
     tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
-    NAPI_STATUS_RETURN(
-        GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks));
   } else {
     tableOptions.no_block_cache = true;
-    tableOptions.cache_index_and_filter_blocks = false;
   }
 
   std::string optimize = "";
