@@ -915,9 +915,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
   }
 
-  tableOptions.enable_index_compression = false;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "enableIndexCompression", tableOptions.enable_index_compression));
-
   std::optional<std::string> filterPolicyOpt;
   NAPI_STATUS_RETURN(GetProperty(env, options, "filterPolicy", filterPolicyOpt));
   if (filterPolicyOpt) {
@@ -925,11 +922,20 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
         rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
   }
 
+  tableOptions.block_size = 4 * 1024;
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockSize", tableOptions.block_size));
 
+  tableOptions.block_restart_interval = 16;
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockRestartInterval", tableOptions.block_restart_interval));
 
-  tableOptions.checksum = rocksdb::kXXH3;
+  tableOptions.block_align = false;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blockAlign", tableOptions.block_align));
+
+  tableOptions.cache_index_and_filter_blocks = true; // false
+  NAPI_STATUS_RETURN(GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks));
+
+  tableOptions.cache_index_and_filter_blocks_with_high_priority = true;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "cacheIndexAndFilterBlocksWithHighPriority", tableOptions.cache_index_and_filter_blocks_with_high_priority));
 
   tableOptions.decouple_partitioned_filters = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "decouplePartitionedFilters", tableOptions.block_restart_interval));
@@ -937,11 +943,12 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.optimize_filters_for_memory = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory));
 
-  tableOptions.enable_index_compression = false;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "enableIndexCompression", tableOptions.enable_index_compression));
 
   tableOptions.max_auto_readahead_size = 256 * 1024;
   NAPI_STATUS_RETURN(GetProperty(env, options, "maxAutoReadaheadSize", tableOptions.max_auto_readahead_size));
+
+  tableOptions.num_file_reads_for_auto_readahead = 2;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "numFileReadsForAutoReadahead", tableOptions.num_file_reads_for_auto_readahead));
 
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
 
