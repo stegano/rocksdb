@@ -1045,6 +1045,9 @@ NAPI_METHOD(db_open) {
     dbOptions.daily_offpeak_time_utc = "";
     NAPI_STATUS_THROWS(GetProperty(env, options, "dailyOffpeakTime",  dbOptions.daily_offpeak_time_utc));
 
+    dbOptions.unordered_write = false;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "unorderedWrite",  dbOptions.unordered_write));
+
     // TODO (feat): dbOptions.listeners
 
     std::string infoLogLevel;
