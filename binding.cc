@@ -944,7 +944,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.optimize_filters_for_memory = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory));
 
-
   tableOptions.max_auto_readahead_size = 256 * 1024;
   NAPI_STATUS_RETURN(GetProperty(env, options, "maxAutoReadaheadSize", tableOptions.max_auto_readahead_size));
 
