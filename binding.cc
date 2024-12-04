@@ -888,7 +888,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   columnOptions.optimize_filters_for_hits = false;
   NAPI_STATUS_THROWS(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
 
-
   uint32_t cacheSize = 8 << 20;
   NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
 
@@ -906,7 +905,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   if (optimize == "point-lookup") {
     tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
     tableOptions.data_block_hash_table_util_ratio = 0.75;
-    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10, 1));
+    tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10, 2));
 
     columnOptions.memtable_prefix_bloom_size_ratio = 0.02;
     columnOptions.memtable_whole_key_filtering = true;
