@@ -886,7 +886,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   columnOptions.optimize_filters_for_hits = false;
-  NAPI_STATUS_THROWS(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
 
   uint32_t cacheSize = 8 << 20;
   NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
