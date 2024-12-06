@@ -1699,7 +1699,7 @@ NAPI_METHOD(hyperclock_cache_init) {
   NAPI_ARGV(1);
 
   uint32_t size;
-  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[0], &size));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "size", keys));
 
   auto cache = rocksdb::HyperClockCacheOptions(size, 0).MakeSharedCache();
   auto cachePtr = std::make_unique<std::shared_ptr<rocksdb::Cache>>(std::move(cache));
