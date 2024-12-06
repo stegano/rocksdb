@@ -260,6 +260,10 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::ColumnFamil
   return napi_get_value_external(env, value, reinterpret_cast<void**>(&result));
 }
 
+static napi_status GetValue(napi_env env, napi_value value, std::shared_ptr<rocksdb::Cache>*& result) {
+  return napi_get_value_external(env, value, reinterpret_cast<void**>(&result));
+}
+
 static napi_status GetValue(napi_env env, napi_value value, Encoding& result) {
   size_t size;
   NAPI_STATUS_RETURN(napi_get_value_string_utf8(env, value, nullptr, 0, &size));

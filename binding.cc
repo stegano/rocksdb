@@ -886,15 +886,23 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   columnOptions.optimize_filters_for_hits = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
 
-  uint32_t cacheSize = 8 << 20;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
-
   rocksdb::BlockBasedTableOptions tableOptions;
 
-  if (cacheSize) {
-    tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
-  } else {
-    tableOptions.no_block_cache = true;
+  {
+    uint32_t blockCacheSize = 8 << 20;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", blockCacheSize));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", blockCacheSize));
+
+    std::shared_ptr<rocksdb::Cache> blockCache;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCache", blockCacheSize));
+
+    if (blockCache) {
+      tableOptions.block_cache = blockCache;
+    } else if (blockCacheSize) {
+      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(blockCacheSize, 0).MakeSharedCache();
+    } else {
+      tableOptions.no_block_cache = true;
+    }
   }
 
   std::string optimize = "";
@@ -1687,6 +1695,22 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
+NAPI_METHOD(hyperclock_cache_init) {
+  NAPI_ARGV(1);
+
+  uint32_t size;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, argv[0], &size));
+
+  auto cache = rocksdb::HyperClockCacheOptions(size, 0).MakeSharedCache();
+  auto cachePtr = std::make_unique<std::shared_ptr<rocksdb::Cache>>(std::move(cache));
+
+  napi_value result;
+  NAPI_STATUS_THROWS(napi_create_external(env, cachePtr.get(), Finalize<std::shared_ptr<rocksdb::Cache>>, cachePtr.get(), &result));
+  cachePtr.release();
+
+  return result;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1715,4 +1739,6 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);
+
+  NAPI_EXPORT_FUNCTION(hyperclock_cache_init);
 }
