@@ -1695,22 +1695,6 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
-NAPI_METHOD(hyperclock_cache_init) {
-  NAPI_ARGV(1);
-
-  uint32_t size;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "size", keys));
-
-  auto cache = rocksdb::HyperClockCacheOptions(size, 0).MakeSharedCache();
-  auto cachePtr = std::make_unique<std::shared_ptr<rocksdb::Cache>>(std::move(cache));
-
-  napi_value result;
-  NAPI_STATUS_THROWS(napi_create_external(env, cachePtr.get(), Finalize<std::shared_ptr<rocksdb::Cache>>, cachePtr.get(), &result));
-  cachePtr.release();
-
-  return result;
-}
-
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1739,6 +1723,4 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_merge);
   NAPI_EXPORT_FUNCTION(batch_count);
   NAPI_EXPORT_FUNCTION(batch_iterate);
-
-  NAPI_EXPORT_FUNCTION(hyperclock_cache_init);
 }

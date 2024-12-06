@@ -40,10 +40,6 @@ class RocksLevel extends AbstractLevel {
     this[kPendingClose] = null
   }
 
-  static createHyperClockCache () {
-    return binding.hyperclock_cache_init()
-  }
-
   static async open (...args) {
     const db = new this(...args)
     await db.open()
