@@ -931,7 +931,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.block_align = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockAlign", tableOptions.block_align));
 
-  tableOptions.cache_index_and_filter_blocks = true; // false
+  tableOptions.cache_index_and_filter_blocks = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks));
 
   tableOptions.cache_index_and_filter_blocks_with_high_priority = true;
