@@ -50,17 +50,17 @@ RUN cd /opt && git clone https://github.com/jemalloc/jemalloc.git && cd jemalloc
   cp lib/libjemalloc.a /usr/lib/x86_64-linux-gnu/ && \
   cp -rv include/jemalloc /usr/include/
 
-RUN cd /opt && git clone https://github.com/abseil/abseil-cpp.git && cd abseil-cpp && \
-  mkdir build && cd build && \
-  cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON && \
-  make && \
-  make install
+# RUN cd /opt && git clone https://github.com/abseil/abseil-cpp.git && cd abseil-cpp && \
+#   mkdir build && cd build && \
+#   cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON && \
+#   make && \
+#   make install
 
-RUN cd /opt && git clone https://github.com/google/re2.git && cd re2 && \
-  cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON && \
-  make && \
-  cp libre2.a /usr/lib/x86_64-linux-gnu/ && \
-  mkdir -p /usr/include/re2 && cp re2/*.h /usr/include/re2/
+# RUN cd /opt && git clone https://github.com/google/re2.git && cd re2 && \
+#   cmake . -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON && \
+#   make && \
+#   cp libre2.a /usr/lib/x86_64-linux-gnu/ && \
+#   mkdir -p /usr/include/re2 && cp re2/*.h /usr/include/re2/
 
 # Copy source
 WORKDIR /rocks-level

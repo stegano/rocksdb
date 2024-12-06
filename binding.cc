@@ -18,8 +18,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
 
-#include <re2/re2.h>
-
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -412,7 +410,6 @@ class Iterator final : public BaseIterator {
   bool first_ = true;
   const Encoding keyEncoding_;
   const Encoding valueEncoding_;
-  std::unique_ptr<re2::RE2> expr_;
 
  public:
   Iterator(Database* database,
@@ -428,18 +425,13 @@ class Iterator final : public BaseIterator {
            const size_t highWaterMarkBytes,
            Encoding keyEncoding = Encoding::Invalid,
            Encoding valueEncoding = Encoding::Invalid,
-           rocksdb::ReadOptions readOptions = {},
-           const std::string& selector = "")
+           rocksdb::ReadOptions readOptions = {})
       : BaseIterator(database, column, reverse, lt, lte, gt, gte, limit, readOptions),
         keys_(keys),
         values_(values),
         highWaterMarkBytes_(highWaterMarkBytes),
         keyEncoding_(keyEncoding),
         valueEncoding_(valueEncoding) {
-    if (selector != "") {
-      // TODO (fix): Pool selectors?
-      expr_.reset(new re2::RE2(selector));
-    }
   }
 
   void Seek(const rocksdb::Slice& target) override {
@@ -513,9 +505,6 @@ class Iterator final : public BaseIterator {
     readOptions.ignore_range_deletions = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", readOptions.ignore_range_deletions));
 
-    std::string selector;
-    NAPI_STATUS_THROWS(GetProperty(env, options, "selector", selector));
-
     // uint32_t timeout = 0;
     // NAPI_STATUS_THROWS(GetProperty(env, options, "timeout", timeout));
 
@@ -524,7 +513,7 @@ class Iterator final : public BaseIterator {
     //   : std::chrono::microseconds::zero();
 
     return std::make_unique<Iterator>(database, column, reverse, keys, values, limit, lt, lte, gt, gte,
-                                      highWaterMarkBytes, keyEncoding, valueEncoding, readOptions, selector);
+                                      highWaterMarkBytes, keyEncoding, valueEncoding, readOptions);
   }
 
   napi_value nextv(napi_env env, uint32_t count, uint32_t timeout, napi_value callback) {
@@ -559,28 +548,26 @@ class Iterator final : public BaseIterator {
               break;
             }
 
-            if (!expr_ || re2::RE2::PartialMatch(CurrentKey().ToStringView(), *expr_)) {
-              if (keys_ && values_) {
-                rocksdb::PinnableSlice k;
-                k.PinSelf(CurrentKey());
-                state.keys.push_back(std::move(k));
+            if (keys_ && values_) {
+              rocksdb::PinnableSlice k;
+              k.PinSelf(CurrentKey());
+              state.keys.push_back(std::move(k));
 
-                rocksdb::PinnableSlice v;
-                v.PinSelf(CurrentValue());
-                state.values.push_back(std::move(v));
-              } else if (keys_) {
-                rocksdb::PinnableSlice k;
-                k.PinSelf(CurrentKey());
-                state.keys.push_back(std::move(k));
-              } else if (values_) {
-                rocksdb::PinnableSlice v;
-                v.PinSelf(CurrentValue());
-                state.values.push_back(std::move(v));
-              } else {
-                assert(false);
-              }
-              state.count += 1;
+              rocksdb::PinnableSlice v;
+              v.PinSelf(CurrentValue());
+              state.values.push_back(std::move(v));
+            } else if (keys_) {
+              rocksdb::PinnableSlice k;
+              k.PinSelf(CurrentKey());
+              state.keys.push_back(std::move(k));
+            } else if (values_) {
+              rocksdb::PinnableSlice v;
+              v.PinSelf(CurrentValue());
+              state.values.push_back(std::move(v));
+            } else {
+              assert(false);
             }
+            state.count += 1;
 
             bytesRead += CurrentKey().size() + CurrentValue().size();
             if (bytesRead > highWaterMarkBytes_) {
@@ -661,30 +648,28 @@ class Iterator final : public BaseIterator {
         break;
       }
 
-      if (!expr_ || re2::RE2::PartialMatch(CurrentKey().ToStringView(), *expr_)) {
-        napi_value key;
-        napi_value val;
+      napi_value key;
+      napi_value val;
 
-        if (keys_ && values_) {
-          const auto k = CurrentKey();
-          const auto v = CurrentValue();
-          NAPI_STATUS_THROWS(Convert(env, &k, keyEncoding_, key));
-          NAPI_STATUS_THROWS(Convert(env, &v, valueEncoding_, val));
-        } else if (keys_) {
-          const auto k = CurrentKey();
-          NAPI_STATUS_THROWS(Convert(env, &k, keyEncoding_, key));
-          NAPI_STATUS_THROWS(napi_get_undefined(env, &val));
-        } else if (values_) {
-          const auto v = CurrentValue();
-          NAPI_STATUS_THROWS(napi_get_undefined(env, &key));
-          NAPI_STATUS_THROWS(Convert(env, &v, valueEncoding_, val));
-        } else {
-          assert(false);
-        }
-
-        NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
-        NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
+      if (keys_ && values_) {
+        const auto k = CurrentKey();
+        const auto v = CurrentValue();
+        NAPI_STATUS_THROWS(Convert(env, &k, keyEncoding_, key));
+        NAPI_STATUS_THROWS(Convert(env, &v, valueEncoding_, val));
+      } else if (keys_) {
+        const auto k = CurrentKey();
+        NAPI_STATUS_THROWS(Convert(env, &k, keyEncoding_, key));
+        NAPI_STATUS_THROWS(napi_get_undefined(env, &val));
+      } else if (values_) {
+        const auto v = CurrentValue();
+        NAPI_STATUS_THROWS(napi_get_undefined(env, &key));
+        NAPI_STATUS_THROWS(Convert(env, &v, valueEncoding_, val));
+      } else {
+        assert(false);
       }
+
+      NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, key));
+      NAPI_STATUS_THROWS(napi_set_element(env, rows, idx++, val));
 
       bytesRead += CurrentKey().size() + CurrentValue().size();
       if (bytesRead > highWaterMarkBytes_) {
