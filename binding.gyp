@@ -8,9 +8,14 @@
                 [
                     "OS == 'linux'",
                     {
+                        "direct_dependent_settings": {
+                          "libraries": [
+                            "/usr/lib/x86_64-linux-gnu/libre2.a",
+                          ],
+                        },
                         "include_dirs": [
-                            "/usr/lib/x86_64-linux-gnu/include",
-                            "/usr/lib/include",
+                          "/usr/lib/x86_64-linux-gnu/include",
+                          "/usr/lib/include",
                         ],
                         "cflags": ["-march=znver1"],
                         "ccflags": ["-flto", '-march=znver1'],
@@ -22,6 +27,15 @@
                 [
                     "OS == 'mac'",
                     {
+                        "direct_dependent_settings": {
+                          "libraries": [
+                            "/opt/homebrew/Cellar/re2/20240702_1/lib/re2.a"
+                          ],
+                        },
+                        "include_dirs": [
+                          "/opt/homebrew/Cellar/re2/20240702_1/include",
+                          "/opt/homebrew/Cellar/abseil/20240722.0/include"
+                        ],
                         "xcode_settings": {
                             "WARNING_CFLAGS": [
                                 "-Wno-sign-compare",
