@@ -889,17 +889,11 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::BlockBasedTableOptions tableOptions;
 
   {
-    uint32_t blockCacheSize = 8 << 20;
-    NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", blockCacheSize));
-    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", blockCacheSize));
+    uint32_t cacheSize = 8 << 20;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
 
-    std::shared_ptr<rocksdb::Cache> blockCache;
-    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCache", blockCacheSize));
-
-    if (blockCache) {
-      tableOptions.block_cache = blockCache;
-    } else if (blockCacheSize) {
-      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(blockCacheSize, 0).MakeSharedCache();
+    if (cacheSize) {
+      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     } else {
       tableOptions.no_block_cache = true;
     }
@@ -921,11 +915,11 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
   }
 
-  std::optional<std::string> filterPolicyOpt;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "filterPolicy", filterPolicyOpt));
-  if (filterPolicyOpt) {
+  std::string filterPolicy;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "filterPolicy", filterPolicy));
+  if (filterPolicy != "") {
     ROCKS_STATUS_RETURN_NAPI(
-        rocksdb::FilterPolicy::CreateFromString(configOptions, *filterPolicyOpt, &tableOptions.filter_policy));
+        rocksdb::FilterPolicy::CreateFromString(configOptions, filterPolicy, &tableOptions.filter_policy));
   }
 
   tableOptions.block_size = 4 * 1024;
