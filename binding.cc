@@ -786,50 +786,48 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   uint64_t memtable_memory_budget = 256 * 1024 * 1024;
   NAPI_STATUS_RETURN(GetProperty(env, options, "memtableMemoryBudget", memtable_memory_budget));
 
-  std::optional<std::string> compactionOpt;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "compaction", compactionOpt));
-  if (compactionOpt) {
-    if (*compactionOpt == "universal") {
-      columnOptions.write_buffer_size = memtable_memory_budget / 4;
-      // merge two memtables when flushing to L0
-      columnOptions.min_write_buffer_number_to_merge = 2;
-      // this means we'll use 50% extra memory in the worst case, but will reduce
-      // write stalls.
-      columnOptions.max_write_buffer_number = 6;
-      // universal style compaction
-      columnOptions.compaction_style = rocksdb::kCompactionStyleUniversal;
-      columnOptions.compaction_options_universal.compression_size_percent = 80;
-    } else if (*compactionOpt == "level") {
-      columnOptions.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
-      // merge two memtables when flushing to L0
-      columnOptions.min_write_buffer_number_to_merge = 2;
-      // this means we'll use 50% extra memory in the worst case, but will reduce
-      // write stalls.
-      columnOptions.max_write_buffer_number = 6;
-      // start flushing L0->L1 as soon as possible. each file on level0 is
-      // (memtable_memory_budget / 2). This will flush level 0 when it's bigger than
-      // memtable_memory_budget.
-      columnOptions.level0_file_num_compaction_trigger = 2;
-      // doesn't really matter much, but we don't want to create too many files
-      columnOptions.target_file_size_base = memtable_memory_budget / 8;
-      // make Level1 size equal to Level0 size, so that L0->L1 compactions are fast
-      columnOptions.max_bytes_for_level_base = memtable_memory_budget;
+  std::string compaction = "level";
+  NAPI_STATUS_RETURN(GetProperty(env, options, "compaction", compaction));
+  if (compaction == "universal") {
+    columnOptions.write_buffer_size = memtable_memory_budget / 4;
+    // merge two memtables when flushing to L0
+    columnOptions.min_write_buffer_number_to_merge = 2;
+    // this means we'll use 50% extra memory in the worst case, but will reduce
+    // write stalls.
+    columnOptions.max_write_buffer_number = 6;
+    // universal style compaction
+    columnOptions.compaction_style = rocksdb::kCompactionStyleUniversal;
+    columnOptions.compaction_options_universal.compression_size_percent = 80;
+  } else if (compaction == "level") {
+    columnOptions.write_buffer_size = static_cast<size_t>(memtable_memory_budget / 4);
+    // merge two memtables when flushing to L0
+    columnOptions.min_write_buffer_number_to_merge = 2;
+    // this means we'll use 50% extra memory in the worst case, but will reduce
+    // write stalls.
+    columnOptions.max_write_buffer_number = 6;
+    // start flushing L0->L1 as soon as possible. each file on level0 is
+    // (memtable_memory_budget / 2). This will flush level 0 when it's bigger than
+    // memtable_memory_budget.
+    columnOptions.level0_file_num_compaction_trigger = 2;
+    // doesn't really matter much, but we don't want to create too many files
+    columnOptions.target_file_size_base = memtable_memory_budget / 8;
+    // make Level1 size equal to Level0 size, so that L0->L1 compactions are fast
+    columnOptions.max_bytes_for_level_base = memtable_memory_budget;
 
-      // level style compaction
-      columnOptions.compaction_style = rocksdb::kCompactionStyleLevel;
+    // level style compaction
+    columnOptions.compaction_style = rocksdb::kCompactionStyleLevel;
 
-      // only compress levels >= 2
-      columnOptions.compression_per_level.resize(columnOptions.num_levels);
-      for (int i = 0; i < columnOptions.num_levels; ++i) {
-        if (i < 2) {
-          columnOptions.compression_per_level[i] = rocksdb::kNoCompression;
-        } else {
-          columnOptions.compression_per_level[i] = rocksdb::kZSTD;
-        }
+    // only compress levels >= 2
+    columnOptions.compression_per_level.resize(columnOptions.num_levels);
+    for (int i = 0; i < columnOptions.num_levels; ++i) {
+      if (i < 2) {
+        columnOptions.compression_per_level[i] = rocksdb::kNoCompression;
+      } else {
+        columnOptions.compression_per_level[i] = rocksdb::kZSTD;
       }
-    } else {
-      return napi_invalid_arg;
     }
+  } else {
+    return napi_invalid_arg;
   }
 
   bool compression = true;
