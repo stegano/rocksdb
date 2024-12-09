@@ -244,6 +244,12 @@ static napi_status GetValue(napi_env env, napi_value value, unsigned long long& 
   return napi_ok;
 }
 
+static napi_status GetValue(napi_env env, napi_value value, double& result) {
+  NAPI_STATUS_RETURN(napi_get_value_double(env, value, &result));
+  return napi_ok;
+}
+
+
 static napi_status GetValue(napi_env env, napi_value value, std::string& result) {
   return GetString(env, value, result);
 }

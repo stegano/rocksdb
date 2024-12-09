@@ -850,53 +850,57 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     // TODO (perf): compression_opts.parallel_threads
   }
 
-  std::optional<std::string> prefixExtractorOpt;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "prefixExtractor", prefixExtractorOpt));
-  if (prefixExtractorOpt) {
+  std::string prefixExtractor;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "prefixExtractor", prefixExtractor));
+  if (prefixExtractor == "") {
+    // Do nothing...
+  } else {
     ROCKS_STATUS_RETURN_NAPI(
-        rocksdb::SliceTransform::CreateFromString(configOptions, *prefixExtractorOpt, &columnOptions.prefix_extractor));
+        rocksdb::SliceTransform::CreateFromString(configOptions, prefixExtractor, &columnOptions.prefix_extractor));
   }
 
-  std::optional<std::string> comparatorOpt;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "comparator", comparatorOpt));
-  if (comparatorOpt) {
+  std::string comparator;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "comparator", comparator));
+  if (comparator == "") {
+    // Do nothing...
+  } else {
     ROCKS_STATUS_RETURN_NAPI(
-        rocksdb::Comparator::CreateFromString(configOptions, *comparatorOpt, &columnOptions.comparator));
+        rocksdb::Comparator::CreateFromString(configOptions, comparator, &columnOptions.comparator));
   }
 
-  std::optional<std::string> mergeOperatorOpt;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "mergeOperator", mergeOperatorOpt));
-  if (mergeOperatorOpt) {
-    if (*mergeOperatorOpt == "maxRev") {
-      columnOptions.merge_operator = std::make_shared<MaxRevOperator>();
-    } else {
-      ROCKS_STATUS_RETURN_NAPI(
-          rocksdb::MergeOperator::CreateFromString(configOptions, *mergeOperatorOpt, &columnOptions.merge_operator));
-    }
+  std::string mergeOperator;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "mergeOperator", mergeOperator));
+  if (mergeOperator == "") {
+    // Do nothing...
+  } else if (mergeOperator == "maxRev") {
+    columnOptions.merge_operator = std::make_shared<MaxRevOperator>();
+  } else {
+    ROCKS_STATUS_RETURN_NAPI(
+        rocksdb::MergeOperator::CreateFromString(configOptions, mergeOperator, &columnOptions.merge_operator));
   }
 
-  std::optional<std::string> compactionPriority;
+  std::string compactionPriority;
   NAPI_STATUS_RETURN(GetProperty(env, options, "compactionPriority", compactionPriority));
-  if (compactionPriority) {
-    if (compactionPriority == "byCompensatedSize") {
-      columnOptions.compaction_pri = rocksdb::kByCompensatedSize;
-    } else if (compactionPriority == "oldestLargestSeqFirst") {
-      columnOptions.compaction_pri = rocksdb::kOldestLargestSeqFirst;
-    } else if (compactionPriority == "smallestSeqFirst") {
-      columnOptions.compaction_pri = rocksdb::kOldestSmallestSeqFirst;
-    } else if (compactionPriority == "overlappingRatio") {
-      columnOptions.compaction_pri = rocksdb::kMinOverlappingRatio;
-    } else if (compactionPriority == "roundRobin") {
-      columnOptions.compaction_pri = rocksdb::kRoundRobin;
-    } else {
-      // Throw?
-    }
+  if (compactionPriority == "") {
+    // Do nothing...
+  } else if (compactionPriority == "byCompensatedSize") {
+    columnOptions.compaction_pri = rocksdb::kByCompensatedSize;
+  } else if (compactionPriority == "oldestLargestSeqFirst") {
+    columnOptions.compaction_pri = rocksdb::kOldestLargestSeqFirst;
+  } else if (compactionPriority == "smallestSeqFirst") {
+    columnOptions.compaction_pri = rocksdb::kOldestSmallestSeqFirst;
+  } else if (compactionPriority == "overlappingRatio") {
+    columnOptions.compaction_pri = rocksdb::kMinOverlappingRatio;
+  } else if (compactionPriority == "roundRobin") {
+    columnOptions.compaction_pri = rocksdb::kRoundRobin;
+  } else {
+    return napi_invalid_arg;
   }
 
-  columnOptions.optimize_filters_for_hits = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
 
   rocksdb::BlockBasedTableOptions tableOptions;
+  tableOptions.decouple_partitioned_filters = true;
 
   {
     uint32_t cacheSize = 8 << 20;
@@ -912,7 +916,9 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   std::string optimize = "";
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimize", optimize));
 
-  if (optimize == "point-lookup") {
+  if (optimize == "") {
+    tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+  } else if (optimize == "point-lookup") {
     tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
     tableOptions.data_block_hash_table_util_ratio = 0.75;
     tableOptions.filter_policy.reset(rocksdb::NewRibbonFilterPolicy(10, 2));
@@ -922,7 +928,35 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   } else if (optimize == "range-lookup") {
     // TODO?
   } else {
-    tableOptions.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+    return napi_invalid_arg;
+  }
+
+  std::string indexType;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "indexType", indexType));
+  if (indexType == "") {
+    // Do nothing...
+  } else if (indexType == "binarySearch") {
+    tableOptions.index_type = rocksdb::BlockBasedTableOptions::kBinarySearch;
+  } else if (indexType == "hashSearch") {
+    tableOptions.index_type = rocksdb::BlockBasedTableOptions::kHashSearch;
+  } else if (indexType == "twoLevelIndexSearch") {
+    tableOptions.index_type = rocksdb::BlockBasedTableOptions::kTwoLevelIndexSearch;
+  } else if (indexType == "binarySearchWithFirstKey") {
+    tableOptions.index_type = rocksdb::BlockBasedTableOptions::kBinarySearchWithFirstKey;
+  } else {
+    return napi_invalid_arg;
+  }
+
+  std::string dataBlockIndexType;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "dataBlockIndexType", dataBlockIndexType));
+  if (dataBlockIndexType == "") {
+    // Do nothing...
+  } else if (dataBlockIndexType == "dataBlockBinarySearch") {
+    tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinarySearch;
+  } else if (dataBlockIndexType == "dataBlockBinaryAndHash") {
+    tableOptions.data_block_index_type = rocksdb::BlockBasedTableOptions::kDataBlockBinaryAndHash;
+  } else {
+    return napi_invalid_arg;
   }
 
   std::string filterPolicy;
@@ -932,31 +966,42 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
         rocksdb::FilterPolicy::CreateFromString(configOptions, filterPolicy, &tableOptions.filter_policy));
   }
 
-  tableOptions.block_size = 4 * 1024;
+  std::string indexShortening;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "indexShortening", indexShortening));
+  if (indexShortening == "") {
+    // Do nothing..
+  } else if (indexShortening == "noShortening") {
+    tableOptions.index_shortening = rocksdb::BlockBasedTableOptions::IndexShorteningMode::kNoShortening;
+  } else if (indexShortening == "shortenSeparators") {
+    tableOptions.index_shortening = rocksdb::BlockBasedTableOptions::IndexShorteningMode::kShortenSeparators;
+  } else if (indexShortening == "shortenSeparatorsAndSuccessor") {
+    tableOptions.index_shortening = rocksdb::BlockBasedTableOptions::IndexShorteningMode::kShortenSeparatorsAndSuccessor;
+  } else {
+    return napi_invalid_arg;
+  }
+
+  std::string prepopulateBlockCache;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", prepopulateBlockCache));
+  if (prepopulateBlockCache == "") {
+    // Do nothing...
+  } else if (prepopulateBlockCache == "disable") {
+    tableOptions.prepopulate_block_cache = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
+  } else if (prepopulateBlockCache == "flushOnly") {
+    tableOptions.prepopulate_block_cache = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly;
+  } else {
+    return napi_invalid_arg;
+  }
+
+  NAPI_STATUS_RETURN(GetProperty(env, options, "dataBlockHashTableUtilRatio", tableOptions.data_block_hash_table_util_ratio));
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockSize", tableOptions.block_size));
-
-  tableOptions.block_restart_interval = 16;
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockRestartInterval", tableOptions.block_restart_interval));
-
-  tableOptions.block_align = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "blockAlign", tableOptions.block_align));
-
-  tableOptions.cache_index_and_filter_blocks = false;
   NAPI_STATUS_RETURN(GetProperty(env, options, "cacheIndexAndFilterBlocks", tableOptions.cache_index_and_filter_blocks));
-
-  tableOptions.cache_index_and_filter_blocks_with_high_priority = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "cacheIndexAndFilterBlocksWithHighPriority", tableOptions.cache_index_and_filter_blocks_with_high_priority));
-
-  tableOptions.decouple_partitioned_filters = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "decouplePartitionedFilters", tableOptions.block_restart_interval));
-
-  tableOptions.optimize_filters_for_memory = true;
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForMemory", tableOptions.optimize_filters_for_memory));
-
-  tableOptions.max_auto_readahead_size = 256 * 1024;
   NAPI_STATUS_RETURN(GetProperty(env, options, "maxAutoReadaheadSize", tableOptions.max_auto_readahead_size));
-
-  tableOptions.num_file_reads_for_auto_readahead = 2;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "initialAutoReadaheadSize", tableOptions.initial_auto_readahead_size));
   NAPI_STATUS_RETURN(GetProperty(env, options, "numFileReadsForAutoReadahead", tableOptions.num_file_reads_for_auto_readahead));
 
   columnOptions.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tableOptions));
