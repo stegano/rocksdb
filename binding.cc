@@ -1066,41 +1066,34 @@ NAPI_METHOD(db_open) {
     dbOptions.avoid_unnecessary_blocking_io = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "avoidUnnecessaryBlockingIO", dbOptions.avoid_unnecessary_blocking_io));
 
-    dbOptions.write_dbid_to_manifest = true;
-    NAPI_STATUS_THROWS(GetProperty(env, options, "writeDbIdToManifest", dbOptions.write_dbid_to_manifest));
-
     dbOptions.create_missing_column_families = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "createMissingColumnFamilies", dbOptions.create_missing_column_families));
 
-    dbOptions.fail_if_options_file_error = true;
+    NAPI_STATUS_THROWS(GetProperty(env, options, "writeDbIdToManifest", dbOptions.write_dbid_to_manifest));
+
     NAPI_STATUS_THROWS(GetProperty(env, options, "failIfOptionsFileError", dbOptions.fail_if_options_file_error));
 
-    dbOptions.advise_random_on_open = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "adviseRandomOnOpen", dbOptions.advise_random_on_open));
 
-    dbOptions.bytes_per_sync = 1024 * 1024;
     NAPI_STATUS_THROWS(GetProperty(env, options, "bytesPerSync", dbOptions.bytes_per_sync));
 
-    dbOptions.wal_bytes_per_sync = 1024 * 1024;
     NAPI_STATUS_THROWS(GetProperty(env, options, "walBytesPerSync", dbOptions.wal_bytes_per_sync));
 
-    dbOptions.strict_bytes_per_sync = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "strictBytesPerSync", dbOptions.strict_bytes_per_sync));
 
-    dbOptions.create_if_missing = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
 
-    dbOptions.error_if_exists = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
 
-    dbOptions.enable_pipelined_write = true;
     NAPI_STATUS_THROWS(GetProperty(env, options, "pipelinedWrite", dbOptions.enable_pipelined_write));
 
-    dbOptions.daily_offpeak_time_utc = "";
     NAPI_STATUS_THROWS(GetProperty(env, options, "dailyOffpeakTime",  dbOptions.daily_offpeak_time_utc));
 
-    dbOptions.unordered_write = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "unorderedWrite",  dbOptions.unordered_write));
+
+    NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapReads",  dbOptions.allow_mmap_reads));
+
+    NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapWrites",  dbOptions.allow_mmap_writes));
 
     // TODO (feat): dbOptions.listeners
 
