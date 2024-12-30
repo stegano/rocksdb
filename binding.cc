@@ -1081,6 +1081,8 @@ NAPI_METHOD(db_open) {
 
     NAPI_STATUS_THROWS(GetProperty(env, options, "strictBytesPerSync", dbOptions.strict_bytes_per_sync));
 
+    NAPI_STATUS_THROWS(GetProperty(env, options, "delayedWriteRate", dbOptions.delayed_write_rate));
+
     NAPI_STATUS_THROWS(GetProperty(env, options, "createIfMissing", dbOptions.create_if_missing));
 
     NAPI_STATUS_THROWS(GetProperty(env, options, "errorIfExists", dbOptions.error_if_exists));
