@@ -1334,16 +1334,16 @@ NAPI_METHOD(db_get_many) {
   }
 
   state.readOptions.fill_cache = false;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", readOptions.fill_cache));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", state.readOptions.fill_cache));
 
   state.readOptions.async_io = true;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "asyncIO", readOptions.async_io));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "asyncIO", state.readOptions.async_io));
 
   state.readOptions.optimize_multiget_for_io = true;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "optimizeMultigetForIO", readOptions.optimize_multiget_for_io));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "optimizeMultigetForIO", state.readOptions.optimize_multiget_for_io));
 
   state.readOptions.value_size_soft_limit = std::numeric_limits<int32_t>::max();
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", readOptions.value_size_soft_limit));
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", state.readOptions.value_size_soft_limit));
 
   runAsync(std::move(state),
       "leveldown.get_many", env, callback,
