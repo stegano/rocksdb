@@ -898,6 +898,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   }
 
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "periodicCompactionSeconds", columnOptions.periodic_compaction_seconds));
 
   rocksdb::BlockBasedTableOptions tableOptions;
   tableOptions.decouple_partitioned_filters = true;
@@ -1230,17 +1231,11 @@ NAPI_METHOD(db_get_many_sync) {
   uint32_t count;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
 
-  bool fillCache = true;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", fillCache));
-
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
 
   Encoding valueEncoding = Encoding::Buffer;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "valueEncoding", valueEncoding));
-
-  int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
 
   uint32_t timeout = 0;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "timeout", timeout));
@@ -1262,13 +1257,21 @@ NAPI_METHOD(db_get_many_sync) {
   }
 
   rocksdb::ReadOptions readOptions;
-  readOptions.fill_cache = fillCache;
-  readOptions.async_io = true;
-  readOptions.optimize_multiget_for_io = true;
-  readOptions.value_size_soft_limit = highWaterMarkBytes;
   readOptions.deadline = timeout
     ? std::chrono::microseconds(database->db->GetEnv()->NowMicros() + timeout * 1000)
     : std::chrono::microseconds::zero();
+
+  readOptions.fill_cache = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", readOptions.fill_cache));
+
+  readOptions.async_io = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "asyncIO", readOptions.async_io));
+
+  readOptions.optimize_multiget_for_io = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "optimizeMultigetForIO", readOptions.optimize_multiget_for_io));
+
+  readOptions.value_size_soft_limit = std::numeric_limits<int32_t>::max();
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", readOptions.value_size_soft_limit));
 
   database->db->MultiGet(readOptions, column, count, keys.data(), values.data(), statuses.data());
 
@@ -1304,17 +1307,11 @@ NAPI_METHOD(db_get_many) {
   uint32_t count;
   NAPI_STATUS_THROWS(napi_get_array_length(env, argv[1], &count));
 
-  bool fillCache = true;
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", fillCache));
-
   rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "column", column));
 
   Encoding valueEncoding = Encoding::Buffer;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "valueEncoding", valueEncoding));
-
-  int32_t highWaterMarkBytes = std::numeric_limits<int32_t>::max();
-  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", highWaterMarkBytes));
 
   bool unsafe = false;
   NAPI_STATUS_THROWS(GetProperty(env, argv[2], "unsafe", unsafe));
@@ -1322,6 +1319,7 @@ NAPI_METHOD(db_get_many) {
   auto callback = argv[3];
 
   struct State {
+    rocksdb::ReadOptions readOptions;
     std::vector<rocksdb::Status> statuses;
     std::vector<rocksdb::PinnableSlice> values;
     std::vector<rocksdb::PinnableSlice> keys;
@@ -1335,15 +1333,21 @@ NAPI_METHOD(db_get_many) {
     NAPI_STATUS_THROWS(GetValue(env, element, state.keys[n]));
   }
 
+  state.readOptions.fill_cache = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "fillCache", readOptions.fill_cache));
+
+  state.readOptions.async_io = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "asyncIO", readOptions.async_io));
+
+  state.readOptions.optimize_multiget_for_io = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "optimizeMultigetForIO", readOptions.optimize_multiget_for_io));
+
+  state.readOptions.value_size_soft_limit = std::numeric_limits<int32_t>::max();
+  NAPI_STATUS_THROWS(GetProperty(env, argv[2], "highWaterMarkBytes", readOptions.value_size_soft_limit));
+
   runAsync(std::move(state),
       "leveldown.get_many", env, callback,
       [=](auto& state) {
-        rocksdb::ReadOptions readOptions;
-        readOptions.fill_cache = fillCache;
-        readOptions.async_io = true;
-        readOptions.optimize_multiget_for_io = true;
-        readOptions.value_size_soft_limit = highWaterMarkBytes;
-
         std::vector<rocksdb::Slice> keys;
         keys.reserve(count);
         for (uint32_t n = 0; n < count; n++) {
@@ -1353,7 +1357,7 @@ NAPI_METHOD(db_get_many) {
         state.statuses.resize(count);
         state.values.resize(count);
 
-        database->db->MultiGet(readOptions, column, count, keys.data(), state.values.data(), state.statuses.data());
+        database->db->MultiGet(state.readOptions, column, count, keys.data(), state.values.data(), state.statuses.data());
 
         return rocksdb::Status::OK();
       },
