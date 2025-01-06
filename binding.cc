@@ -1090,13 +1090,15 @@ NAPI_METHOD(db_open) {
 
     NAPI_STATUS_THROWS(GetProperty(env, options, "pipelinedWrite", dbOptions.enable_pipelined_write));
 
-    NAPI_STATUS_THROWS(GetProperty(env, options, "dailyOffpeakTime",  dbOptions.daily_offpeak_time_utc));
+    NAPI_STATUS_THROWS(GetProperty(env, options, "dailyOffpeakTime", dbOptions.daily_offpeak_time_utc));
 
-    NAPI_STATUS_THROWS(GetProperty(env, options, "unorderedWrite",  dbOptions.unordered_write));
+    NAPI_STATUS_THROWS(GetProperty(env, options, "unorderedWrite", dbOptions.unordered_write));
 
-    NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapReads",  dbOptions.allow_mmap_reads));
+    NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapReads", dbOptions.allow_mmap_reads));
 
-    NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapWrites",  dbOptions.allow_mmap_writes));
+    NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapWrites", dbOptions.allow_mmap_writes));
+
+    NAPI_STATUS_THROWS(GetProperty(env, options, "memTableHugePageSize", dbOptions.memtable_huge_page_size));
 
     // TODO (feat): dbOptions.listeners
 
