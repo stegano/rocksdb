@@ -900,6 +900,23 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
   NAPI_STATUS_RETURN(GetProperty(env, options, "periodicCompactionSeconds", columnOptions.periodic_compaction_seconds));
 
+  NAPI_STATUS_RETURN(GetProperty(env, options, "enableBlobFiles", columnOptions.enable_blob_files));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "minBlobSize", columnOptions.min_blob_size));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobFileSize", columnOptions.blob_file_size));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "enableBlobGarbageCollection", columnOptions.enable_blob_garbage_collection));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobGarbageCollectionAgeCutoff", columnOptions.blob_garbage_collection_age_cutoff));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobGarbageCollectionForceThreshold", columnOptions.blob_garbage_collection_force_threshold));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobCompactionReadaheadSize", columnOptions.blob_compaction_readahead_size));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobFileStartingLevel", columnOptions.blob_file_starting_level));
+
+  bool blobCompression = true;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobCompression", blobCompression));
+  columnOptions.blob_compression_type = blobCompression ? rocksdb::kZSTD : rocksdb::kNoCompression;
+
+  bool prepopulateBlobCache = false;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlobCache", prepopulateBlobCache));
+  columnOptions.prepopulate_blob_cache = prepopulateBlobCache ? rocksdb::PrepopulateBlobCache::kFlushOnly : rocksdb::PrepopulateBlobCache::kDisable;
+
   rocksdb::BlockBasedTableOptions tableOptions;
   tableOptions.decouple_partitioned_filters = true;
 
@@ -908,11 +925,21 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
 
     if (cacheSize) {
-      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
+      auto cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
+      tableOptions.block_cache = cache;
+      if (columnOptions.enable_blob_files) {
+        columnOptions.blob_cache = cache;
+      }
     } else {
       tableOptions.no_block_cache = true;
     }
   }
+
+  bool prepopulateBlockCache = false;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", prepopulateBlockCache));
+  tableOptions.prepopulate_block_cache = prepopulateBlockCache
+    ? rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly
+    : rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
 
   std::string optimize = "";
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimize", optimize));
@@ -977,18 +1004,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     tableOptions.index_shortening = rocksdb::BlockBasedTableOptions::IndexShorteningMode::kShortenSeparators;
   } else if (indexShortening == "shortenSeparatorsAndSuccessor") {
     tableOptions.index_shortening = rocksdb::BlockBasedTableOptions::IndexShorteningMode::kShortenSeparatorsAndSuccessor;
-  } else {
-    return napi_invalid_arg;
-  }
-
-  std::string prepopulateBlockCache;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", prepopulateBlockCache));
-  if (prepopulateBlockCache == "") {
-    // Do nothing...
-  } else if (prepopulateBlockCache == "disable") {
-    tableOptions.prepopulate_block_cache = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
-  } else if (prepopulateBlockCache == "flushOnly") {
-    tableOptions.prepopulate_block_cache = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly;
   } else {
     return napi_invalid_arg;
   }
