@@ -921,15 +921,21 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   tableOptions.decouple_partitioned_filters = true;
 
   {
-    uint32_t cacheSize = 8 << 20;
-    NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
+    uint32_t cacheSize = 0;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheSize", cacheSize));
 
     if (cacheSize) {
-      auto cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
-      tableOptions.block_cache = cache;
-      if (columnOptions.enable_blob_files) {
-        columnOptions.blob_cache = cache;
-      }
+      columnOptions.blob_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
+    }
+  }
+
+  {
+    uint32_t cacheSize = 8 << 20;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", cacheSize));
+
+    if (cacheSize) {
+      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     } else {
       tableOptions.no_block_cache = true;
     }
