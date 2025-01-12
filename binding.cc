@@ -505,6 +505,10 @@ class Iterator final : public BaseIterator {
     readOptions.ignore_range_deletions = false;
     NAPI_STATUS_THROWS(GetProperty(env, options, "ignoreRangeDeletions", readOptions.ignore_range_deletions));
 
+    if (!values) {
+      readOptions.allow_unprepared_value = true;
+    }
+
     // uint32_t timeout = 0;
     // NAPI_STATUS_THROWS(GetProperty(env, options, "timeout", timeout));
 
