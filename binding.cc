@@ -926,22 +926,40 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
 
   {
     uint32_t cacheSize = 0;
+    double compressedRatio = 0.0;
     NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheSize", cacheSize));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheCompressedRatio", compressedRatio));
 
-    if (cacheSize) {
+    if (cacheSize == 0) {
+      // Do nothing..
+    } else  if (compressedRatio > 0.0) {
+      rocksdb::TieredCacheOptions options;
+      options.total_capacity = cacheSize;
+      options.compressed_secondary_ratio = compressedRatio;
+      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
+      columnOptions.blob_cache = rocksdb::NewTieredCache(options);
+    } else {
       columnOptions.blob_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     }
   }
 
   {
     uint32_t cacheSize = 8 << 20;
+    double compressedRatio = 0.0;
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", cacheSize));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheCompressedRatio", compressedRatio));
 
-    if (cacheSize) {
-      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
-    } else {
+    if (cacheSize == 0) {
       tableOptions.no_block_cache = true;
+    } else if (compressedRatio > 0.0) {
+      rocksdb::TieredCacheOptions options;
+      options.total_capacity = cacheSize;
+      options.compressed_secondary_ratio = compressedRatio;
+      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
+      tableOptions.block_cache = rocksdb::NewTieredCache(options);
+    } else {
+      tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     }
   }
 
@@ -1124,6 +1142,10 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(GetProperty(env, options, "allowMmapWrites", dbOptions.allow_mmap_writes));
 
     NAPI_STATUS_THROWS(GetProperty(env, options, "memTableHugePageSize", dbOptions.memtable_huge_page_size));
+
+    NAPI_STATUS_THROWS(GetProperty(env, options, "useDirectIOReads", dbOptions.use_direct_reads));
+
+    NAPI_STATUS_THROWS(GetProperty(env, options, "useDirectIOForFlushAndCompaction", dbOptions.use_direct_io_for_flush_and_compaction));
 
     // TODO (feat): dbOptions.listeners
 
