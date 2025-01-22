@@ -917,36 +917,14 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   NAPI_STATUS_RETURN(GetProperty(env, options, "blobCompression", blobCompression));
   columnOptions.blob_compression_type = blobCompression ? rocksdb::kZSTD : rocksdb::kNoCompression;
 
-  bool prepopulateBlobCache = false;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlobCache", prepopulateBlobCache));
-  columnOptions.prepopulate_blob_cache = prepopulateBlobCache ? rocksdb::PrepopulateBlobCache::kFlushOnly : rocksdb::PrepopulateBlobCache::kDisable;
-
   rocksdb::BlockBasedTableOptions tableOptions;
   tableOptions.decouple_partitioned_filters = true;
-
-  {
-    uint32_t cacheSize = 0;
-    double compressedRatio = 0.0;
-    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheSize", cacheSize));
-    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheCompressedRatio", compressedRatio));
-
-    if (cacheSize == 0) {
-      // Do nothing..
-    } else  if (compressedRatio > 0.0) {
-      rocksdb::TieredCacheOptions options;
-      options.total_capacity = cacheSize;
-      options.compressed_secondary_ratio = compressedRatio;
-      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
-      columnOptions.blob_cache = rocksdb::NewTieredCache(options);
-    } else {
-      columnOptions.blob_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
-    }
-  }
 
   {
     uint32_t cacheSize = 8 << 20;
     double compressedRatio = 0.0;
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cacheCompressedRatio", compressedRatio));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheCompressedRatio", compressedRatio));
 
@@ -961,13 +939,38 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     } else {
       tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     }
+
+    bool prepopulateBlockCache = false;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", prepopulateBlockCache));
+    tableOptions.prepopulate_block_cache = prepopulateBlockCache
+      ? rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly
+      : rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
   }
 
-  bool prepopulateBlockCache = false;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", prepopulateBlockCache));
-  tableOptions.prepopulate_block_cache = prepopulateBlockCache
-    ? rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly
-    : rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
+  {
+    uint32_t cacheSize = -1;
+    double compressedRatio = 0.0;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheSize", cacheSize));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheCompressedRatio", compressedRatio));
+
+    if (cacheSize == -1) {
+      columnOptions.blob_cache = tableOptions.block_cache;
+    } else if (cacheSize == 0) {
+      columnOptions.blob_cache = nullptr;
+    } else  if (compressedRatio > 0.0) {
+      rocksdb::TieredCacheOptions options;
+      options.total_capacity = cacheSize;
+      options.compressed_secondary_ratio = compressedRatio;
+      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
+      columnOptions.blob_cache = rocksdb::NewTieredCache(options);
+    } else {
+      columnOptions.blob_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
+    }
+
+    bool prepopulateBlobCache = false;
+    NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlobCache", prepopulateBlobCache));
+    columnOptions.prepopulate_blob_cache = prepopulateBlobCache ? rocksdb::PrepopulateBlobCache::kFlushOnly : rocksdb::PrepopulateBlobCache::kDisable;
+  }
 
   std::string optimize = "";
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimize", optimize));
