@@ -901,6 +901,8 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     return napi_invalid_arg;
   }
 
+  NAPI_STATUS_RETURN(GetProperty(env, options, "compactionReadaheadSize", columnOptions.compaction_readahead_size));
+
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
   NAPI_STATUS_RETURN(GetProperty(env, options, "periodicCompactionSeconds", columnOptions.periodic_compaction_seconds));
 
