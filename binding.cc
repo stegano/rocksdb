@@ -901,8 +901,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     return napi_invalid_arg;
   }
 
-  NAPI_STATUS_RETURN(GetProperty(env, options, "compactionReadaheadSize", columnOptions.compaction_readahead_size));
-
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
   NAPI_STATUS_RETURN(GetProperty(env, options, "periodicCompactionSeconds", columnOptions.periodic_compaction_seconds));
 
@@ -1153,6 +1151,8 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(GetProperty(env, options, "useDirectIOReads", dbOptions.use_direct_reads));
 
     NAPI_STATUS_THROWS(GetProperty(env, options, "useDirectIOForFlushAndCompaction", dbOptions.use_direct_io_for_flush_and_compaction));
+
+    NAPI_STATUS_THROWS(GetProperty(env, options, "compactionReadaheadSize", dbOptions.compaction_readahead_size));
 
     // TODO (feat): dbOptions.listeners
 
