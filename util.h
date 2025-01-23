@@ -283,6 +283,82 @@ static napi_status GetValue(napi_env env, napi_value value, Encoding& result) {
   return napi_ok;
 }
 
+static napi_status GetValue(napi_env env, napi_value value, rocksdb::BlockBasedTableOptions::PrepopulateBlockCache& result) {
+  std::string str;
+
+  if (GetValue(env, value, str) == napi_ok) {
+    if (str == "flushOnly") {
+      result = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly;
+    } else if (str == "disable") {
+      result = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
+    } else {
+      return napi_invalid_arg;
+    }
+  }
+
+  bool boolean;
+  if (GetValue(env, value, boolean) == napi_ok) {
+    result = boolean ? rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly
+                     : rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
+  }
+
+  return napi_invalid_arg;
+}
+
+static napi_status GetValue(napi_env env, napi_value value, rocksdb::PrepopulateBlobCache& result) {
+  std::string str;
+
+  if (GetValue(env, value, str) == napi_ok) {
+    if (str == "flushOnly") {
+      result = rocksdb::PrepopulateBlobCache::kFlushOnly;
+    } else if (str == "disable") {
+      result = rocksdb::PrepopulateBlobCache::kDisable;
+    } else {
+      return napi_invalid_arg;
+    }
+  }
+
+  bool boolean;
+  if (GetValue(env, value, boolean) == napi_ok) {
+    result = boolean ? rocksdb::PrepopulateBlobCache::kFlushOnly
+                     : rocksdb::PrepopulateBlobCache::kDisable;
+  }
+
+  return napi_invalid_arg;
+}
+
+static napi_status GetValue(napi_env env, napi_value value, rocksdb::CompressionType& result) {
+  std::string str;
+
+  if (GetValue(env, value, str) == napi_ok) {
+    if (str == "no") {
+      result = rocksdb::CompressionType::kNoCompression;
+    } else if (str == "snappy") {
+      result = rocksdb::CompressionType::kSnappyCompression;
+    } else if (str == "zlib") {
+      result = rocksdb::CompressionType::kZlibCompression;
+    } else if (str == "bzip2") {
+      result = rocksdb::CompressionType::kBZip2Compression;
+    } else if (str == "lz4") {
+      result = rocksdb::CompressionType::kLZ4Compression;
+    } else if (str == "lz4hc") {
+      result = rocksdb::CompressionType::kLZ4HCCompression;
+    } else if (str == "xpress") {
+      result = rocksdb::CompressionType::kXpressCompression;
+    } else if (str == "zstd") {
+      result = rocksdb::CompressionType::kZSTD;
+    }
+  }
+
+  bool boolean;
+  if (GetValue(env, value, boolean) == napi_ok) {
+    result = boolean ? rocksdb::kZSTD
+                     : rocksdb::kNoCompression;
+  }
+
+  return napi_invalid_arg;
+}
+
 template <typename T>
 static napi_status GetValue(napi_env env, napi_value value, std::optional<T>& result) {
   result = T{};

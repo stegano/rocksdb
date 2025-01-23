@@ -904,18 +904,20 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   NAPI_STATUS_RETURN(GetProperty(env, options, "optimizeFiltersForHits", columnOptions.optimize_filters_for_hits));
   NAPI_STATUS_RETURN(GetProperty(env, options, "periodicCompactionSeconds", columnOptions.periodic_compaction_seconds));
 
+  // Compat
   NAPI_STATUS_RETURN(GetProperty(env, options, "enableBlobFiles", columnOptions.enable_blob_files));
   NAPI_STATUS_RETURN(GetProperty(env, options, "minBlobSize", columnOptions.min_blob_size));
-  NAPI_STATUS_RETURN(GetProperty(env, options, "blobFileSize", columnOptions.blob_file_size));
   NAPI_STATUS_RETURN(GetProperty(env, options, "enableBlobGarbageCollection", columnOptions.enable_blob_garbage_collection));
+
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobFiles", columnOptions.enable_blob_files));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobMinSize", columnOptions.min_blob_size));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobGarbageCollection", columnOptions.enable_blob_garbage_collection));
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobFileSize", columnOptions.blob_file_size));
   NAPI_STATUS_RETURN(GetProperty(env, options, "blobGarbageCollectionAgeCutoff", columnOptions.blob_garbage_collection_age_cutoff));
   NAPI_STATUS_RETURN(GetProperty(env, options, "blobGarbageCollectionForceThreshold", columnOptions.blob_garbage_collection_force_threshold));
   NAPI_STATUS_RETURN(GetProperty(env, options, "blobCompactionReadaheadSize", columnOptions.blob_compaction_readahead_size));
   NAPI_STATUS_RETURN(GetProperty(env, options, "blobFileStartingLevel", columnOptions.blob_file_starting_level));
-
-  bool blobCompression = true;
-  NAPI_STATUS_RETURN(GetProperty(env, options, "blobCompression", blobCompression));
-  columnOptions.blob_compression_type = blobCompression ? rocksdb::kZSTD : rocksdb::kNoCompression;
+  NAPI_STATUS_RETURN(GetProperty(env, options, "blobCompression", columnOptions.blob_compression_type));
 
   rocksdb::BlockBasedTableOptions tableOptions;
   tableOptions.decouple_partitioned_filters = true;
@@ -923,10 +925,15 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   {
     uint32_t cacheSize = 8 << 20;
     double compressedRatio = 0.0;
+
+    // Compat
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheCompressedRatio", compressedRatio));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", tableOptions.prepopulate_block_cache));
+
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheCompressedRatio", compressedRatio));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blockCachePrepopulate", tableOptions.prepopulate_block_cache));
 
     if (cacheSize == 0) {
       tableOptions.no_block_cache = true;
@@ -939,19 +946,18 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     } else {
       tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     }
-
-    bool prepopulateBlockCache = false;
-    NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", prepopulateBlockCache));
-    tableOptions.prepopulate_block_cache = prepopulateBlockCache
-      ? rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly
-      : rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
   }
 
   {
     uint32_t cacheSize = -1;
     double compressedRatio = 0.0;
+
+    // Compat
+    NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlobCache", columnOptions.prepopulate_blob_cache));
+
     NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheCompressedRatio", compressedRatio));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "blobCachePrepopulate", columnOptions.prepopulate_blob_cache));
 
     if (cacheSize == -1) {
       columnOptions.blob_cache = tableOptions.block_cache;
@@ -966,10 +972,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     } else {
       columnOptions.blob_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
     }
-
-    bool prepopulateBlobCache = false;
-    NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlobCache", prepopulateBlobCache));
-    columnOptions.prepopulate_blob_cache = prepopulateBlobCache ? rocksdb::PrepopulateBlobCache::kFlushOnly : rocksdb::PrepopulateBlobCache::kDisable;
   }
 
   std::string optimize = "";
