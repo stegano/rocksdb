@@ -929,6 +929,8 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     // Compat
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheCompressedRatio", compressedRatio));
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cachePrepopulate", tableOptions.prepopulate_block_cache));
+
     NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", tableOptions.prepopulate_block_cache));
 
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", cacheSize));
