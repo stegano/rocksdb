@@ -934,6 +934,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
       cache = nullptr;
     } else if (compressedRatio > 0.0) {
       rocksdb::TieredCacheOptions options;
+      options.cache_type = rocksdb::PrimaryCacheType::kCacheTypeHCC;
       options.total_capacity = cacheSize;
       options.compressed_secondary_ratio = compressedRatio;
       cache = rocksdb::NewTieredCache(options);
@@ -961,6 +962,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
       }
     } else if (compressedRatio > 0.0) {
       rocksdb::TieredCacheOptions options;
+      options.cache_type = rocksdb::PrimaryCacheType::kCacheTypeHCC;
       options.total_capacity = cacheSize;
       options.compressed_secondary_ratio = compressedRatio;
       tableOptions.block_cache = rocksdb::NewTieredCache(options);
