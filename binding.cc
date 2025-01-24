@@ -936,7 +936,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
       rocksdb::TieredCacheOptions options;
       options.total_capacity = cacheSize;
       options.compressed_secondary_ratio = compressedRatio;
-      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
       cache = rocksdb::NewTieredCache(options);
     } else {
       cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
@@ -964,7 +963,6 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
       rocksdb::TieredCacheOptions options;
       options.total_capacity = cacheSize;
       options.compressed_secondary_ratio = compressedRatio;
-      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
       tableOptions.block_cache = rocksdb::NewTieredCache(options);
     } else {
       tableOptions.block_cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
