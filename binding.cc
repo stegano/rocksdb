@@ -38,6 +38,7 @@ class NullLogger : public rocksdb::Logger {
 
 struct Database;
 class Iterator;
+class Updates;
 
 struct ColumnFamily {
   rocksdb::ColumnFamilyHandle* handle;
@@ -1853,6 +1854,137 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
+struct Updates : public BatchIterator, public Closable {
+  Updates(Database* database,
+          const int64_t seqNumber,
+          const bool keys,
+          const bool values,
+          const bool data,
+          const rocksdb::ColumnFamilyHandle* column,
+          const Encoding keyEncoding,
+          const Encoding valueEncoding)
+      : BatchIterator(database, keys, values, data, column, keyEncoding, valueEncoding),
+        database_(database),
+        start_(seqNumber) {
+    database_->Attach(this);
+  }
+
+  virtual ~Updates() {
+    if (iterator_) {
+      database_->Detach(this);
+    }
+  }
+
+  rocksdb::Status Close() override {
+    if (iterator_) {
+      iterator_.reset();
+      database_->Detach(this);
+    }
+    return rocksdb::Status::OK();
+  }
+
+  Database* database_;
+  int64_t start_;
+  std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
+
+ private:
+  napi_ref ref_ = nullptr;
+};
+
+NAPI_METHOD(updates_init) {
+  NAPI_ARGV(2);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  const auto options = argv[1];
+
+  int64_t since = 0;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "since", since));
+
+  bool keys = true;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keys", keys));
+
+  bool values = true;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "values", values));
+
+  bool data = true;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "data", data));
+
+  Encoding keyEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
+
+  Encoding valueEncoding = Encoding::String;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
+
+  rocksdb::ColumnFamilyHandle* column = nullptr;
+  NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
+
+  napi_value result;
+  try {
+    auto updates =
+      std::unique_ptr<Updates>(new Updates(database, since, keys, values, data, column, keyEncoding, valueEncoding));
+
+    NAPI_STATUS_THROWS(napi_create_external(env, updates.get(), Finalize<Updates>, updates.get(), &result));
+    updates.release();
+  } catch (const std::exception& e) {
+    napi_throw_error(env, nullptr, e.what());
+    return nullptr;
+  }
+
+  return result;
+}
+
+NAPI_METHOD(updates_nextv) {
+  NAPI_ARGV(2);
+
+  Updates* updates;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
+
+  if (!updates->iterator_) {
+    rocksdb::TransactionLogIterator::ReadOptions options;
+    ROCKS_STATUS_THROWS_NAPI(updates->database_->db->GetUpdatesSince(updates->start_, &updates->iterator_, options));
+  } else if (updates->iterator_->Valid()) {
+    updates->iterator_->Next();
+  }
+
+  ROCKS_STATUS_THROWS_NAPI(updates->iterator_->status());
+
+  if (!updates->iterator_->Valid()) {
+    return 0;
+  }
+
+  auto batchResult = updates->iterator_->GetBatch();
+
+  napi_value rows;
+  napi_value sequence;
+
+  NAPI_STATUS_THROWS(updates->Iterate(env, *batchResult.writeBatchPtr, &rows));
+  NAPI_STATUS_THROWS(napi_create_int64(env, batchResult.sequence, &sequence));
+
+  napi_value ret;
+  NAPI_STATUS_THROWS(napi_create_object(env, &ret));
+  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", sequence));
+  NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "finished", sequence));
+  return ret;
+}
+
+NAPI_METHOD(updates_close) {
+  NAPI_ARGV(1);
+
+  try {
+    Updates* updates;
+    NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
+
+    ROCKS_STATUS_THROWS_NAPI(updates->Close());
+  } catch (const std::exception& e) {
+    napi_throw_error(env, nullptr, e.what());
+    return nullptr;
+  }
+
+  return 0;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -1872,6 +2004,10 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(iterator_close);
   NAPI_EXPORT_FUNCTION(iterator_nextv);
   NAPI_EXPORT_FUNCTION(iterator_nextv_sync);
+
+  NAPI_EXPORT_FUNCTION(updates_init);
+  NAPI_EXPORT_FUNCTION(updates_close);
+  NAPI_EXPORT_FUNCTION(updates_nextv);
 
   NAPI_EXPORT_FUNCTION(batch_init);
   NAPI_EXPORT_FUNCTION(batch_put);
