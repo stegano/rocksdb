@@ -38,12 +38,12 @@
     }                                         \
   }
 
-#define ROCKS_STATUS_RETURN(call)        \
-  {                                           \
-    auto _status = (call);                    \
-    if (!_status.ok()) {                      \
-      return _status;                         \
-    }                                         \
+#define ROCKS_STATUS_RETURN(call) \
+  {                               \
+    auto _status = (call);        \
+    if (!_status.ok()) {          \
+      return _status;             \
+    }                             \
   }
 
 template <typename T>
@@ -249,7 +249,6 @@ static napi_status GetValue(napi_env env, napi_value value, double& result) {
   return napi_ok;
 }
 
-
 static napi_status GetValue(napi_env env, napi_value value, std::string& result) {
   return GetString(env, value, result);
 }
@@ -276,21 +275,27 @@ static napi_status GetValue(napi_env env, napi_value value, Encoding& result) {
 
   if (size == 6) {
     result = Encoding::Buffer;
+    return napi_ok;
   } else {
     result = Encoding::String;
+    return napi_ok;
   }
 
-  return napi_ok;
+  return napi_invalid_arg;
 }
 
-static napi_status GetValue(napi_env env, napi_value value, rocksdb::BlockBasedTableOptions::PrepopulateBlockCache& result) {
+static napi_status GetValue(napi_env env,
+                            napi_value value,
+                            rocksdb::BlockBasedTableOptions::PrepopulateBlockCache& result) {
   std::string str;
 
   if (GetValue(env, value, str) == napi_ok) {
     if (str == "flushOnly") {
       result = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly;
+      return napi_ok;
     } else if (str == "disable") {
       result = rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
+      return napi_ok;
     } else {
       return napi_invalid_arg;
     }
@@ -300,6 +305,7 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::BlockBasedT
   if (GetValue(env, value, boolean) == napi_ok) {
     result = boolean ? rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kFlushOnly
                      : rocksdb::BlockBasedTableOptions::PrepopulateBlockCache::kDisable;
+    return napi_ok;
   }
 
   return napi_invalid_arg;
@@ -311,8 +317,10 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::Prepopulate
   if (GetValue(env, value, str) == napi_ok) {
     if (str == "flushOnly") {
       result = rocksdb::PrepopulateBlobCache::kFlushOnly;
+      return napi_ok;
     } else if (str == "disable") {
       result = rocksdb::PrepopulateBlobCache::kDisable;
+      return napi_ok;
     } else {
       return napi_invalid_arg;
     }
@@ -320,8 +328,8 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::Prepopulate
 
   bool boolean;
   if (GetValue(env, value, boolean) == napi_ok) {
-    result = boolean ? rocksdb::PrepopulateBlobCache::kFlushOnly
-                     : rocksdb::PrepopulateBlobCache::kDisable;
+    result = boolean ? rocksdb::PrepopulateBlobCache::kFlushOnly : rocksdb::PrepopulateBlobCache::kDisable;
+    return napi_ok;
   }
 
   return napi_invalid_arg;
@@ -333,27 +341,37 @@ static napi_status GetValue(napi_env env, napi_value value, rocksdb::Compression
   if (GetValue(env, value, str) == napi_ok) {
     if (str == "no") {
       result = rocksdb::CompressionType::kNoCompression;
+      return napi_ok;
     } else if (str == "snappy") {
       result = rocksdb::CompressionType::kSnappyCompression;
+      return napi_ok;
     } else if (str == "zlib") {
       result = rocksdb::CompressionType::kZlibCompression;
+      return napi_ok;
     } else if (str == "bzip2") {
       result = rocksdb::CompressionType::kBZip2Compression;
+      return napi_ok;
     } else if (str == "lz4") {
       result = rocksdb::CompressionType::kLZ4Compression;
+      return napi_ok;
     } else if (str == "lz4hc") {
       result = rocksdb::CompressionType::kLZ4HCCompression;
+      return napi_ok;
     } else if (str == "xpress") {
       result = rocksdb::CompressionType::kXpressCompression;
+      return napi_ok;
     } else if (str == "zstd") {
       result = rocksdb::CompressionType::kZSTD;
+      return napi_ok;
+    } else {
+      return napi_invalid_arg;
     }
   }
 
   bool boolean;
   if (GetValue(env, value, boolean) == napi_ok) {
-    result = boolean ? rocksdb::kZSTD
-                     : rocksdb::kNoCompression;
+    result = boolean ? rocksdb::kZSTD : rocksdb::kNoCompression;
+    return napi_ok;
   }
 
   return napi_invalid_arg;
