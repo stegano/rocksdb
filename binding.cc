@@ -922,23 +922,44 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
   rocksdb::BlockBasedTableOptions tableOptions;
   tableOptions.decouple_partitioned_filters = true;
 
+  std::shared_ptr<rocksdb::Cache> cache;
   {
     uint32_t cacheSize = 8 << 20;
     double compressedRatio = 0.0;
 
-    // Compat
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "cacheCompressedRatio", compressedRatio));
-    NAPI_STATUS_RETURN(GetProperty(env, options, "cachePrepopulate", tableOptions.prepopulate_block_cache));
 
+    if (cacheSize == 0) {
+      cache = nullptr;
+    } else if (compressedRatio > 0.0) {
+      rocksdb::TieredCacheOptions options;
+      options.total_capacity = cacheSize;
+      options.compressed_secondary_ratio = compressedRatio;
+      options.comp_cache_opts.compression_type = rocksdb::CompressionType::kZSTD;
+      cache = rocksdb::NewTieredCache(options);
+    } else {
+      cache = rocksdb::HyperClockCacheOptions(cacheSize, 0).MakeSharedCache();
+    }
+  }
+
+  {
+    uint32_t cacheSize = -1;
+    double compressedRatio = 0.0;
+
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cachePrepopulate", tableOptions.prepopulate_block_cache));
     NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlockCache", tableOptions.prepopulate_block_cache));
 
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheSize", cacheSize));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCacheCompressedRatio", compressedRatio));
     NAPI_STATUS_RETURN(GetProperty(env, options, "blockCachePrepopulate", tableOptions.prepopulate_block_cache));
 
-    if (cacheSize == 0) {
-      tableOptions.no_block_cache = true;
+    if (cacheSize == -1) {
+      if (cache) {
+        tableOptions.block_cache = cache;
+      } else {
+        tableOptions.no_block_cache = true;
+      }
     } else if (compressedRatio > 0.0) {
       rocksdb::TieredCacheOptions options;
       options.total_capacity = cacheSize;
@@ -954,7 +975,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     uint32_t cacheSize = -1;
     double compressedRatio = 0.0;
 
-    // Compat
+    NAPI_STATUS_RETURN(GetProperty(env, options, "cachePrepopulate", columnOptions.prepopulate_blob_cache));
     NAPI_STATUS_RETURN(GetProperty(env, options, "prepopulateBlobCache", columnOptions.prepopulate_blob_cache));
 
     NAPI_STATUS_RETURN(GetProperty(env, options, "blobCacheSize", cacheSize));
@@ -962,7 +983,7 @@ napi_status InitOptions(napi_env env, T& columnOptions, const U& options) {
     NAPI_STATUS_RETURN(GetProperty(env, options, "blobCachePrepopulate", columnOptions.prepopulate_blob_cache));
 
     if (cacheSize == -1) {
-      columnOptions.blob_cache = tableOptions.block_cache;
+      columnOptions.blob_cache = cache;
     } else if (cacheSize == 0) {
       columnOptions.blob_cache = nullptr;
     } else  if (compressedRatio > 0.0) {
