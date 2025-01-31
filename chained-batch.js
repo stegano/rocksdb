@@ -41,6 +41,20 @@ class ChainedBatch extends AbstractChainedBatch {
     binding.batch_put(this[kBatchContext], key, value, options ?? EMPTY)
   }
 
+  _putLogData (blob) {
+    assert(this[kBatchContext])
+
+    if (blob === null || blob === undefined) {
+      throw new ModuleError('Blob cannot be null or undefined', {
+        code: 'LEVEL_INVALID_KEY'
+      })
+    }
+
+    blob = typeof blob === 'string' ? Buffer.from(blob) : blob
+
+    binding.batch_put_log_data(this[kBatchContext], blob)
+  }
+
   _del (key, options) {
     assert(this[kBatchContext])
 

@@ -1726,6 +1726,20 @@ NAPI_METHOD(batch_put) {
   return 0;
 }
 
+NAPI_METHOD(batch_put_log_data) {
+  NAPI_ARGV(3);
+
+  rocksdb::WriteBatch* batch;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&batch)));
+
+  rocksdb::Slice blob;
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], blob));
+
+  ROCKS_STATUS_THROWS_NAPI(batch->PutLogData(blob));
+
+  return 0;
+}
+
 NAPI_METHOD(batch_del) {
   NAPI_ARGV(3);
 
@@ -1856,7 +1870,7 @@ NAPI_METHOD(batch_iterate) {
 
 struct Updates : public BatchIterator, public Closable {
   Updates(Database* database,
-          const int64_t seqNumber,
+          const int64_t since,
           const bool keys,
           const bool values,
           const bool data,
@@ -1865,7 +1879,7 @@ struct Updates : public BatchIterator, public Closable {
           const Encoding valueEncoding)
       : BatchIterator(database, keys, values, data, column, keyEncoding, valueEncoding),
         database_(database),
-        start_(seqNumber) {
+        start_(since) {
     database_->Attach(this);
   }
 
@@ -1935,7 +1949,7 @@ NAPI_METHOD(updates_init) {
   }
 }
 
-NAPI_METHOD(updates_nextv) {
+NAPI_METHOD(updates_next) {
   NAPI_ARGV(2);
 
   try {
@@ -1945,8 +1959,6 @@ NAPI_METHOD(updates_nextv) {
     if (!updates->iterator_) {
       rocksdb::TransactionLogIterator::ReadOptions options;
       ROCKS_STATUS_THROWS_NAPI(updates->database_->db->GetUpdatesSince(updates->start_, &updates->iterator_, options));
-    } else if (updates->iterator_->Valid()) {
-      updates->iterator_->Next();
     }
 
     ROCKS_STATUS_THROWS_NAPI(updates->iterator_->status());
@@ -1962,6 +1974,9 @@ NAPI_METHOD(updates_nextv) {
 
     NAPI_STATUS_THROWS(updates->Iterate(env, *batchResult.writeBatchPtr, &rows));
     NAPI_STATUS_THROWS(napi_create_int64(env, batchResult.sequence, &sequence));
+
+    ROCKS_STATUS_THROWS_NAPI(updates->iterator_->status());
+    updates->iterator_->Next();
 
     napi_value ret;
     NAPI_STATUS_THROWS(napi_create_object(env, &ret));
@@ -2011,10 +2026,11 @@ NAPI_INIT() {
 
   NAPI_EXPORT_FUNCTION(updates_init);
   NAPI_EXPORT_FUNCTION(updates_close);
-  NAPI_EXPORT_FUNCTION(updates_nextv);
+  NAPI_EXPORT_FUNCTION(updates_next);
 
   NAPI_EXPORT_FUNCTION(batch_init);
   NAPI_EXPORT_FUNCTION(batch_put);
+  NAPI_EXPORT_FUNCTION(batch_put_log_data);
   NAPI_EXPORT_FUNCTION(batch_del);
   NAPI_EXPORT_FUNCTION(batch_clear);
   NAPI_EXPORT_FUNCTION(batch_write);

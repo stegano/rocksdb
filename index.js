@@ -271,14 +271,14 @@ class RocksLevel extends AbstractLevel {
   }
 
   async * updates (options) {
-    const handle = binding.updates_init(this[kContext], options ?? kEmpty)
+    const handle = binding.updates_init(this[kContext], options)
     try {
       while (true) {
-        const batch = binding.updates_next(handle)
-        if (!batch) {
-          return
+        const value = binding.updates_next(handle)
+        if (!value) {
+          break
         }
-        yield batch
+        yield value
       }
     } finally {
       binding.updates_close(handle)
