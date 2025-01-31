@@ -1121,6 +1121,8 @@ NAPI_METHOD(db_open) {
     NAPI_STATUS_THROWS(GetProperty(env, options, "parallelism", parallelism));
     dbOptions.IncreaseParallelism(parallelism);
 
+    NAPI_STATUS_THROWS(GetProperty(env, options, "walDir", dbOptions.wal_dir));
+
     uint32_t walTTL = 0;
     NAPI_STATUS_THROWS(GetProperty(env, options, "walTTL", walTTL));
     dbOptions.WAL_ttl_seconds = walTTL / 1e3;
