@@ -269,6 +269,21 @@ class RocksLevel extends AbstractLevel {
 
     return binding.db_query(this[kContext], options ?? kEmpty)
   }
+
+  async * updates (options) {
+    const handle = binding.updates_init(this[kContext], options ?? kEmpty)
+    try {
+      while (true) {
+        const batch = binding.updates_next(handle)
+        if (!batch) {
+          return
+        }
+        yield batch
+      }
+    } finally {
+      binding.updates_close(handle)
+    }
+  }
 }
 
 exports.RocksLevel = RocksLevel
