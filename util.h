@@ -138,7 +138,7 @@ static napi_status GetString(napi_env env, napi_value from, rocksdb::Slice& to) 
     {
       napi_value property;
       NAPI_STATUS_RETURN(napi_get_named_property(env, from, "byteLength", &property));
-      NAPI_STATUS_RETURN(napi_get_value_int32(env, property, &pos));
+      NAPI_STATUS_RETURN(napi_get_value_int32(env, property, &len));
     }
 
     if (len < 0 || len > length) {
