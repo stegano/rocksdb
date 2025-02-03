@@ -284,6 +284,21 @@ class RocksLevel extends AbstractLevel {
       binding.updates_close(handle)
     }
   }
+
+  * updatesSync (options) {
+    const handle = binding.updates_init(this[kContext], options)
+    try {
+      while (true) {
+        const value = binding.updates_next(handle)
+        if (!value) {
+          break
+        }
+        yield value
+      }
+    } finally {
+      binding.updates_close(handle)
+    }
+  }
 }
 
 exports.RocksLevel = RocksLevel
