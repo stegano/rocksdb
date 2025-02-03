@@ -271,21 +271,16 @@ class RocksLevel extends AbstractLevel {
   }
 
   async * updates (options) {
-    const handle = binding.updates_init(this[kContext], options)
-    try {
-      while (true) {
-        const value = binding.updates_next(handle)
-        if (!value) {
-          break
-        }
-        yield value
-      }
-    } finally {
-      binding.updates_close(handle)
-    }
+    yield * this.updatesSync(options)
   }
 
   * updatesSync (options) {
+    if (this.status !== 'open') {
+      throw new ModuleError('Database is not open', {
+        code: 'LEVEL_DATABASE_NOT_OPEN'
+      })
+    }
+
     const handle = binding.updates_init(this[kContext], options)
     try {
       while (true) {
