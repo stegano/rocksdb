@@ -510,6 +510,10 @@ class Iterator final : public BaseIterator {
       readOptions.allow_unprepared_value = true;
     }
 
+    if (!keys && !values) {
+      return napi_bad_arg;
+    }
+
     // uint32_t timeout = 0;
     // NAPI_STATUS_THROWS(GetProperty(env, options, "timeout", timeout));
 
