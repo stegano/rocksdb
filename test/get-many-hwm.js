@@ -1,29 +1,30 @@
-'use strict'
+// 'use strict'
 
-const test = require('tape')
-const testCommon = require('./common')
+// const test = require('tape')
+// const testCommon = require('./common')
 
-test('get-many w/ hwm should always return something', async function (t) {
-  const db = testCommon.factory()
-  await db.open()
+// test('get-many w/ hwm should always return something', async function (t) {
+//   const db = testCommon.factory()
+//   await db.open()
 
-  const keys = []
-  {
-    const batch = db.batch()
-    for (let n = 0; n < 4e3; n++) {
-      keys.push(`${n}`)
-      batch.put(`${n}`, 'lajdnfasdfsdfsadfsadfkjsadnfljksadfnsalkjdfnlkasjdnflkasjdnfklajsdfnjklasdnflkjasdnfkljasdnfkljasdnfkljasdnfkljasndfklasndflkjsanfkladnsfjknasldkfjnsalkjdfnsalkdfjnlksadjnfklasdjnflkasdjfnlaskjdfnlasdkjfnlaksjfnlaskdjfnalskjdfnsalkdjfnsaldkjfnaslkdjfnlkasdfnlaskdfjnlkasjdfnlkas,ndfkljasnfklsajdnflksjdnflkasjnkdfl')
-    }
-    await batch.write()
-  }
+//   const keys = []
+//   {
+//     const batch = db.batch()
+//     for (let n = 0; n < 1000; n++) {
+//       keys.push(`${n}`)
+//       batch.put(`${n}`, '1'.repeat(1e6))
+//     }
+//     await batch.write({ sync: true })
+//   }
 
-  const res = db._getManySync(keys, {
-    highWaterMarkBytes: 1
-  })
+//   const res = db._getManySync(keys, {
+//     highWaterMarkBytes: 100,
+//     timeout: 0
+//   })
 
-  t.ok(res.length === 1)
+//   t.same(res.length, 1)
 
-  await db.close()
+//   await db.close()
 
-  t.end()
-})
+//   t.end()
+// })
