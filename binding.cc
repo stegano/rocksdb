@@ -511,7 +511,7 @@ class Iterator final : public BaseIterator {
     }
 
     if (!keys && !values) {
-      return napi_bad_arg;
+      return napi_invalid_arg;
     }
 
     // uint32_t timeout = 0;
