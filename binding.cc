@@ -510,10 +510,6 @@ class Iterator final : public BaseIterator {
       readOptions.allow_unprepared_value = true;
     }
 
-    if (!keys && !values) {
-      return napi_invalid_arg;
-    }
-
     // uint32_t timeout = 0;
     // NAPI_STATUS_THROWS(GetProperty(env, options, "timeout", timeout));
 
@@ -573,8 +569,6 @@ class Iterator final : public BaseIterator {
               rocksdb::PinnableSlice v;
               v.PinSelf(CurrentValue());
               state.values.push_back(std::move(v));
-            } else {
-              assert(false);
             }
             state.count += 1;
 
@@ -613,7 +607,8 @@ class Iterator final : public BaseIterator {
               NAPI_STATUS_RETURN(napi_get_undefined(env, &key));
               NAPI_STATUS_RETURN(Convert(env, std::move(state.values[n]), valueEncoding_, val));
             } else {
-              assert(false);
+              NAPI_STATUS_RETURN(napi_get_undefined(env, &key));
+              NAPI_STATUS_RETURN(napi_get_undefined(env, &val));
             }
 
             NAPI_STATUS_RETURN(napi_set_element(env, rows, n * 2 + 0, key));
