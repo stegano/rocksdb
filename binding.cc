@@ -680,7 +680,7 @@ class Iterator final : public BaseIterator {
         break;
       }
 
-      if (deadline > 0 && database_->db->GetEnv()->NowMicros() > deadline) {
+      if (n & 0xf == 0 && deadline > 0 && database_->db->GetEnv()->NowMicros() > deadline) {
         break;
       }
     }
