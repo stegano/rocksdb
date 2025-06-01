@@ -474,10 +474,10 @@ class Iterator final : public BaseIterator {
     rocksdb::ColumnFamilyHandle* column = database->db->DefaultColumnFamily();
     NAPI_STATUS_THROWS(GetProperty(env, options, "column", column));
 
-    Encoding keyEncoding;
+    Encoding keyEncoding = Encoding::String;
     NAPI_STATUS_THROWS(GetProperty(env, options, "keyEncoding", keyEncoding));
 
-    Encoding valueEncoding;
+    Encoding valueEncoding = Encoding::String;
     NAPI_STATUS_THROWS(GetProperty(env, options, "valueEncoding", valueEncoding));
 
     rocksdb::ReadOptions readOptions;
