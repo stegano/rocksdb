@@ -67,15 +67,15 @@
               "rocksdb/env/io_posix.cc"
             ],
             "defines": ["ROCKSDB_PLATFORM_POSIX=1", "ROCKSDB_LIB_IO_POSIX=1"],
-            "ccflags": [
+            "cflags_cc": [
               "-fno-omit-frame-pointer",
               "-momit-leaf-frame-pointer",
               "-fno-builtin-memcmp",
             ],
-            "cflags": ["-std=c++20", "-march=znver2", "mtune=znver3"],
+            "cflags": ["-std=c++20", "-march=znver2", "-mtune=znver3"],
             "cflags!": ["-fno-rtti"],
             "cflags_cc!": ["-fno-rtti"],
-            "cflags_cc+": ["-frtti", '-march=znver2', "mtune=znver3"],
+            "cflags_cc+": ["-frtti", '-march=znver2', "-mtune=znver3"],
           }
         ],
         [
@@ -116,7 +116,7 @@
               "/usr/lib/include",
             ],
             "cflags": ["-march=znver1"],
-            "ccflags": ["-march=znver1", "-flto", "-fcoroutines"],
+            "cflags_cc": ["-march=znver1", "-flto", "-fcoroutines"],
             "cflags!": ["-fno-exceptions"],
             "cflags_cc!": ["-fno-exceptions"],
             "ldflags": ["-flto", "-fuse-linker-plugin"],

@@ -17,7 +17,7 @@
                           "/usr/lib/include",
                         ],
                         "cflags": ["-march=znver2", '-mtune=znver3'],
-                        "ccflags": ["-flto", '-march=znver2', '-mtune=znver3'],
+                        "cflags_cc": ["-flto", '-march=znver2', '-mtune=znver3'],
                         "cflags!": ["-fno-exceptions"],
                         "cflags_cc!": ["-fno-exceptions"],
                         "ldflags": ["-flto", "-fuse-linker-plugin"],
