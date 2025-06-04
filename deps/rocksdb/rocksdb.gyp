@@ -72,10 +72,10 @@
               "-momit-leaf-frame-pointer",
               "-fno-builtin-memcmp",
             ],
-            "cflags": ["-std=c++20", "-march=znver1"],
+            "cflags": ["-std=c++20", "-march=znver2", "mtune=znver3"],
             "cflags!": ["-fno-rtti"],
             "cflags_cc!": ["-fno-rtti"],
-            "cflags_cc+": ["-frtti", '-march=znver1']
+            "cflags_cc+": ["-frtti", '-march=znver2', "mtune=znver3"],
           }
         ],
         [
