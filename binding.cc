@@ -127,11 +127,14 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
         keyEncoding_(keyEncoding),
         valueEncoding_(valueEncoding) {}
 
-  napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
+  rocksdb::Status Read (const rocksdb::WriteBatch& batch) {
+    cache_.clear();
     cache_.reserve(batch.Count());
 
-    ROCKS_STATUS_RETURN_NAPI(batch.Iterate(this));
+    ROCKS_STATUS_RETURN(batch.Iterate(this));
+  }
 
+  napi_status Write(napi_env env, napi_value* result) {
     napi_value putStr;
     NAPI_STATUS_RETURN(napi_create_string_utf8(env, "put", NAPI_AUTO_LENGTH, &putStr));
 
@@ -180,6 +183,11 @@ struct BatchIterator : public rocksdb::WriteBatch::Handler {
     cache_.clear();
 
     return napi_ok;
+  }
+
+  napi_status Iterate(napi_env env, const rocksdb::WriteBatch& batch, napi_value* result) {
+    ROCKS_STATUS_RETURN_NAPI(Read(batch));
+    return Write(env, result);
   }
 
   rocksdb::Status PutCF(uint32_t column_family_id, const rocksdb::Slice& key, const rocksdb::Slice& value) override {
@@ -728,7 +736,7 @@ NAPI_METHOD(db_init) {
   napi_valuetype type;
   NAPI_STATUS_THROWS(napi_typeof(env, argv[0], &type));
 
-  napi_value result;
+  napi_value result = 0;
 
   if (type == napi_string) {
     std::string location;
@@ -1869,7 +1877,8 @@ NAPI_METHOD(batch_iterate) {
   return result;
 }
 
-struct Updates : public BatchIterator, public Closable {
+class Updates : public BatchIterator, public Closable {
+public:
   Updates(Database* database,
           const int64_t since,
           const bool keys,
@@ -1890,6 +1899,54 @@ struct Updates : public BatchIterator, public Closable {
     }
   }
 
+  napi_value nextv(napi_env env, uint32_t count, uint32_t timeout, napi_value callback) {
+    struct State {
+      uint64_t sequence = 0;
+      bool finished = false;
+    };
+    runAsync<State>("updates.next", env, callback,
+      [=](auto& state) {
+        if (!iterator_) {
+          rocksdb::TransactionLogIterator::ReadOptions options;
+          ROCKS_STATUS_RETURN(database_->db->GetUpdatesSince(start_, &iterator_, options));
+        }
+
+        ROCKS_STATUS_RETURN(iterator_->status());
+
+        if (!iterator_->Valid()) {
+          state.finished = true;
+          return rocksdb::Status::OK();
+        }
+
+        auto batchResult = iterator_->GetBatch();
+        Read(*batchResult.writeBatchPtr);
+        state.sequence = batchResult.sequence;
+
+        iterator_->Next();
+
+        return rocksdb::Status::OK();
+      },
+      [=](auto& state, auto env, auto& argv) {
+        argv.resize(2);
+
+        if (!state.finished) {
+          napi_value rows;
+          napi_value sequence;
+
+          NAPI_STATUS_RETURN(Write(env, &rows));
+          NAPI_STATUS_RETURN(napi_create_int64(env, state.sequence, &sequence));
+
+          NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
+          NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], "rows", rows));
+          NAPI_STATUS_RETURN(napi_set_named_property(env, argv[1], "seq", sequence));
+        } else {
+          NAPI_STATUS_RETURN(napi_get_null(env, &argv[1]));
+        }
+
+        return napi_ok;
+      });
+  }
+
   rocksdb::Status Close() override {
     if (iterator_) {
       iterator_.reset();
@@ -1898,11 +1955,10 @@ struct Updates : public BatchIterator, public Closable {
     return rocksdb::Status::OK();
   }
 
+ private:
   Database* database_;
   int64_t start_;
   std::unique_ptr<rocksdb::TransactionLogIterator> iterator_;
-
- private:
   napi_ref ref_ = nullptr;
 };
 
@@ -1957,33 +2013,7 @@ NAPI_METHOD(updates_next) {
     Updates* updates;
     NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&updates)));
 
-    if (!updates->iterator_) {
-      rocksdb::TransactionLogIterator::ReadOptions options;
-      ROCKS_STATUS_THROWS_NAPI(updates->database_->db->GetUpdatesSince(updates->start_, &updates->iterator_, options));
-    }
-
-    ROCKS_STATUS_THROWS_NAPI(updates->iterator_->status());
-
-    if (!updates->iterator_->Valid()) {
-      return 0;
-    }
-
-    auto batchResult = updates->iterator_->GetBatch();
-
-    napi_value rows;
-    napi_value sequence;
-
-    NAPI_STATUS_THROWS(updates->Iterate(env, *batchResult.writeBatchPtr, &rows));
-    NAPI_STATUS_THROWS(napi_create_int64(env, batchResult.sequence, &sequence));
-
-    ROCKS_STATUS_THROWS_NAPI(updates->iterator_->status());
-    updates->iterator_->Next();
-
-    napi_value ret;
-    NAPI_STATUS_THROWS(napi_create_object(env, &ret));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "rows", rows));
-    NAPI_STATUS_THROWS(napi_set_named_property(env, ret, "seq", sequence));
-    return ret;
+    return updates->nextv(env, -1, -1, argv[1]);
   } catch (const std::exception& e) {
     napi_throw_error(env, nullptr, e.what());
     return nullptr;
