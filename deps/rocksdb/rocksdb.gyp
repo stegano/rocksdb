@@ -67,15 +67,15 @@
               "rocksdb/env/io_posix.cc"
             ],
             "defines": ["ROCKSDB_PLATFORM_POSIX=1", "ROCKSDB_LIB_IO_POSIX=1"],
-            "cflags_cc": [
+            "ccflags": [
               "-fno-omit-frame-pointer",
               "-momit-leaf-frame-pointer",
               "-fno-builtin-memcmp",
             ],
-            "cflags": ["-std=c++20", "-march=znver2", "-mtune=znver3"],
+            "cflags": ["-std=c++20", "-march=znver1"],
             "cflags!": ["-fno-rtti"],
             "cflags_cc!": ["-fno-rtti"],
-            "cflags_cc+": ["-frtti", '-march=znver2', "-mtune=znver3"],
+            "cflags_cc+": ["-frtti", '-march=znver1']
           }
         ],
         [
@@ -116,7 +116,7 @@
               "/usr/lib/include",
             ],
             "cflags": ["-march=znver1"],
-            "cflags_cc": ["-march=znver1", "-flto", "-fcoroutines"],
+            "ccflags": ["-march=znver1", "-flto", "-fcoroutines"],
             "cflags!": ["-fno-exceptions"],
             "cflags_cc!": ["-fno-exceptions"],
             "ldflags": ["-flto", "-fuse-linker-plugin"],
@@ -128,11 +128,11 @@
             "defines": ["OS_MACOSX=1"],
             "direct_dependent_settings": {
               "libraries": [
-                "/opt/homebrew/Cellar/zstd/1.5.7/lib/libzstd.a"
+                "/opt/homebrew/Cellar/zstd/1.5.6/lib/libzstd.a"
               ],
             },
             "include_dirs": [
-              "/opt/homebrew/Cellar/zstd/1.5.7/include"
+              "/opt/homebrew/Cellar/zstd/1.5.6/include"
             ],
             "xcode_settings": {
               "OTHER_CPLUSPLUSFLAGS": [
