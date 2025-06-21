@@ -16,7 +16,6 @@ leakydb
 *.1sdk.pdb
 *.lastbuildstate
 npm-debug.log
-prebuilds/
 yarn.lock
 package-lock.json
 .nyc_output/
@@ -25,4 +24,3 @@ package-lock.json
 .tap/
 tmp/
 yarn-error.log
-prebuilds.zip
