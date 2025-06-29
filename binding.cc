@@ -2155,7 +2155,9 @@ NAPI_METHOD(db_open_for_read_only) {
     runAsync<std::vector<rocksdb::ColumnFamilyHandle*>>(
         "leveldown.open_for_read_only", env, callback,
         [=](auto& handles) {
-          assert(!database->db);
+          if (database->db) {
+            return rocksdb::Status::OK();
+          }
 
           rocksdb::DB* db = nullptr;
 
@@ -2172,11 +2174,21 @@ NAPI_METHOD(db_open_for_read_only) {
 
           NAPI_STATUS_RETURN(napi_create_object(env, &argv[1]));
 
-          for (size_t n = 0; n < handles.size(); ++n) {
-            ColumnFamily column;
-            column.handle = handles[n];
-            column.descriptor = descriptors[n];
-            database->columns[column.handle->GetID()] = column;
+          if (descriptors.empty()) {
+            rocksdb::ColumnFamilyHandle* defaultHandle = database->db->DefaultColumnFamily();
+            if (defaultHandle) {
+              ColumnFamily column;
+              column.handle = defaultHandle;
+              column.descriptor.name = "default";
+              database->columns[defaultHandle->GetID()] = column;
+            }
+          } else {
+            for (size_t n = 0; n < handles.size() && n < descriptors.size(); ++n) {
+              ColumnFamily column;
+              column.handle = handles[n];
+              column.descriptor = descriptors[n];
+              database->columns[column.handle->GetID()] = column;
+            }
           }
 
           napi_value columns = argv[1];
