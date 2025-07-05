@@ -14,6 +14,7 @@
 #include <rocksdb/options.h>
 #include <rocksdb/slice.h>
 #include <rocksdb/slice_transform.h>
+#include <rocksdb/sst_file_writer.h>
 #include <rocksdb/status.h>
 #include <rocksdb/table.h>
 #include <rocksdb/write_batch.h>
@@ -39,6 +40,7 @@ class NullLogger : public rocksdb::Logger {
 struct Database;
 class Iterator;
 class Updates;
+class SstFileWriter;
 
 struct ColumnFamily {
   rocksdb::ColumnFamilyHandle* handle;
@@ -2232,6 +2234,473 @@ NAPI_METHOD(db_compact_range) {
   return 0;
 }
 
+NAPI_METHOD(db_ingest_external_file) {
+  NAPI_ARGV(3);
+
+  Database* database;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&database)));
+
+  // 파일 경로 배열 가져오기
+  napi_value filePathsArray;
+  NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "filePaths", &filePathsArray));
+
+  uint32_t filePathsLength;
+  NAPI_STATUS_THROWS(napi_get_array_length(env, filePathsArray, &filePathsLength));
+
+  std::vector<std::string> filePaths;
+  filePaths.reserve(filePathsLength);
+
+  for (uint32_t i = 0; i < filePathsLength; ++i) {
+    napi_value filePath;
+    NAPI_STATUS_THROWS(napi_get_element(env, filePathsArray, i, &filePath));
+
+    std::string path;
+    NAPI_STATUS_THROWS(GetValue(env, filePath, path));
+    filePaths.push_back(std::move(path));
+  }
+
+  // IngestExternalFileOptions 설정
+  rocksdb::IngestExternalFileOptions options;
+
+  bool moveFiles = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "moveFiles", moveFiles));
+  options.move_files = moveFiles;
+
+  bool snapshotConsistency = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "snapshotConsistency", snapshotConsistency));
+  options.snapshot_consistency = snapshotConsistency;
+
+  bool allowGlobalSeqno = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "allowGlobalSeqno", allowGlobalSeqno));
+  options.allow_global_seqno = allowGlobalSeqno;
+
+  bool allowBlockingFlush = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "allowBlockingFlush", allowBlockingFlush));
+  options.allow_blocking_flush = allowBlockingFlush;
+
+  bool ingestBehind = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "ingestBehind", ingestBehind));
+  options.ingest_behind = ingestBehind;
+
+  bool verifyChecksumsBeforeIngest = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "verifyChecksumsBeforeIngest", verifyChecksumsBeforeIngest));
+  options.verify_checksums_before_ingest = verifyChecksumsBeforeIngest;
+
+  bool fillCache = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[1], "fillCache", fillCache));
+  options.fill_cache = fillCache;
+
+  // Column Family 핸들 가져오기 (선택적)
+  rocksdb::ColumnFamilyHandle* columnFamily = database->db->DefaultColumnFamily();
+
+  bool hasColumnFamily;
+  NAPI_STATUS_THROWS(napi_has_named_property(env, argv[1], "columnFamily", &hasColumnFamily));
+
+  if (hasColumnFamily) {
+    napi_value cfHandle;
+    NAPI_STATUS_THROWS(napi_get_named_property(env, argv[1], "columnFamily", &cfHandle));
+    NAPI_STATUS_THROWS(napi_get_value_external(env, cfHandle, reinterpret_cast<void**>(&columnFamily)));
+  }
+
+  auto callback = argv[2];
+
+  runAsync<std::nullptr_t>(
+      "leveldown.ingest_external_file", env, callback,
+      [=](std::nullptr_t&) {
+        return database->db->IngestExternalFile(columnFamily, filePaths, options);
+      },
+      [=](std::nullptr_t&, auto env, auto& argv) {
+        argv.resize(1);
+        NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[0]));
+        return napi_ok;
+      });
+
+  return 0;
+}
+
+struct SstFileWriter {
+  SstFileWriter(const rocksdb::EnvOptions& envOptions, const rocksdb::Options& options, rocksdb::ColumnFamilyHandle* cfHandle = nullptr)
+      : writer(new rocksdb::SstFileWriter(envOptions, options, cfHandle)) {}
+
+  ~SstFileWriter() {
+    if (writer) {
+      delete writer;
+    }
+  }
+
+  rocksdb::SstFileWriter* writer;
+};
+
+NAPI_METHOD(sst_file_writer_init) {
+  NAPI_ARGV(2);
+
+  rocksdb::EnvOptions envOptions;
+  rocksdb::Options options;
+
+  // Options 설정
+  bool createIfMissing = true;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "createIfMissing", createIfMissing));
+  options.create_if_missing = createIfMissing;
+
+  bool errorIfExists = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "errorIfExists", errorIfExists));
+  options.error_if_exists = errorIfExists;
+
+  bool paranoidChecks = false;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "paranoidChecks", paranoidChecks));
+  options.paranoid_checks = paranoidChecks;
+
+  int writeBufferSize = 64 << 20;  // 64MB
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "writeBufferSize", writeBufferSize));
+  options.write_buffer_size = writeBufferSize;
+
+  int maxWriteBufferNumber = 2;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxWriteBufferNumber", maxWriteBufferNumber));
+  options.max_write_buffer_number = maxWriteBufferNumber;
+
+  int minWriteBufferNumberToMerge = 1;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "minWriteBufferNumberToMerge", minWriteBufferNumberToMerge));
+  options.min_write_buffer_number_to_merge = minWriteBufferNumberToMerge;
+
+  int maxBackgroundJobs = 2;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxBackgroundJobs", maxBackgroundJobs));
+  options.max_background_jobs = maxBackgroundJobs;
+
+  int maxBackgroundCompactions = -1;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxBackgroundCompactions", maxBackgroundCompactions));
+  options.max_background_compactions = maxBackgroundCompactions;
+
+  int maxBackgroundFlushes = -1;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxBackgroundFlushes", maxBackgroundFlushes));
+  options.max_background_flushes = maxBackgroundFlushes;
+
+  int maxFileOpeningThreads = 16;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxFileOpeningThreads", maxFileOpeningThreads));
+  options.max_file_opening_threads = maxFileOpeningThreads;
+
+  int maxOpenFiles = -1;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxOpenFiles", maxOpenFiles));
+  options.max_open_files = maxOpenFiles;
+
+  int tableCacheNumshardbits = 6;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "tableCacheNumshardbits", tableCacheNumshardbits));
+  options.table_cache_numshardbits = tableCacheNumshardbits;
+
+  int maxSubcompactions = 1;
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "maxSubcompactions", maxSubcompactions));
+  options.max_subcompactions = maxSubcompactions;
+
+  int blockSize = 4 << 10;  // 4KB
+  NAPI_STATUS_THROWS(GetProperty(env, argv[0], "blockSize", blockSize));
+
+  // BlockBasedTableFactory 설정
+  rocksdb::BlockBasedTableOptions tableOptions;
+  tableOptions.block_size = blockSize;
+  options.table_factory = std::shared_ptr<rocksdb::TableFactory>(
+      rocksdb::NewBlockBasedTableFactory(tableOptions));
+
+  // ColumnFamilyHandle은 현재 null로 설정 (나중에 확장 가능)
+  rocksdb::ColumnFamilyHandle* cfHandle = nullptr;
+  SstFileWriter* writer = new SstFileWriter(envOptions, options, cfHandle);
+
+  napi_value external;
+  NAPI_STATUS_THROWS(napi_create_external(env, writer, nullptr, nullptr, &external));
+
+  return external;
+}
+
+NAPI_METHOD(sst_file_writer_open) {
+  NAPI_ARGV(3);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  std::string filePath;
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], filePath));
+
+  auto callback = argv[2];
+
+  runAsync<std::nullptr_t>(
+      "leveldown.sst_file_writer_open", env, callback,
+      [=](std::nullptr_t&) {
+        return writer->writer->Open(filePath);
+      },
+      [=](std::nullptr_t&, auto env, auto& argv) {
+        argv.resize(1);
+        NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[0]));
+        return napi_ok;
+      });
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_put) {
+  NAPI_ARGV(4);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  std::string key;
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+
+  std::string value;
+  NAPI_STATUS_THROWS(GetValue(env, argv[2], value));
+
+  auto callback = argv[3];
+
+  runAsync<std::nullptr_t>(
+      "leveldown.sst_file_writer_put", env, callback,
+      [=](std::nullptr_t&) {
+        return writer->writer->Put(key, value);
+      },
+      [=](std::nullptr_t&, auto env, auto& argv) {
+        argv.resize(1);
+        NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[0]));
+        return napi_ok;
+      });
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_finish) {
+  NAPI_ARGV(2);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  auto callback = argv[1];
+
+  runAsync<rocksdb::ExternalSstFileInfo>(
+      "leveldown.sst_file_writer_finish", env, callback,
+      [=](rocksdb::ExternalSstFileInfo& fileInfo) {
+        auto status = writer->writer->Finish(&fileInfo);
+        return status;
+      },
+            [=](rocksdb::ExternalSstFileInfo& fileInfo, auto env, auto& argv) {
+        argv.resize(2);
+        napi_value result;
+        auto status = napi_create_object(env, &result);
+        if (status != napi_ok) {
+          return status;
+        }
+
+        napi_value filePath;
+        status = napi_create_string_utf8(env, fileInfo.file_path.c_str(), NAPI_AUTO_LENGTH, &filePath);
+        if (status != napi_ok) {
+          return status;
+        }
+        status = napi_set_named_property(env, result, "filePath", filePath);
+        if (status != napi_ok) {
+          return status;
+        }
+
+        napi_value smallestKey;
+        status = napi_create_string_utf8(env, fileInfo.smallest_key.c_str(), NAPI_AUTO_LENGTH, &smallestKey);
+        if (status != napi_ok) {
+          return status;
+        }
+        status = napi_set_named_property(env, result, "smallestKey", smallestKey);
+        if (status != napi_ok) {
+          return status;
+        }
+
+        napi_value largestKey;
+        status = napi_create_string_utf8(env, fileInfo.largest_key.c_str(), NAPI_AUTO_LENGTH, &largestKey);
+        if (status != napi_ok) {
+          return status;
+        }
+        status = napi_set_named_property(env, result, "largestKey", largestKey);
+        if (status != napi_ok) {
+          return status;
+        }
+
+        napi_value fileSize;
+        status = napi_create_uint32(env, static_cast<uint32_t>(fileInfo.file_size), &fileSize);
+        if (status != napi_ok) {
+          return status;
+        }
+        status = napi_set_named_property(env, result, "fileSize", fileSize);
+        if (status != napi_ok) {
+          return status;
+        }
+
+        napi_value numEntries;
+        status = napi_create_uint32(env, static_cast<uint32_t>(fileInfo.num_entries), &numEntries);
+        if (status != napi_ok) {
+          return status;
+        }
+        status = napi_set_named_property(env, result, "numEntries", numEntries);
+        if (status != napi_ok) {
+          return status;
+        }
+
+        NAPI_STATUS_RETURN(napi_get_null(env, &argv[0])); // error=null
+        argv[1] = result; // result=결과 객체
+        return napi_ok;
+      });
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_file_size) {
+  NAPI_ARGV(2);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  auto callback = argv[1];
+
+  runAsync<uint64_t>(
+      "leveldown.sst_file_writer_file_size", env, callback,
+      [=](uint64_t& fileSize) {
+        fileSize = writer->writer->FileSize();
+        return rocksdb::Status::OK();
+      },
+      [=](uint64_t& fileSize, auto env, auto& argv) {
+        argv.resize(1);
+        napi_value result;
+        NAPI_STATUS_RETURN(napi_create_uint32(env, static_cast<uint32_t>(fileSize), &result));
+        argv[0] = result;
+        return napi_ok;
+      });
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_close) {
+  NAPI_ARGV(2);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  auto callback = argv[1];
+
+  runAsync<std::nullptr_t>(
+      "leveldown.sst_file_writer_close", env, callback,
+      [=](std::nullptr_t&) {
+        delete writer;
+        return rocksdb::Status::OK();
+      },
+      [=](std::nullptr_t&, auto env, auto& argv) {
+        argv.resize(1);
+        NAPI_STATUS_RETURN(napi_get_undefined(env, &argv[0]));
+        return napi_ok;
+      });
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_put_sync) {
+  NAPI_ARGV(3);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  std::string key;
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], key));
+
+  std::string value;
+  NAPI_STATUS_THROWS(GetValue(env, argv[2], value));
+
+  auto status = writer->writer->Put(key, value);
+  if (!status.ok()) {
+    auto err = ToError(env, status);
+    NAPI_STATUS_THROWS(napi_throw(env, err));
+  }
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_open_sync) {
+  NAPI_ARGV(2);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  std::string filePath;
+  NAPI_STATUS_THROWS(GetValue(env, argv[1], filePath));
+
+  auto status = writer->writer->Open(filePath);
+  if (!status.ok()) {
+    auto err = ToError(env, status);
+    NAPI_STATUS_THROWS(napi_throw(env, err));
+  }
+
+  return 0;
+}
+
+NAPI_METHOD(sst_file_writer_finish_sync) {
+  NAPI_ARGV(1);
+
+  SstFileWriter* writer;
+  NAPI_STATUS_THROWS(napi_get_value_external(env, argv[0], reinterpret_cast<void**>(&writer)));
+
+  rocksdb::ExternalSstFileInfo fileInfo;
+  auto status = writer->writer->Finish(&fileInfo);
+  if (!status.ok()) {
+    auto err = ToError(env, status);
+    NAPI_STATUS_THROWS(napi_throw(env, err));
+  }
+
+  napi_value result;
+  auto napi_status = napi_create_object(env, &result);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+
+  napi_value filePath;
+  napi_status = napi_create_string_utf8(env, fileInfo.file_path.c_str(), NAPI_AUTO_LENGTH, &filePath);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+  napi_status = napi_set_named_property(env, result, "filePath", filePath);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+
+  napi_value smallestKey;
+  napi_status = napi_create_string_utf8(env, fileInfo.smallest_key.c_str(), NAPI_AUTO_LENGTH, &smallestKey);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+  napi_status = napi_set_named_property(env, result, "smallestKey", smallestKey);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+
+  napi_value largestKey;
+  napi_status = napi_create_string_utf8(env, fileInfo.largest_key.c_str(), NAPI_AUTO_LENGTH, &largestKey);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+  napi_status = napi_set_named_property(env, result, "largestKey", largestKey);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+
+  napi_value fileSize;
+  napi_status = napi_create_uint32(env, static_cast<uint32_t>(fileInfo.file_size), &fileSize);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+  napi_status = napi_set_named_property(env, result, "fileSize", fileSize);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+
+  napi_value numEntries;
+  napi_status = napi_create_uint32(env, static_cast<uint32_t>(fileInfo.num_entries), &numEntries);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+  napi_status = napi_set_named_property(env, result, "numEntries", numEntries);
+  if (napi_status != napi_ok) {
+    NAPI_STATUS_THROWS(napi_status);
+  }
+
+  return result;
+}
+
 NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(db_init);
   NAPI_EXPORT_FUNCTION(db_open);
@@ -2267,4 +2736,14 @@ NAPI_INIT() {
   NAPI_EXPORT_FUNCTION(batch_iterate);
   NAPI_EXPORT_FUNCTION(db_open_for_read_only);
   NAPI_EXPORT_FUNCTION(db_compact_range);
+  NAPI_EXPORT_FUNCTION(db_ingest_external_file);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_init);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_open);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_put);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_finish);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_file_size);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_close);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_put_sync);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_open_sync);
+  NAPI_EXPORT_FUNCTION(sst_file_writer_finish_sync);
 }

@@ -362,6 +362,154 @@ class RocksLevel extends AbstractLevel {
 
     return binding.db_compact_range(this[kContext], options);
   }
+
+  /**
+   * 외부 SST 파일을 DB에 ingest (rocksdb IngestExternalFile)
+   * @param {Object} options - { filePaths: string[], ... }
+   * @param {Function} [callback]
+   * @returns {Promise<void>|undefined}
+   */
+  ingestExternalFile(filePaths, options = {}, callback) {
+    callback = fromCallback(callback, kPromise);
+    try {
+      // filePaths가 배열이면 options.filePaths로 변환
+      const ingestOptions = Array.isArray(filePaths)
+        ? { ...options, filePaths }
+        : { ...filePaths, ...options };
+
+      binding.db_ingest_external_file(this[kContext], ingestOptions, (err) =>
+        callback(err)
+      );
+    } catch (err) {
+      process.nextTick(callback, err);
+    }
+    return callback[kPromise];
+  }
 }
 
-exports.RocksLevel = RocksLevel;
+/**
+ * SstFileWriter 클래스 - 외부 SST 파일 생성을 위한 클래스
+ */
+class SstFileWriter {
+  constructor(options = {}) {
+    this[kContext] = binding.sst_file_writer_init(options);
+  }
+
+  /**
+   * SST 파일을 열어서 쓰기 준비
+   * @param {string} filePath - SST 파일 경로
+   * @param {Function} [callback]
+   * @returns {Promise<void>|undefined}
+   */
+  open(filePath, callback) {
+    callback = fromCallback(callback, kPromise);
+    try {
+      binding.sst_file_writer_open(this[kContext], filePath, (err) =>
+        callback(err)
+      );
+    } catch (err) {
+      process.nextTick(callback, err);
+    }
+    return callback[kPromise];
+  }
+
+  /**
+   * 키-값 쌍을 SST 파일에 추가
+   * @param {string} key - 키
+   * @param {string} value - 값
+   * @param {Function} [callback]
+   * @returns {Promise<void>|undefined}
+   */
+  put(key, value, callback) {
+    callback = fromCallback(callback, kPromise);
+    try {
+      binding.sst_file_writer_put(this[kContext], key, value, (err) =>
+        callback(err)
+      );
+    } catch (err) {
+      process.nextTick(callback, err);
+    }
+    return callback[kPromise];
+  }
+
+  /**
+   * SST 파일 작성 완료
+   * @param {Function} [callback]
+   * @returns {Promise<Object>|undefined} - 파일 정보 객체
+   */
+  finish(callback) {
+    callback = fromCallback(callback, kPromise);
+    try {
+      binding.sst_file_writer_finish(this[kContext], (err, fileInfo) =>
+        callback(err, fileInfo)
+      );
+    } catch (err) {
+      process.nextTick(callback, err);
+    }
+    return callback[kPromise];
+  }
+
+  /**
+   * 현재 파일 크기 반환
+   * @param {Function} [callback]
+   * @returns {Promise<number>|undefined}
+   */
+  fileSize(callback) {
+    callback = fromCallback(callback, kPromise);
+    try {
+      binding.sst_file_writer_file_size(this[kContext], (err, size) =>
+        callback(err, size)
+      );
+    } catch (err) {
+      process.nextTick(callback, err);
+    }
+    return callback[kPromise];
+  }
+
+  /**
+   * SstFileWriter 리소스 정리
+   * @param {Function} [callback]
+   * @returns {Promise<void>|undefined}
+   */
+  close(callback) {
+    callback = fromCallback(callback, kPromise);
+    try {
+      binding.sst_file_writer_close(this[kContext], (err) => callback(err));
+    } catch (err) {
+      process.nextTick(callback, err);
+    }
+    return callback[kPromise];
+  }
+
+  /**
+   * 키-값 쌍을 SST 파일에 동기적으로 추가
+   * @param {string} key - 키
+   * @param {string} value - 값
+   */
+  putSync(key, value) {
+    binding.sst_file_writer_put_sync(this[kContext], key, value);
+  }
+
+  /**
+   * SST 파일을 동기적으로 열어서 쓰기 준비
+   * @param {string} filePath - SST 파일 경로
+   */
+  openSync(filePath) {
+    binding.sst_file_writer_open_sync(this[kContext], filePath);
+  }
+
+  /**
+   * SST 파일 작성 완료 (동기)
+   * @returns {Object} - 파일 정보 객체
+   */
+  finishSync() {
+    return binding.sst_file_writer_finish_sync(this[kContext]);
+  }
+}
+
+module.exports = {
+  RocksLevel,
+  SstFileWriter,
+  ChainedBatch,
+  Iterator,
+};
