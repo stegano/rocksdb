@@ -365,9 +365,6 @@ class RocksLevel extends AbstractLevel {
 
   /**
    * 외부 SST 파일을 DB에 ingest (rocksdb IngestExternalFile)
-   * @param {Object} options - { filePaths: string[], ... }
-   * @param {Function} [callback]
-   * @returns {Promise<void>|undefined}
    */
   ingestExternalFile(filePaths, options = {}, callback) {
     callback = fromCallback(callback, kPromise);
@@ -397,9 +394,6 @@ class SstFileWriter {
 
   /**
    * SST 파일을 열어서 쓰기 준비
-   * @param {string} filePath - SST 파일 경로
-   * @param {Function} [callback]
-   * @returns {Promise<void>|undefined}
    */
   open(filePath, callback) {
     callback = fromCallback(callback, kPromise);
@@ -415,10 +409,6 @@ class SstFileWriter {
 
   /**
    * 키-값 쌍을 SST 파일에 추가
-   * @param {string} key - 키
-   * @param {string} value - 값
-   * @param {Function} [callback]
-   * @returns {Promise<void>|undefined}
    */
   put(key, value, callback) {
     callback = fromCallback(callback, kPromise);
@@ -434,8 +424,6 @@ class SstFileWriter {
 
   /**
    * SST 파일 작성 완료
-   * @param {Function} [callback]
-   * @returns {Promise<Object>|undefined} - 파일 정보 객체
    */
   finish(callback) {
     callback = fromCallback(callback, kPromise);
@@ -451,8 +439,6 @@ class SstFileWriter {
 
   /**
    * 현재 파일 크기 반환
-   * @param {Function} [callback]
-   * @returns {Promise<number>|undefined}
    */
   fileSize(callback) {
     callback = fromCallback(callback, kPromise);
@@ -468,8 +454,6 @@ class SstFileWriter {
 
   /**
    * SstFileWriter 리소스 정리
-   * @param {Function} [callback]
-   * @returns {Promise<void>|undefined}
    */
   close(callback) {
     callback = fromCallback(callback, kPromise);
